@@ -14,43 +14,108 @@ export interface StreamChatOptions {
   frequency_penalty?: number;
   max_tokens?: number;
   thinking?: boolean;
+  stop?: string[];
+  signal?: AbortSignal;
 }
 
 export const DEFAULT_OPENCODE_ENDPOINT = 'https://opencode.ai/zen/go/v1/chat/completions';
 export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4.1-flash';
 
+/** Extra completion budget granted when reasoning ("thinking") is enabled, since reasoning tokens count toward max_tokens. */
+export const THINKING_TOKEN_ALLOWANCE = 4096;
+
+const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+
 /**
- * Returns the effective API key (from parameter, env, or throws if missing)
+ * Returns the effective API key (from parameter or env). Empty string if missing.
  */
 export function getLlmApiKey(explicitKey?: string): string {
   const key = explicitKey || process.env.OPENCODE_GO_API_KEY || '';
   return key.trim();
 }
 
-/**
- * Calls DeepSeek V4.1 Flash via OpenCode Go with streaming Server-Sent Events.
- */
-export async function streamChatCompletions(
-  messages: ChatMessage[],
-  options: StreamChatOptions = {}
-): Promise<Response> {
+export function getLlmModel(explicitModel?: string): string {
+  return explicitModel || process.env.OPENCODE_GO_MODEL || DEFAULT_DEEPSEEK_MODEL;
+}
+
+function resolveRequest(options: StreamChatOptions, fallbackSessionPrefix: string) {
   const apiKey = getLlmApiKey(options.apiKey);
   if (!apiKey) {
     throw new Error('OPENCODE_GO_API_KEY is not configured. Please add it to your environment or settings.');
   }
 
   const endpoint = options.endpoint || process.env.OPENCODE_GO_ENDPOINT || DEFAULT_OPENCODE_ENDPOINT;
-  const model = options.model || process.env.OPENCODE_GO_MODEL || DEFAULT_DEEPSEEK_MODEL;
-  const sessionId = options.sessionId || 'session-' + Date.now();
+  const model = getLlmModel(options.model);
+  const sessionId = options.sessionId || `${fallbackSessionPrefix}-${Date.now()}`;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`,
+    Authorization: `Bearer ${apiKey}`,
     'User-Agent': 'cadenza-roleplay/1.0 (Next.js/16; Web)',
     'x-opencode-session': sessionId,
   };
 
-  const payload: Record<string, any> = {
+  return { endpoint, model, headers };
+}
+
+/**
+ * POST with a small exponential-backoff retry for transient gateway / rate-limit failures.
+ * Only retries before any response body has been consumed, so it is safe for streaming.
+ */
+async function postWithRetry(
+  endpoint: string,
+  headers: Record<string, string>,
+  payload: Record<string, unknown>,
+  { retries = 2, signal }: { retries?: number; signal?: AbortSignal } = {}
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal,
+      });
+    } catch (err: any) {
+      // Network-level failure (DNS, reset, etc.) — retryable unless aborted by the caller.
+      if (err?.name === 'AbortError') throw err;
+      lastError = err;
+      if (attempt === retries) break;
+      await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
+      continue;
+    }
+
+    if (response.ok) return response;
+
+    const errorText = await response.text().catch(() => '');
+    lastError = new Error(`LLM API error (${response.status}): ${errorText.slice(0, 500)}`);
+    if (!RETRYABLE_STATUS.has(response.status) || attempt === retries) break;
+
+    await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function applyThinking(payload: Record<string, unknown>, thinking: boolean | undefined) {
+  // DeepSeek V4 parameter for thinking control
+  payload.thinking = { type: thinking ? 'enabled' : 'disabled' };
+}
+
+/**
+ * Calls the chat model via OpenCode Go with streaming Server-Sent Events.
+ */
+export async function streamChatCompletions(
+  messages: ChatMessage[],
+  options: StreamChatOptions = {}
+): Promise<Response> {
+  const { endpoint, model, headers } = resolveRequest(options, 'session');
+
+  const baseMaxTokens = options.max_tokens ?? 1200;
+  const payload: Record<string, unknown> = {
     model,
     messages,
     stream: true,
@@ -58,28 +123,40 @@ export async function streamChatCompletions(
     top_p: options.top_p ?? 0.95,
     presence_penalty: options.presence_penalty ?? 0.2,
     frequency_penalty: options.frequency_penalty ?? 0.3,
-    max_tokens: options.max_tokens ?? 1200,
+    // Reasoning tokens are billed against max_tokens — give thinking mode headroom so replies aren't truncated.
+    max_tokens: options.thinking ? baseMaxTokens + THINKING_TOKEN_ALLOWANCE : baseMaxTokens,
   };
 
-  // DeepSeek V4 parameter for thinking control
-  if (options.thinking === false || options.thinking === undefined) {
-    payload.thinking = { type: 'disabled' };
-  } else {
-    payload.thinking = { type: 'enabled' };
+  if (options.stop && options.stop.length > 0) {
+    payload.stop = options.stop.slice(0, 16);
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
+  applyThinking(payload, options.thinking);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenCode Go API error (${response.status}): ${errorText}`);
-  }
+  return postWithRetry(endpoint, headers, payload, { signal: options.signal });
+}
 
-  return response;
+/**
+ * Non-streaming plain-text completion for background tasks.
+ */
+export async function textCompletion(
+  messages: ChatMessage[],
+  options: StreamChatOptions = {}
+): Promise<string> {
+  const { endpoint, model, headers } = resolveRequest(options, 'bg-session');
+
+  const payload: Record<string, unknown> = {
+    model,
+    messages,
+    stream: false,
+    temperature: options.temperature ?? 0.5,
+    max_tokens: options.max_tokens ?? 2048,
+  };
+  applyThinking(payload, false);
+
+  const response = await postWithRetry(endpoint, headers, payload, { signal: options.signal });
+  const data = await response.json();
+  return (data.choices?.[0]?.message?.content || '').trim();
 }
 
 /**
@@ -165,51 +242,39 @@ export function repairAndParseJson<T = any>(str: string): T {
 }
 
 /**
- * Non-streaming JSON completion for background tasks (character generation, memory extraction)
+ * Non-streaming JSON completion for background tasks (character generation, memory extraction).
+ * Retries once at a lower temperature if the model returns unparseable JSON.
  */
 export async function jsonCompletion<T = any>(
   messages: ChatMessage[],
   options: StreamChatOptions = {}
 ): Promise<T> {
-  const apiKey = getLlmApiKey(options.apiKey);
-  if (!apiKey) {
-    throw new Error('OPENCODE_GO_API_KEY is not configured.');
-  }
+  const { endpoint, model, headers } = resolveRequest(options, 'bg-session');
 
-  const endpoint = options.endpoint || process.env.OPENCODE_GO_ENDPOINT || DEFAULT_OPENCODE_ENDPOINT;
-  const model = options.model || process.env.OPENCODE_GO_MODEL || DEFAULT_DEEPSEEK_MODEL;
-  const sessionId = options.sessionId || 'bg-session-' + Date.now();
+  const attempt = async (temperature: number): Promise<T> => {
+    const payload: Record<string, unknown> = {
+      model,
+      messages,
+      stream: false,
+      temperature,
+      response_format: { type: 'json_object' },
+      max_tokens: options.max_tokens ?? 8192,
+    };
+    applyThinking(payload, false);
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`,
-    'User-Agent': 'cadenza-roleplay/1.0 (Next.js/16; Web)',
-    'x-opencode-session': sessionId,
+    const response = await postWithRetry(endpoint, headers, payload, { signal: options.signal });
+    const data = await response.json();
+    const rawContent = data.choices?.[0]?.message?.content || '{}';
+    return repairAndParseJson<T>(rawContent);
   };
 
-  const payload: Record<string, any> = {
-    model,
-    messages,
-    stream: false,
-    temperature: options.temperature ?? 0.7,
-    response_format: { type: 'json_object' },
-    thinking: { type: 'disabled' },
-    max_tokens: options.max_tokens ?? 8192, // Full 8192 maximum generation window
-  };
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`LLM JSON completion error (${response.status}): ${errorText}`);
+  const temperature = options.temperature ?? 0.7;
+  try {
+    return await attempt(temperature);
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      return attempt(Math.max(0.2, temperature - 0.4));
+    }
+    throw err;
   }
-
-  const data = await response.json();
-  const rawContent = data.choices?.[0]?.message?.content || '{}';
-
-  return repairAndParseJson<T>(rawContent);
 }

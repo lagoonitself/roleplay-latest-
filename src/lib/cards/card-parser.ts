@@ -1,4 +1,5 @@
 import type { Character } from '@/lib/supabase/types';
+import { repairMojibake } from '@/lib/prompt/macros';
 
 export interface CharacterCardV2 {
   spec: 'chara_card_v2';
@@ -62,6 +63,8 @@ export function makeCharacter(overrides: Partial<Character>): Character {
   };
 }
 
+const clean = (val: unknown): string => (typeof val === 'string' ? repairMojibake(val).trim() : '');
+
 /**
  * Parses raw JSON string (or parsed object) of Character Card V2, V1, Tavern, or Janitor AI format.
  */
@@ -71,42 +74,55 @@ export function parseCharacterCardJson(raw: string | object): Partial<Character>
   // Character Card V2 spec format (Janitor AI, Chub AI, SillyTavern standard)
   if (obj.spec === 'chara_card_v2' && obj.data) {
     const d = obj.data;
+    const name = clean(d.name) || 'Unnamed Character';
+    const desc = clean(d.description);
+    const personality = clean(d.personality);
+    const scenario = clean(d.scenario);
+    const firstMes = clean(d.first_mes);
+    const notes = clean(d.creator_notes);
+    const tagline = notes ? (notes.length > 120 ? notes.slice(0, 117) + '...' : notes) : (personality.slice(0, 80) ? personality.slice(0, 80) + '...' : '');
+
     return {
-      name: d.name || 'Unnamed Character',
-      tagline: d.creator_notes || d.personality?.slice(0, 100) || '',
-      description: d.description || '',
-      personality: d.personality || '',
-      scenario: d.scenario || '',
-      first_message: d.first_mes || '',
-      alternate_greetings: Array.isArray(d.alternate_greetings) ? d.alternate_greetings : [],
-      example_dialogue: d.mes_example || '',
-      creator_notes: d.creator_notes || '',
-      system_prompt: d.system_prompt || '',
-      post_history_instructions: d.post_history_instructions || '',
-      tags: Array.isArray(d.tags) ? d.tags : [],
+      name,
+      tagline,
+      description: desc,
+      personality,
+      scenario,
+      first_message: firstMes,
+      alternate_greetings: Array.isArray(d.alternate_greetings) ? d.alternate_greetings.map(clean).filter(Boolean) : [],
+      example_dialogue: clean(d.mes_example),
+      creator_notes: notes,
+      system_prompt: clean(d.system_prompt),
+      post_history_instructions: clean(d.post_history_instructions),
+      speech_style: clean(d.extensions?.speech_style || d.extensions?.talkativeness || ''),
+      tags: Array.isArray(d.tags) ? d.tags.map(clean).filter(Boolean) : [],
     };
   }
 
   // Legacy V1 / Chub / Tavern / Janitor simple format
-  const name = obj.name || obj.char_name || 'Unnamed Character';
-  const desc = obj.description || obj.char_persona || obj.personality || '';
-  const scenario = obj.scenario || obj.world_scenario || '';
-  const firstMes = obj.first_mes || obj.char_greeting || obj.greeting || '';
-  const dialogue = obj.mes_example || obj.example_dialogue || '';
+  const name = clean(obj.name || obj.char_name) || 'Unnamed Character';
+  const desc = clean(obj.description || obj.char_persona);
+  const personality = clean(obj.personality || desc);
+  const scenario = clean(obj.scenario || obj.world_scenario);
+  const firstMes = clean(obj.first_mes || obj.char_greeting || obj.greeting);
+  const dialogue = clean(obj.mes_example || obj.example_dialogue);
+  const notes = clean(obj.creator_notes);
+  const tagline = notes ? (notes.length > 120 ? notes.slice(0, 117) + '...' : notes) : (desc.slice(0, 80) ? desc.slice(0, 80) + '...' : '');
 
   return {
     name,
-    tagline: obj.creator_notes || desc.slice(0, 100) || '',
+    tagline,
     description: desc,
-    personality: obj.personality || desc,
+    personality,
     scenario,
     first_message: firstMes,
-    alternate_greetings: Array.isArray(obj.alternate_greetings) ? obj.alternate_greetings : [],
+    alternate_greetings: Array.isArray(obj.alternate_greetings) ? obj.alternate_greetings.map(clean).filter(Boolean) : [],
     example_dialogue: dialogue,
-    creator_notes: obj.creator_notes || '',
-    system_prompt: obj.system_prompt || '',
-    post_history_instructions: obj.post_history_instructions || '',
-    tags: Array.isArray(obj.tags) ? obj.tags : [],
+    creator_notes: notes,
+    system_prompt: clean(obj.system_prompt),
+    post_history_instructions: clean(obj.post_history_instructions),
+    speech_style: clean(obj.speech_style || ''),
+    tags: Array.isArray(obj.tags) ? obj.tags.map(clean).filter(Boolean) : [],
   };
 }
 

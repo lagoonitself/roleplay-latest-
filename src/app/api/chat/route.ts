@@ -1,12 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { streamChatCompletions } from '@/lib/llm/client';
 import { assemblePrompt } from '@/lib/prompt/assembler';
+import { VERBOSITY_GUIDE } from '@/lib/prompt/system-prompt';
 import { retrieveContextForChat, type RetrievedContext } from '@/lib/memory/retriever';
 import { extractMemoriesAndState } from '@/lib/memory/extractor';
 import { makeCharacter } from '@/lib/cards/card-parser';
 import { formatRoleplayText } from '@/lib/prompt/macros';
 import type { Character, Persona, Message } from '@/lib/supabase/types';
+
+/** Removes a leading "Name:" speaker tag the model sometimes adds, and trailing whitespace. */
+function cleanReply(text: string, charName: string): string {
+  const escaped = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`^\\s*(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*:\\s*`, 'i'), '').trim();
+}
 
 export const runtime = 'nodejs';
 
@@ -116,7 +123,35 @@ export async function POST(req: NextRequest) {
       savedUserMsgId = userMsgRow?.id || null;
     }
 
-    // 4. Retrieve Context (memories, summary, state, lore)
+    // 4. Fetch Recent History (newest N turns, returned chronologically)
+    let history: Message[] = [];
+    if (userId) {
+      try {
+        const { data: historyData } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: false })
+          .limit(80);
+
+        history = ((historyData as Message[]) || []).reverse();
+      } catch (err) {
+        console.warn('Failed to fetch history from Supabase:', err);
+      }
+    }
+
+    if (history.length === 0 && Array.isArray(clientHistory) && clientHistory.length > 0) {
+      history = clientHistory;
+    }
+
+    // 5. Retrieve Context (memories, summary, state, lore).
+    // Lore/memory matching scans the latest message plus the last few turns so that
+    // keywords mentioned a moment ago keep their lore active.
+    const scanText = [
+      ...history.slice(-4).map((m) => m.content || ''),
+      userMessage,
+    ].join('\n');
+
     let retrieved: RetrievedContext = {
       pinnedMemories: [],
       relevantMemories: [],
@@ -127,31 +162,10 @@ export async function POST(req: NextRequest) {
 
     if (userId) {
       try {
-        retrieved = await retrieveContextForChat(chatId, character.id, userMessage);
+        retrieved = await retrieveContextForChat(chatId, character.id, scanText);
       } catch (e) {
         console.warn('Memory retrieval skipped:', e);
       }
-    }
-
-    // 5. Fetch Recent History
-    let history: Message[] = [];
-    if (userId) {
-      try {
-        const { data: historyData } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('chat_id', chatId)
-          .order('created_at', { ascending: true })
-          .limit(40);
-
-        history = (historyData as Message[]) || [];
-      } catch (err) {
-        console.warn('Failed to fetch history from Supabase:', err);
-      }
-    }
-
-    if (history.length === 0 && Array.isArray(clientHistory) && clientHistory.length > 0) {
-      history = clientHistory;
     }
 
     // 6. Assemble Cache-Optimized Prompt
@@ -168,15 +182,23 @@ export async function POST(req: NextRequest) {
       latestUserMessage: userMessage,
     });
 
-    // 7. Call OpenCode Go DeepSeek V4.1 Flash
-    const effectiveTemp = temperature ?? character.behavior?.temperature ?? 1.15;
+    // 7. Generation parameters
+    const verbosity = character.behavior?.verbosity || 'medium';
+    const effectiveTemp = temperature ?? character.behavior?.temperature ?? 1.0;
     const effectiveThinking = thinking ?? character.behavior?.thinking_enabled ?? false;
+    const userDisplayName = persona.name || 'User';
 
     const llmStreamResponse = await streamChatCompletions(assembledMessages, {
       apiKey: clientApiKey,
       sessionId: chatId, // routes to cached prefix on OpenCode Go
       temperature: effectiveTemp,
       thinking: effectiveThinking,
+      max_tokens: (VERBOSITY_GUIDE[verbosity] ?? VERBOSITY_GUIDE.medium).maxTokens,
+      presence_penalty: character.behavior?.presence_penalty,
+      frequency_penalty: character.behavior?.frequency_penalty,
+      // Hard backstop: if the model starts writing the user's next turn, cut it off.
+      stop: [`\n${userDisplayName}:`, `\n${userDisplayName.toUpperCase()}:`],
+      signal: req.signal,
     });
 
     if (!llmStreamResponse.body) {
@@ -245,6 +267,7 @@ export async function POST(req: NextRequest) {
 
           // 9. Persist Assistant Message & Trigger Background Memory Extraction
           if (userId && fullAssistantContent) {
+            const cleanedAssistant = cleanReply(fullAssistantContent, character.name);
             const { data: assistantMsgRow } = await supabase
               .from('messages')
               .insert({
@@ -252,7 +275,7 @@ export async function POST(req: NextRequest) {
                 user_id: userId,
                 parent_id: savedUserMsgId,
                 role: 'assistant',
-                content: formatRoleplayText(fullAssistantContent, character.name, persona.name),
+                content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
                 reasoning: fullReasoningContent || null,
                 status: 'done',
                 meta: {
@@ -275,7 +298,7 @@ export async function POST(req: NextRequest) {
                 charName: character.name,
                 userName: persona?.name || 'User',
                 userMessage,
-                assistantMessage: fullAssistantContent,
+                assistantMessage: cleanedAssistant,
                 existingMemories: retrieved.relevantMemories,
                 currentState: retrieved.chatState?.state || {},
                 apiKey: clientApiKey,

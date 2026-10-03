@@ -525,18 +525,21 @@ export default function ChatPage() {
                   const formattedLive = formatRoleplayText(streamedContent, charName, userName);
 
                   setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsgId
-                        ? {
-                            ...m,
-                            content: formattedLive,
-                            meta: {
-                              ...m.meta,
-                              swipes: [formattedLive],
-                            },
-                          }
-                        : m
-                    )
+                    prev.map((m) => {
+                      if (m.id !== assistantMsgId) return m;
+                      const sList = m.meta?.swipes ? [...m.meta.swipes] : [formattedLive];
+                      const sIdx = m.meta?.active_swipe_index ?? 0;
+                      sList[sIdx] = formattedLive;
+                      return {
+                        ...m,
+                        content: formattedLive,
+                        meta: {
+                          ...m.meta,
+                          swipes: sList,
+                          active_swipe_index: sIdx,
+                        },
+                      };
+                    })
                   );
                 }
               } catch {
@@ -549,15 +552,23 @@ export default function ChatPage() {
 
       let finalMessages: Message[] = [];
       setMessages((prev) => {
-        finalMessages = prev.map((m) =>
-          m.id === assistantMsgId
-            ? {
-                ...m,
-                status: 'done',
-                content: formatRoleplayText(m.content, charName, userName),
-              }
-            : m
-        );
+        finalMessages = prev.map((m) => {
+          if (m.id !== assistantMsgId) return m;
+          const sList = m.meta?.swipes ? [...m.meta.swipes] : [m.content];
+          const sIdx = m.meta?.active_swipe_index ?? 0;
+          const finalVal = formatRoleplayText(m.content, charName, userName);
+          sList[sIdx] = finalVal;
+          return {
+            ...m,
+            status: 'done',
+            content: finalVal,
+            meta: {
+              ...m.meta,
+              swipes: sList,
+              active_swipe_index: sIdx,
+            },
+          };
+        });
         return finalMessages;
       });
       saveLocalMessages(chatId, finalMessages);
@@ -671,6 +682,231 @@ export default function ChatPage() {
       return updatedMsgs;
     });
     saveLocalMessages(chatId, updatedMsgs);
+  };
+
+  // Regenerate alternate response (Multi-swipe generation)
+  const handleRegenerate = async (assistantMsgIndex: number) => {
+    if (isGenerating || !character) return;
+    const targetMsg = messages[assistantMsgIndex];
+    if (!targetMsg || targetMsg.role !== 'assistant') return;
+
+    if (!settings.opencodeApiKey && !process.env.NEXT_PUBLIC_HAS_SERVER_KEY) {
+      toast.error('Please configure your OpenCode Go API key in Settings first.');
+      return;
+    }
+
+    const charName = character.name || 'Character';
+    const userName = activePersona?.name || 'User';
+
+    // Find the user prompt that triggered this response
+    let triggerUserMessage = '';
+    const historyBeforeAssistant: Message[] = [];
+    for (let i = 0; i < assistantMsgIndex; i++) {
+      historyBeforeAssistant.push(messages[i]);
+      if (messages[i].role === 'user') {
+        triggerUserMessage = messages[i].content;
+      }
+    }
+
+    if (!triggerUserMessage) {
+      triggerUserMessage = '*Continues the story naturally*';
+    }
+
+    // Add a new swipe slot
+    const prevSwipes = targetMsg.meta?.swipes || [targetMsg.content];
+    const newSwipeIndex = prevSwipes.length;
+    const updatedSwipes = [...prevSwipes, ''];
+
+    setMessages((prev) =>
+      prev.map((m, i) =>
+        i === assistantMsgIndex
+          ? {
+              ...m,
+              content: '',
+              status: 'streaming',
+              meta: {
+                ...m.meta,
+                swipes: updatedSwipes,
+                active_swipe_index: newSwipeIndex,
+              },
+            }
+          : m
+      )
+    );
+
+    setIsGenerating(true);
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          chatId,
+          characterId: character.id,
+          personaId: activePersona?.id,
+          persona: activePersona,
+          character,
+          userMessage: triggerUserMessage,
+          apiKey: settings.opencodeApiKey,
+          temperature: settings.defaultTemperature,
+          thinking: settings.thinkingEnabled,
+          authorsNote: authorsNote.trim() || undefined,
+          history: historyBeforeAssistant.filter((m) => m.content !== triggerUserMessage),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorJson = await response.json().catch(() => ({}));
+        throw new Error(errorJson.error || 'Failed to generate alternate response');
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let streamedContent = '';
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
+              try {
+                const parsed = JSON.parse(trimmed.slice(6));
+                if (parsed.text) {
+                  streamedContent += parsed.text;
+                  const formattedLive = formatRoleplayText(streamedContent, charName, userName);
+
+                  setMessages((prev) =>
+                    prev.map((m, i) => {
+                      if (i !== assistantMsgIndex) return m;
+                      const sList = m.meta?.swipes ? [...m.meta.swipes] : [formattedLive];
+                      sList[newSwipeIndex] = formattedLive;
+                      return {
+                        ...m,
+                        content: formattedLive,
+                        meta: {
+                          ...m.meta,
+                          swipes: sList,
+                          active_swipe_index: newSwipeIndex,
+                        },
+                      };
+                    })
+                  );
+                }
+              } catch {}
+            }
+          }
+        }
+      }
+
+      let finalMessages: Message[] = [];
+      setMessages((prev) => {
+        finalMessages = prev.map((m, i) => {
+          if (i !== assistantMsgIndex) return m;
+          const sList = m.meta?.swipes ? [...m.meta.swipes] : [m.content];
+          const finalVal = formatRoleplayText(m.content, charName, userName);
+          sList[newSwipeIndex] = finalVal;
+          return {
+            ...m,
+            status: 'done',
+            content: finalVal,
+            meta: {
+              ...m.meta,
+              swipes: sList,
+              active_swipe_index: newSwipeIndex,
+            },
+          };
+        });
+        return finalMessages;
+      });
+      saveLocalMessages(chatId, finalMessages);
+      toast.success(`Generated variation ${newSwipeIndex + 1}/${updatedSwipes.length}`);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        toast.error(err.message || 'Regeneration error');
+        setMessages((prev) =>
+          prev.map((m, i) =>
+            i === assistantMsgIndex
+              ? {
+                  ...m,
+                  status: 'done',
+                  content: prevSwipes[prevSwipes.length - 1] || m.content,
+                  meta: {
+                    ...m.meta,
+                    swipes: prevSwipes,
+                    active_swipe_index: Math.max(0, prevSwipes.length - 1),
+                  },
+                }
+              : m
+          )
+        );
+      }
+    } finally {
+      setIsGenerating(false);
+      setAbortController(null);
+    }
+  };
+
+  // Inline Message Editing
+  const handleStartEdit = (msg: Message) => {
+    setEditingMsgId(msg.id);
+    setEditingText(msg.content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMsgId(null);
+    setEditingText('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMsgId || !editingText.trim()) return;
+    const charName = character?.name || 'Character';
+    const userName = activePersona?.name || 'User';
+    const formatted = formatRoleplayText(editingText.trim(), charName, userName);
+
+    let updatedMsgs: Message[] = [];
+    setMessages((prev) => {
+      updatedMsgs = prev.map((m) => {
+        if (m.id !== editingMsgId) return m;
+        const currentSwipes = m.meta?.swipes ? [...m.meta.swipes] : [formatted];
+        const swipeIdx = m.meta?.active_swipe_index ?? 0;
+        currentSwipes[swipeIdx] = formatted;
+        return {
+          ...m,
+          content: formatted,
+          meta: {
+            ...m.meta,
+            swipes: currentSwipes,
+          },
+        };
+      });
+      return updatedMsgs;
+    });
+
+    saveLocalMessages(chatId, updatedMsgs);
+
+    if (!chatId.startsWith('local-')) {
+      try {
+        await supabase
+          .from('messages')
+          .update({ content: formatted })
+          .eq('id', editingMsgId);
+      } catch (err) {
+        console.warn('Failed to update message in Supabase:', err);
+      }
+    }
+
+    setEditingMsgId(null);
+    setEditingText('');
+    toast.success('Message updated');
   };
 
   // Delete message
@@ -907,18 +1143,49 @@ export default function ChatPage() {
                         )}
                       </div>
 
-                      {/* Narrative Bubble */}
-                      <div className="p-4 sm:p-5 rounded-2xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs border border-black/[0.05] dark:border-white/[0.07] select-text">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {formattedContent}
-                        </ReactMarkdown>
+                      {/* Narrative Bubble or Inline Editor */}
+                      {editingMsgId === message.id ? (
+                        <div className="w-full space-y-2 p-3 sm:p-4 rounded-2xl glass-card border border-accent/40 shadow-xs">
+                          <textarea
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') handleCancelEdit();
+                              else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit();
+                            }}
+                            rows={4}
+                            className="w-full p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-accent resize-y font-normal leading-relaxed"
+                            placeholder="Edit character response..."
+                            autoFocus
+                          />
+                          <div className="flex items-center justify-end gap-2 text-xs">
+                            <button
+                              onClick={handleCancelEdit}
+                              className="px-3 py-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleSaveEdit}
+                              className="px-3 py-1 rounded-xl bg-accent text-white font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 sm:p-5 rounded-2xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs border border-black/[0.05] dark:border-white/[0.07] select-text">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {formattedContent}
+                          </ReactMarkdown>
 
-                        {message.status === 'streaming' && (
-                          <span className="inline-block w-1.5 h-4 ml-1 bg-accent animate-pulse align-middle" />
-                        )}
-                      </div>
+                          {message.status === 'streaming' && (
+                            <span className="inline-block w-1.5 h-4 ml-1 bg-accent animate-pulse align-middle" />
+                          )}
+                        </div>
+                      )}
 
-                      {/* Action Bar (Copy, Delete, Reroll) */}
+                      {/* Action Bar (Copy, Edit, Regenerate, Delete) */}
                       <div className="flex items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleCopyMessage(formattedContent)}
@@ -926,6 +1193,21 @@ export default function ChatPage() {
                           title="Copy message"
                         >
                           <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleStartEdit(message)}
+                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] flex items-center gap-1 transition-colors"
+                          title="Edit response"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleRegenerate(index)}
+                          disabled={isGenerating}
+                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-accent text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40"
+                          title="Regenerate alternate response (Reroll)"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
                         </button>
                         {index > 0 && (
                           <button
@@ -955,18 +1237,62 @@ export default function ChatPage() {
                         </div>
                       </div>
 
-                      {/* User Message Card */}
-                      <div className="p-3.5 sm:p-4 rounded-2xl rounded-tr-sm bg-accent text-white text-xs sm:text-sm leading-relaxed shadow-sm select-text">
-                        <p className="whitespace-pre-wrap">{formattedContent}</p>
-                      </div>
+                      {/* User Message Card or Inline Editor */}
+                      {editingMsgId === message.id ? (
+                        <div className="w-full space-y-2 p-3 rounded-2xl bg-accent text-white shadow-sm">
+                          <textarea
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') handleCancelEdit();
+                              else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit();
+                            }}
+                            rows={3}
+                            className="w-full p-2.5 rounded-xl bg-black/20 text-white placeholder-white/60 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-white/40 resize-y"
+                            autoFocus
+                          />
+                          <div className="flex items-center justify-end gap-2 text-xs">
+                            <button
+                              onClick={handleCancelEdit}
+                              className="px-2.5 py-1 rounded-lg text-white/80 hover:bg-white/10 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleSaveEdit}
+                              className="px-3 py-1 rounded-lg bg-white text-accent font-semibold flex items-center gap-1 shadow-xs"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 sm:p-4 rounded-2xl rounded-tr-sm bg-accent text-white text-xs sm:text-sm leading-relaxed shadow-sm select-text">
+                          <p className="whitespace-pre-wrap">{formattedContent}</p>
+                        </div>
+                      )}
 
-                      <div className="flex justify-end px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                      <div className="flex justify-end items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleCopyMessage(formattedContent)}
                           className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
                           title="Copy"
                         >
                           <Copy className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleStartEdit(message)}
+                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
+                          title="Edit your message"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMessage(message.id)}
+                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 text-[11px] transition-colors"
+                          title="Delete message"
+                        >
+                          <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
                     </div>
