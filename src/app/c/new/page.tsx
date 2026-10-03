@@ -590,7 +590,7 @@ export default function CreateCharacterPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-purple-500 font-semibold text-sm">
                 <Sparkles className="w-4 h-4" />
-                Generate Character with DeepSeek V4.1 Flash
+                AI Generator & Text Importer (DeepSeek V4.1)
               </div>
               <button
                 onClick={() => setAiModalOpen(false)}
@@ -601,14 +601,14 @@ export default function CreateCharacterPage() {
             </div>
 
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Describe your character concept in one sentence. DeepSeek will invent the name, background, psychology, opening scene, and dialogue style.
+              Describe an idea from scratch, <strong>or paste copied text/bio from Janitor AI</strong>. DeepSeek will extract the character traits, backstory, and opening message automatically.
             </p>
 
             <textarea
-              rows={3}
+              rows={5}
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="e.g. A brooding cyberpunk bounty hunter with cybernetic eyes who tracks a rogue android through a neon rainstorm..."
+              placeholder="Enter a concept (e.g. 'A brooding bartender in a cyberpunk lounge') OR paste copied text, scenario, or intro from Janitor AI..."
               className="w-full p-3.5 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40"
             />
 
