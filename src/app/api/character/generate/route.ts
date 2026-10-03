@@ -27,24 +27,30 @@ Output JSON matching this exact structure:
 {
   "name": "Character Name",
   "tagline": "Evocative summary or tagline (under 15 words)",
-  "description": "Physical appearance, style, and presence",
-  "personality": "Psychological depth, personality traits, desires, behavioral quirks",
-  "scenario": "Current situation, environment, and dynamic with {{user}}",
-  "first_message": "Vivid opening message in *actions* and \\"speech\\", establishing the scene and inviting {{user}} to respond",
+  "description": "Rich physical appearance, clothing, sensory presence, and physical traits",
+  "personality": "Comprehensive psychological depth, personality traits, desires, behavioral quirks, flaws, moral compass",
+  "scenario": "Current situation, setting, environment, world atmosphere, and starting dynamic with {{user}}",
+  "first_message": "Vivid, tactile opening message in *actions* and \\"speech\\", establishing the scene and inviting {{user}} to respond",
+  "alternate_greetings": [
+    "Alternative opening scene variation 1 in *actions* and \\"speech\\"",
+    "Alternative opening scene variation 2 in *actions* and \\"speech\\""
+  ],
   "example_dialogue": "<START>\\n<USER>: \\"...\\"\\n<BOT>: *action* \\"dialogue\\"",
-  "speech_style": "Tone, speech mannerisms, vocabulary",
-  "tags": ["Tag1", "Tag2"],
+  "speech_style": "Tone of voice, vocabulary, cadence, verbal mannerisms",
+  "system_prompt": "Specific behavioral directives instructing the AI how to stay strictly in character and treat {{user}}",
+  "post_history_instructions": "Steering instruction reminding the AI of its core personality and tone",
+  "tags": ["Tag1", "Tag2", "Tag3"],
   "content_rating": "sfw" | "mature" | "explicit",
   "accent_color": "#hexColor"
 }`,
       },
       {
         role: 'user' as const,
-        content: `Character concept: ${idea}`,
+        content: `Character concept or copied text:\n${idea}`,
       },
     ];
 
-    const generated = await jsonCompletion(prompt, { apiKey });
+    const generated = await jsonCompletion(prompt, { apiKey, max_tokens: 8192, temperature: 0.75 });
     return NextResponse.json(generated);
   } catch (error: any) {
     console.error('Character generation error:', error);

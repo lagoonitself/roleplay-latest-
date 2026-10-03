@@ -140,9 +140,17 @@ export default function CreateCharacterPage() {
       if (char.personality) setPersonality(char.personality);
       if (char.scenario) setScenario(char.scenario);
       if (char.first_message) setFirstMessage(char.first_message);
-      if (char.speech_style) setSpeechStyle(char.speech_style);
+      if (char.alternate_greetings && Array.isArray(char.alternate_greetings) && char.alternate_greetings.length > 0) {
+        setAlternateGreetings(char.alternate_greetings);
+      }
       if (char.example_dialogue) setExampleDialogue(char.example_dialogue);
-      if (char.tags) setTags(char.tags.join(', '));
+      if (char.speech_style) setSpeechStyle(char.speech_style);
+      if (char.system_prompt) setSystemPrompt(char.system_prompt);
+      if (char.post_history_instructions) setPostHistory(char.post_history_instructions);
+      if (char.tags) {
+        if (Array.isArray(char.tags)) setTags(char.tags.join(', '));
+        else if (typeof char.tags === 'string') setTags(char.tags);
+      }
       if (char.content_rating) setContentRating(char.content_rating);
 
       setAiModalOpen(false);

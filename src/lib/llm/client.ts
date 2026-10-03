@@ -83,7 +83,89 @@ export async function streamChatCompletions(
 }
 
 /**
- * Non-streaming JSON completion for background tasks (memory extraction, state updating)
+ * Robust JSON repair and parser that cleans markdown fences, fixes unescaped newlines
+ * inside string literals, and auto-repairs truncated/unclosed strings & brackets.
+ */
+export function repairAndParseJson<T = any>(str: string): T {
+  let s = str.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+
+  // 1. Fast path: try standard parsing
+  try {
+    return JSON.parse(s) as T;
+  } catch {}
+
+  // 2. Locate starting JSON object
+  const start = s.indexOf('{');
+  if (start !== -1) {
+    s = s.slice(start);
+  }
+
+  // 3. Scan character-by-character to sanitize unescaped control chars and track unclosed braces
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+  let repaired = '';
+
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (escaped) {
+      escaped = false;
+      repaired += ch;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      repaired += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      repaired += ch;
+      continue;
+    }
+    if (inString) {
+      if (ch === '\n') {
+        repaired += '\\n';
+      } else if (ch === '\r') {
+        repaired += '\\r';
+      } else if (ch === '\t') {
+        repaired += '\\t';
+      } else {
+        repaired += ch;
+      }
+      continue;
+    }
+    if (ch === '{' || ch === '[') {
+      stack.push(ch === '{' ? '}' : ']');
+    } else if (ch === '}' || ch === ']') {
+      if (stack.length > 0 && stack[stack.length - 1] === ch) {
+        stack.pop();
+      }
+    }
+    repaired += ch;
+  }
+
+  // If truncated mid-string, close the string
+  if (inString) {
+    repaired += '"';
+  }
+  // Close any unclosed object/array brackets
+  while (stack.length > 0) {
+    repaired += stack.pop();
+  }
+
+  // 4. Try parsing repaired string
+  try {
+    return JSON.parse(repaired) as T;
+  } catch {
+    // Clean up trailing comma before closing brace if present
+    const cleaned = repaired.replace(/,\s*([}\]])/g, '$1');
+    return JSON.parse(cleaned) as T;
+  }
+}
+
+/**
+ * Non-streaming JSON completion for background tasks (character generation, memory extraction)
  */
 export async function jsonCompletion<T = any>(
   messages: ChatMessage[],
@@ -109,10 +191,10 @@ export async function jsonCompletion<T = any>(
     model,
     messages,
     stream: false,
-    temperature: 0.3, // deterministic for extraction
+    temperature: options.temperature ?? 0.7,
     response_format: { type: 'json_object' },
     thinking: { type: 'disabled' },
-    max_tokens: 1000,
+    max_tokens: options.max_tokens ?? 8192, // Full 8192 maximum generation window
   };
 
   const response = await fetch(endpoint, {
@@ -129,11 +211,5 @@ export async function jsonCompletion<T = any>(
   const data = await response.json();
   const rawContent = data.choices?.[0]?.message?.content || '{}';
 
-  try {
-    return JSON.parse(rawContent) as T;
-  } catch (err) {
-    // If wrapped in markdown ```json ... ```
-    const cleaned = rawContent.replace(/```(?:json)?/g, '').trim();
-    return JSON.parse(cleaned) as T;
-  }
+  return repairAndParseJson<T>(rawContent);
 }
