@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
-import { DEFAULT_CHARACTERS } from '@/lib/data/default-characters';
+import { makeCharacter } from '@/lib/cards/card-parser';
 import { toast } from 'sonner';
 import type { Character, Message, Memory, ChatState, Summary } from '@/lib/supabase/types';
 
@@ -72,17 +72,31 @@ export default function ChatPage() {
     async function initChat() {
       // Find character
       let charObj: Character | null = null;
-      if (chatId.startsWith('local-') || charIdParam) {
-        const found = DEFAULT_CHARACTERS.find((c) => c.name === charIdParam) || DEFAULT_CHARACTERS[0];
-        charObj = {
-          id: `seed-${found.name.toLowerCase().replace(/\s+/g, '-')}`,
-          user_id: 'local',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          ...found,
-        };
-      } else {
-        // Fetch from Supabase
+
+      // 1. Try finding by charIdParam in DB
+      if (charIdParam) {
+        const { data: dbC } = await supabase
+          .from('characters')
+          .select('*')
+          .eq('id', charIdParam)
+          .maybeSingle();
+
+        if (dbC) {
+          charObj = dbC as Character;
+        }
+      }
+
+      // 2. Try finding in local storage
+      if (!charObj && charIdParam) {
+        try {
+          const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+          const found = localList.find((c: any) => c.id === charIdParam || c.name.toLowerCase() === charIdParam.toLowerCase());
+          if (found) charObj = found as Character;
+        } catch {}
+      }
+
+      // 3. Try finding through chat session in DB
+      if (!charObj && !chatId.startsWith('local-')) {
         const { data: chatData } = await supabase
           .from('chats')
           .select('*, character:characters(*)')
@@ -91,17 +105,32 @@ export default function ChatPage() {
 
         if (chatData?.character) {
           charObj = chatData.character as Character;
-        } else {
-          charObj = {
-            id: 'seed-0',
-            user_id: 'default',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            ...DEFAULT_CHARACTERS[0],
-          };
         }
+      }
 
-        // Fetch messages for this chat
+      // 4. Clean dynamic fallback if none matched
+      if (!charObj) {
+        const cleanName = charIdParam
+          ? decodeURIComponent(charIdParam).replace(/^local-char-\d+-?/, '').replace(/-/g, ' ')
+          : 'Character';
+
+        charObj = makeCharacter({
+          id: charIdParam || `char-${Date.now()}`,
+          user_id: 'guest',
+          name: cleanName || 'Roleplay Partner',
+          tagline: 'Custom Roleplay Character',
+          description: 'A custom roleplay partner.',
+          personality: 'Immersive, descriptive, observant, deeply engaging.',
+          scenario: 'An ongoing interactive narrative.',
+          first_message: `*I look at you with quiet curiosity, waiting for your first words.*`,
+          speech_style: 'Descriptive, evocative prose.',
+          tags: ['Custom'],
+          content_rating: 'mature',
+        });
+      }
+
+      // If existing DB chat, fetch messages for this chat
+      if (!chatId.startsWith('local-')) {
         const { data: msgsData } = await supabase
           .from('messages')
           .select('*')

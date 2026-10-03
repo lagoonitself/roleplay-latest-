@@ -15,7 +15,6 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { DEFAULT_CHARACTERS } from '@/lib/data/default-characters';
 import { exportCharacterToCardV2 } from '@/lib/cards/card-parser';
 import { useSettings } from '@/lib/store/settings';
 import { toast } from 'sonner';
@@ -30,6 +29,7 @@ export default function CharacterProfilePage() {
 
   const [character, setCharacter] = useState<Character | null>(null);
   const [selectedGreetingIndex, setSelectedGreetingIndex] = useState(0);
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     async function loadChar() {
@@ -45,22 +45,36 @@ export default function CharacterProfilePage() {
         return;
       }
 
-      // 2. Fallback to default characters
-      const seed = DEFAULT_CHARACTERS.find((c) =>
-        charId.includes(c.name.toLowerCase().replace(/\s+/g, '-'))
-      ) || DEFAULT_CHARACTERS[0];
+      // 2. Check local storage
+      try {
+        const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+        const found = localList.find((c: any) => c.id === charId || c.name === charId);
+        if (found) {
+          setCharacter(found as Character);
+          return;
+        }
+      } catch {}
 
-      setCharacter({
-        id: charId,
-        user_id: 'default',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        ...seed,
-      });
+      setNotFound(true);
     }
 
     loadChar();
   }, [charId, supabase]);
+
+  if (notFound) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-4 text-center">
+        <h2 className="text-xl font-bold">Character Not Found</h2>
+        <p className="text-sm text-muted-foreground">This character does not exist in your roster or has been removed.</p>
+        <Link
+          href="/"
+          className="px-4 py-2 rounded-full bg-accent text-white text-xs font-medium apple-button"
+        >
+          Return to Explore
+        </Link>
+      </div>
+    );
+  }
 
   if (!character) {
     return (

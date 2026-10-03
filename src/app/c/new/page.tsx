@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
-import { parseCharacterCardJson } from '@/lib/cards/card-parser';
+import { parseCharacterCardJson, parseCharacterFromPng } from '@/lib/cards/card-parser';
 import { toast } from 'sonner';
 
 export default function CreateCharacterPage() {
@@ -48,11 +48,43 @@ export default function CreateCharacterPage() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Card Import
+  // Card Import (supports Character Card V2 JSON and PNG embedded cards from Janitor AI, Chub AI, Tavern)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.name.toLowerCase().endsWith('.png') || file.type === 'image/png') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const buffer = event.target?.result as ArrayBuffer;
+          const { character: parsed, avatarDataUrl } = parseCharacterFromPng(buffer);
+
+          if (parsed.name) setName(parsed.name);
+          if (parsed.tagline) setTagline(parsed.tagline);
+          if (parsed.description) setDescription(parsed.description);
+          if (parsed.personality) setPersonality(parsed.personality);
+          if (parsed.scenario) setScenario(parsed.scenario);
+          if (parsed.first_message) setFirstMessage(parsed.first_message);
+          if (parsed.alternate_greetings && parsed.alternate_greetings.length > 0) {
+            setAlternateGreetings(parsed.alternate_greetings);
+          }
+          if (parsed.example_dialogue) setExampleDialogue(parsed.example_dialogue);
+          if (parsed.system_prompt) setSystemPrompt(parsed.system_prompt);
+          if (parsed.post_history_instructions) setPostHistory(parsed.post_history_instructions);
+          if (parsed.tags && parsed.tags.length > 0) setTags(parsed.tags.join(', '));
+          if (avatarDataUrl) setAvatarUrl(avatarDataUrl);
+
+          toast.success(`Imported PNG card: "${parsed.name || file.name}" with avatar!`);
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to read PNG character card');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+
+    // JSON character card
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -60,15 +92,18 @@ export default function CreateCharacterPage() {
         const parsed = parseCharacterCardJson(text);
 
         if (parsed.name) setName(parsed.name);
+        if (parsed.tagline) setTagline(parsed.tagline);
         if (parsed.description) setDescription(parsed.description);
         if (parsed.personality) setPersonality(parsed.personality);
         if (parsed.scenario) setScenario(parsed.scenario);
         if (parsed.first_message) setFirstMessage(parsed.first_message);
-        if (parsed.alternate_greetings) setAlternateGreetings(parsed.alternate_greetings);
+        if (parsed.alternate_greetings && parsed.alternate_greetings.length > 0) {
+          setAlternateGreetings(parsed.alternate_greetings);
+        }
         if (parsed.example_dialogue) setExampleDialogue(parsed.example_dialogue);
         if (parsed.system_prompt) setSystemPrompt(parsed.system_prompt);
         if (parsed.post_history_instructions) setPostHistory(parsed.post_history_instructions);
-        if (parsed.tags) setTags(parsed.tags.join(', '));
+        if (parsed.tags && parsed.tags.length > 0) setTags(parsed.tags.join(', '));
 
         toast.success(`Imported character card: "${parsed.name || 'Character'}"`);
       } catch {
@@ -177,15 +212,36 @@ export default function CreateCharacterPage() {
         return;
       }
 
+      // Also persist to local cache for instant offline/speed availability
+      try {
+        const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+        const filtered = localList.filter((c: any) => c.name !== name.trim());
+        localStorage.setItem('cadenza_local_characters', JSON.stringify([data, ...filtered]));
+      } catch {}
+
       toast.success(`Character "${name}" saved!`);
       router.push(`/c/${data.id}`);
       return;
     }
 
     // Local session fallback
-    toast.success(`Character "${name}" ready! Starting chat...`);
+    const localCharId = `local-char-${Date.now()}`;
+    const localChar = {
+      id: localCharId,
+      user_id: 'guest',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...characterPayload,
+    };
+    try {
+      const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+      const filtered = localList.filter((c: any) => c.name !== name.trim());
+      localStorage.setItem('cadenza_local_characters', JSON.stringify([localChar, ...filtered]));
+    } catch {}
+
+    toast.success(`Character "${name}" created! Starting chat...`);
     const localChatId = 'local-' + Date.now();
-    router.push(`/chat/${localChatId}?charId=${encodeURIComponent(name.trim())}`);
+    router.push(`/chat/${localChatId}?charId=${encodeURIComponent(localCharId)}`);
   };
 
   return (
@@ -212,10 +268,10 @@ export default function CreateCharacterPage() {
           {/* Card Import */}
           <label className="px-3.5 py-1.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-xs font-medium apple-button flex items-center gap-1.5 cursor-pointer">
             <Upload className="w-3.5 h-3.5" />
-            <span>Import Card</span>
+            <span>Import Card (JSON / PNG)</span>
             <input
               type="file"
-              accept=".json"
+              accept=".json, .png, image/png, application/json"
               onChange={handleFileUpload}
               className="hidden"
             />

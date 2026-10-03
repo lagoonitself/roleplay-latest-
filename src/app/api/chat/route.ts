@@ -4,7 +4,7 @@ import { streamChatCompletions } from '@/lib/llm/client';
 import { assemblePrompt } from '@/lib/prompt/assembler';
 import { retrieveContextForChat, type RetrievedContext } from '@/lib/memory/retriever';
 import { extractMemoriesAndState } from '@/lib/memory/extractor';
-import { DEFAULT_CHARACTERS } from '@/lib/data/default-characters';
+import { makeCharacter } from '@/lib/cards/card-parser';
 import type { Character, Persona, Message } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
       temperature,
       thinking,
       authorsNote,
+      character: clientCharacter,
     } = body;
 
     if (!chatId || !characterId || !userMessage) {
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData.user?.id;
 
-    // 1. Fetch Character (from database or default fallback)
+    // 1. Fetch Character (from database, client payload, or dynamic fallback)
     let character: Character;
     const { data: dbChar } = await supabase
       .from('characters')
@@ -45,22 +46,26 @@ export async function POST(req: NextRequest) {
 
     if (dbChar) {
       character = dbChar as Character;
+    } else if (clientCharacter) {
+      character = makeCharacter(clientCharacter);
     } else {
-      // Find from default characters
-      const defaultChar =
-        DEFAULT_CHARACTERS.find(
-          (c) =>
-            c.name === characterId ||
-            characterId.includes(c.name.toLowerCase().replace(/\s+/g, '-'))
-        ) || DEFAULT_CHARACTERS[0];
+      const cleanName = decodeURIComponent(characterId)
+        .replace(/^local-char-\d+-?/, '')
+        .replace(/-/g, ' ');
 
-      character = {
+      character = makeCharacter({
         id: characterId,
         user_id: userId || 'guest',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        ...defaultChar,
-      };
+        name: cleanName || 'Roleplay Partner',
+        tagline: 'Custom Character',
+        description: 'An interactive roleplay character.',
+        personality: 'Immersive, responsive, staying firmly in character.',
+        scenario: 'An ongoing interactive narrative.',
+        first_message: '...',
+        speech_style: 'Descriptive, evocative prose.',
+        tags: ['Custom'],
+        content_rating: 'mature',
+      });
     }
 
     // 2. Fetch Persona
