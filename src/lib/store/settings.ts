@@ -1,0 +1,71 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+
+export interface UserAppSettings {
+  opencodeApiKey: string;
+  opencodeEndpoint: string;
+  opencodeModel: string;
+  uncensoredMode: boolean;
+  activePersonaId: string | null;
+  defaultTemperature: number;
+  thinkingEnabled: boolean;
+}
+
+export const DEFAULT_SETTINGS: UserAppSettings = {
+  opencodeApiKey: '',
+  opencodeEndpoint: 'https://opencode.ai/zen/go/v1/chat/completions',
+  opencodeModel: 'deepseek-v4.1-flash',
+  uncensoredMode: true, // Default to true since user explicitly requested it!
+  activePersonaId: null,
+  defaultTemperature: 1.15,
+  thinkingEnabled: false,
+};
+
+const STORAGE_KEY = 'cadenza_user_settings';
+
+export function getSavedSettings(): UserAppSettings {
+  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+export function saveSettings(settings: Partial<UserAppSettings>): UserAppSettings {
+  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+  const current = getSavedSettings();
+  const updated = { ...current, ...settings };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('cadenza-settings-changed'));
+  } catch (err) {
+    console.error('Failed to save settings:', err);
+  }
+  return updated;
+}
+
+export function useSettings(): [UserAppSettings, (newSettings: Partial<UserAppSettings>) => void] {
+  const [settings, setSettings] = useState<UserAppSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    setSettings(getSavedSettings());
+
+    const handler = () => {
+      setSettings(getSavedSettings());
+    };
+
+    window.addEventListener('cadenza-settings-changed', handler);
+    return () => window.removeEventListener('cadenza-settings-changed', handler);
+  }, []);
+
+  const update = (newSettings: Partial<UserAppSettings>) => {
+    const saved = saveSettings(newSettings);
+    setSettings(saved);
+  };
+
+  return [settings, update];
+}

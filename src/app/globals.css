@@ -1,26 +1,138 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #fbfbfd;
+    --foreground: #1d1d1f;
+    --card: rgba(255, 255, 255, 0.75);
+    --card-foreground: #1d1d1f;
+    --card-border: rgba(0, 0, 0, 0.08);
+    --muted: #86868b;
+    --muted-bg: rgba(0, 0, 0, 0.04);
+    --accent: #0071e3;
+    --accent-hover: #0077ed;
+    --accent-foreground: #ffffff;
+    --glass-bg: rgba(255, 255, 255, 0.8);
+    --glass-border: rgba(0, 0, 0, 0.06);
+    --chat-user-bg: #0071e3;
+    --chat-user-text: #ffffff;
+    --chat-char-bg: rgba(255, 255, 255, 0.9);
+    --chat-char-text: #1d1d1f;
+    --chat-char-border: rgba(0, 0, 0, 0.06);
+  }
+
+  .dark {
+    --background: #000000;
+    --foreground: #f5f5f7;
+    --card: rgba(22, 22, 24, 0.75);
+    --card-foreground: #f5f5f7;
+    --card-border: rgba(255, 255, 255, 0.08);
+    --muted: #86868b;
+    --muted-bg: rgba(255, 255, 255, 0.06);
+    --accent: #2997ff;
+    --accent-hover: #40a9ff;
+    --accent-foreground: #ffffff;
+    --glass-bg: rgba(18, 18, 20, 0.8);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --chat-user-bg: #0071e3;
+    --chat-user-text: #ffffff;
+    --chat-char-bg: rgba(28, 28, 30, 0.9);
+    --chat-char-text: #f5f5f7;
+    --chat-char-border: rgba(255, 255, 255, 0.08);
   }
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Apple-style smooth glass card */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-card {
+  background: var(--card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.12);
+}
+
+.dark .glass-card:hover {
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.45);
+}
+
+/* Button interactive spring press */
+.apple-button {
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), opacity 160ms ease, background-color 160ms ease;
+}
+
+.apple-button:active {
+  transform: scale(0.97);
+}
+
+/* Roleplay message typography: italicized actions, highlighted dialogue */
+.roleplay-prose em {
+  font-style: italic;
+  opacity: 0.88;
+}
+
+.roleplay-prose p {
+  margin-bottom: 0.75rem;
+  line-height: 1.625;
+}
+
+.roleplay-prose p:last-child {
+  margin-bottom: 0;
+}
+
+/* Custom minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(134, 134, 139, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(134, 134, 139, 0.45);
+}
+
+/* Pulsing streaming cursor */
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  background-color: var(--accent);
+  margin-left: 4px;
+  vertical-align: middle;
+  border-radius: 2px;
+  animation: blink-cursor 0.8s infinite;
 }

@@ -1,0 +1,274 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import { streamChatCompletions } from '@/lib/llm/client';
+import { assemblePrompt } from '@/lib/prompt/assembler';
+import { retrieveContextForChat, type RetrievedContext } from '@/lib/memory/retriever';
+import { extractMemoriesAndState } from '@/lib/memory/extractor';
+import { DEFAULT_CHARACTERS } from '@/lib/data/default-characters';
+import type { Character, Persona, Message } from '@/lib/supabase/types';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const {
+      chatId,
+      characterId,
+      personaId,
+      userMessage,
+      parentMessageId,
+      apiKey: clientApiKey,
+      temperature,
+      thinking,
+      authorsNote,
+    } = body;
+
+    if (!chatId || !characterId || !userMessage) {
+      return NextResponse.json(
+        { error: 'Missing required parameters: chatId, characterId, userMessage' },
+        { status: 400 }
+      );
+    }
+
+    const supabase = await createClient();
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData.user?.id;
+
+    // 1. Fetch Character (from database or default fallback)
+    let character: Character;
+    const { data: dbChar } = await supabase
+      .from('characters')
+      .select('*')
+      .eq('id', characterId)
+      .maybeSingle();
+
+    if (dbChar) {
+      character = dbChar as Character;
+    } else {
+      // Find from default characters
+      const defaultChar =
+        DEFAULT_CHARACTERS.find(
+          (c) =>
+            c.name === characterId ||
+            characterId.includes(c.name.toLowerCase().replace(/\s+/g, '-'))
+        ) || DEFAULT_CHARACTERS[0];
+
+      character = {
+        id: characterId,
+        user_id: userId || 'guest',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ...defaultChar,
+      };
+    }
+
+    // 2. Fetch Persona
+    let persona: Persona | null = null;
+    if (personaId && userId) {
+      const { data: dbPersona } = await supabase
+        .from('personas')
+        .select('*')
+        .eq('id', personaId)
+        .maybeSingle();
+      persona = (dbPersona as Persona) || null;
+    }
+
+    // 3. Save User Message to Database (if authenticated)
+    let savedUserMsgId: string | null = null;
+    if (userId) {
+      const { data: userMsgRow } = await supabase
+        .from('messages')
+        .insert({
+          chat_id: chatId,
+          user_id: userId,
+          parent_id: parentMessageId || null,
+          role: 'user',
+          content: userMessage,
+          status: 'done',
+        })
+        .select('id')
+        .single();
+
+      savedUserMsgId = userMsgRow?.id || null;
+    }
+
+    // 4. Retrieve Context (memories, summary, state, lore)
+    let retrieved: RetrievedContext = {
+      pinnedMemories: [],
+      relevantMemories: [],
+      summary: null,
+      chatState: null,
+      triggeredLore: [],
+    };
+
+    if (userId) {
+      try {
+        retrieved = await retrieveContextForChat(chatId, character.id, userMessage);
+      } catch (e) {
+        console.warn('Memory retrieval skipped:', e);
+      }
+    }
+
+    // 5. Fetch Recent History
+    let history: Message[] = [];
+    if (userId) {
+      const { data: historyData } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: true })
+        .limit(40);
+
+      history = (historyData as Message[]) || [];
+    }
+
+    // 6. Assemble Cache-Optimized Prompt
+    const assembledMessages = assemblePrompt({
+      character,
+      persona,
+      history,
+      retrievedMemories: retrieved.relevantMemories,
+      pinnedMemories: retrieved.pinnedMemories,
+      summary: retrieved.summary,
+      chatState: retrieved.chatState,
+      triggeredLore: retrieved.triggeredLore,
+      authorsNote: authorsNote || '',
+      latestUserMessage: userMessage,
+    });
+
+    // 7. Call OpenCode Go DeepSeek V4.1 Flash
+    const effectiveTemp = temperature ?? character.behavior?.temperature ?? 1.15;
+    const effectiveThinking = thinking ?? character.behavior?.thinking_enabled ?? false;
+
+    const llmStreamResponse = await streamChatCompletions(assembledMessages, {
+      apiKey: clientApiKey,
+      sessionId: chatId, // routes to cached prefix on OpenCode Go
+      temperature: effectiveTemp,
+      thinking: effectiveThinking,
+    });
+
+    if (!llmStreamResponse.body) {
+      throw new Error('No response body from OpenCode Go stream');
+    }
+
+    // 8. Transform OpenAI SSE to Client SSE stream and collect full message for DB saving
+    const reader = llmStreamResponse.body.getReader();
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+
+    let fullAssistantContent = '';
+    let fullReasoningContent = '';
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        let buffer = '';
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith(':')) continue;
+
+              if (trimmed === 'data: [DONE]') {
+                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                continue;
+              }
+
+              if (trimmed.startsWith('data: ')) {
+                const jsonStr = trimmed.slice(6);
+                try {
+                  const data = JSON.parse(jsonStr);
+                  const delta = data.choices?.[0]?.delta;
+                  const token = delta?.content || '';
+                  const reasoning = delta?.reasoning_content || '';
+
+                  if (token) {
+                    fullAssistantContent += token;
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ text: token })}\n\n`)
+                    );
+                  }
+
+                  if (reasoning) {
+                    fullReasoningContent += reasoning;
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ reasoning })}\n\n`)
+                    );
+                  }
+                } catch {
+                  // ignore non-json lines
+                }
+              }
+            }
+          }
+
+          controller.close();
+
+          // 9. Persist Assistant Message & Trigger Background Memory Extraction
+          if (userId && fullAssistantContent) {
+            const { data: assistantMsgRow } = await supabase
+              .from('messages')
+              .insert({
+                chat_id: chatId,
+                user_id: userId,
+                parent_id: savedUserMsgId,
+                role: 'assistant',
+                content: fullAssistantContent,
+                reasoning: fullReasoningContent || null,
+                status: 'done',
+                meta: {
+                  model: 'deepseek-v4.1-flash',
+                },
+              })
+              .select('id')
+              .single();
+
+            if (assistantMsgRow?.id) {
+              await supabase
+                .from('chats')
+                .update({ leaf_id: assistantMsgRow.id, last_message_at: new Date().toISOString() })
+                .eq('id', chatId);
+
+              // Background non-blocking extraction of facts & state update
+              extractMemoriesAndState({
+                chatId,
+                userId,
+                charName: character.name,
+                userName: persona?.name || 'User',
+                userMessage,
+                assistantMessage: fullAssistantContent,
+                existingMemories: retrieved.relevantMemories,
+                currentState: retrieved.chatState?.state || {},
+                apiKey: clientApiKey,
+              }).catch((err) => console.error('Background memory extractor error:', err));
+            }
+          }
+        } catch (err: any) {
+          controller.error(err);
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+      },
+    });
+  } catch (error: any) {
+    console.error('API /api/chat error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
