@@ -1,15 +1,19 @@
 {
   "name": "Cadenza — AI Roleplay Studio",
   "short_name": "Cadenza",
-  "description": "Uncensored, hyper-immersive roleplay platform powered by DeepSeek V4.1 Flash with layered memory.",
+  "description": "Uncensored fiction & private AI roleplay studio powered by DeepSeek.",
   "start_url": "/",
+  "id": "/",
   "display": "standalone",
-  "background_color": "#09090b",
-  "theme_color": "#09090b",
+  "display_override": ["standalone", "window-controls-overlay"],
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": ["entertainment", "roleplay", "books"],
   "icons": [
     {
       "src": "/icon.svg",
-      "sizes": "any",
+      "sizes": "192x192 512x512 any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }

@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useTransition } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Sparkles,
   Compass,
   MessageSquare,
   Flame,
@@ -14,37 +13,71 @@ import {
   ArrowRight,
   Upload,
   UserPlus,
-  Shield,
-  Zap,
-  HelpCircle,
+  Sparkles,
+  Layers,
+  Trash2,
+  ExternalLink,
+  Smartphone,
+  Settings,
+  X,
+  User,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
 import { parseCharacterCardJson, parseCharacterFromPng, makeCharacter } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
+import { CharacterChatsDrawer } from '@/components/character-chats-drawer';
+import { MyChatsView } from '@/components/my-chats-view';
+import { MobileDock, type AppTab } from '@/components/mobile-dock';
+import { CreateDrawer } from '@/components/create-drawer';
+import { IOSInstallPrompt } from '@/components/ios-install-prompt';
+import { SettingsDialog } from '@/components/settings-dialog';
+import {
+  getUnifiedChats,
+  groupChatsByCharacter,
+  deleteChat,
+  saveLocalChat,
+  formatChatTimestamp,
+  CHATS_CHANGED_EVENT,
+  type CharacterChatGroup,
+} from '@/lib/chats/chat-manager';
 import { toast } from 'sonner';
 import type { Character, Chat, Persona } from '@/lib/supabase/types';
 
-export default function HomePage() {
+function HomePageContent() {
   const router = useRouter();
-  const [settings, updateSettings] = useSettings();
+  const searchParams = useSearchParams();
+  const [settings] = useSettings();
   const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // App Tabs: 'explore' | 'chats' | 'create' | 'profile'
+  const initialTab = (searchParams.get('tab') as AppTab) || 'explore';
+  const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
+
+  // Search & Filters in Explore
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState<string>('All');
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [recentChats, setRecentChats] = useState<Chat[]>([]);
+  const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Drawers and Modals
   const [showImportGuide, setShowImportGuide] = useState(false);
+  const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [iosPromptOpen, setIosPromptOpen] = useState(false);
+
+  // Character selection for chat and drawer
   const [selectedCharForChat, setSelectedCharForChat] = useState<Character | null>(null);
+  const [drawerCharacter, setDrawerCharacter] = useState<Character | null>(null);
 
-  const tags = ['All', 'Fantasy', 'Romance', 'Sci-Fi', 'Cyberpunk', 'Mystery', 'Mature', 'Companion'];
+  const tags = ['All', 'Romance', 'Fantasy', 'Sci-Fi', 'Cyberpunk', 'Mystery', 'Mature', 'Companion'];
 
+  // Load all characters and unified chats
   const loadData = async () => {
-    setLoading(true);
     try {
       // 1. Fetch custom characters from Supabase
       const { data: dbChars } = await supabase
@@ -58,28 +91,17 @@ export default function HomePage() {
         localChars = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
       } catch {}
 
-      // 3. Combine without duplicates
+      // 3. Combine characters without duplicates
       const dbList = (dbChars as Character[]) || [];
       const dbIds = new Set(dbList.map((c) => c.id));
-      const combined = [...dbList, ...localChars.filter((c) => !dbIds.has(c.id))];
-      setCharacters(combined);
+      const combinedChars = [...dbList, ...localChars.filter((c) => !dbIds.has(c.id))];
+      setCharacters(combinedChars);
 
-      // 4. Fetch user's recent chats if authenticated
-      const { data: authData } = await supabase.auth.getUser();
-      if (authData.user) {
-        const { data: chatsData } = await supabase
-          .from('chats')
-          .select('*, character:characters(*)')
-          .eq('archived', false)
-          .order('last_message_at', { ascending: false })
-          .limit(6);
-
-        if (chatsData) {
-          setRecentChats(chatsData as Chat[]);
-        }
-      }
+      // 4. Load Unified Chats (Supabase + LocalStorage)
+      const unifiedChats = await getUnifiedChats(combinedChars);
+      setChats(unifiedChats);
     } catch (err) {
-      console.error('Failed to load characters:', err);
+      console.error('Failed to load data:', err);
     } finally {
       setLoading(false);
     }
@@ -87,7 +109,53 @@ export default function HomePage() {
 
   useEffect(() => {
     loadData();
+
+    // Listen to cross-tab/cross-component chat updates
+    const handleChatsChanged = () => {
+      loadData();
+    };
+
+    window.addEventListener(CHATS_CHANGED_EVENT, handleChatsChanged);
+    return () => window.removeEventListener(CHATS_CHANGED_EVENT, handleChatsChanged);
   }, [supabase]);
+
+  // Sync tab with URL query parameter if present
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as AppTab;
+    if (tabParam && ['explore', 'chats', 'create', 'profile'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
+
+  // Grouped chats for JanitorAI-style "My Chats"
+  const chatGroups: CharacterChatGroup[] = React.useMemo(() => {
+    return groupChatsByCharacter(chats, characters);
+  }, [chats, characters]);
+
+  // Filtered chats for the currently opened drawer character
+  const chatsForDrawer = React.useMemo(() => {
+    if (!drawerCharacter) return [];
+    return chats.filter(
+      (c) =>
+        c.character_id === drawerCharacter.id ||
+        c.character?.id === drawerCharacter.id ||
+        c.character?.name === drawerCharacter.name
+    );
+  }, [chats, drawerCharacter]);
+
+  // Handle Tab Switch from Mobile Dock or Top Bar
+  const handleTabChange = (tab: AppTab) => {
+    if (tab === 'create') {
+      setCreateDrawerOpen(true);
+      return;
+    }
+    if (tab === 'profile') {
+      setSettingsDialogOpen(true);
+      return;
+    }
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Direct Card Import Handler
   const handleDirectImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,7 +240,7 @@ export default function HomePage() {
     }
   };
 
-  // Filtered characters
+  // Filtered characters for Explore view
   const filteredCharacters = characters.filter((c) => {
     const matchesSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -216,326 +284,391 @@ export default function HomePage() {
       }
     }
 
-    // Guest / local fallback session
+    // Guest / local session
     const localChatId = 'local-' + Date.now();
+    saveLocalChat({
+      id: localChatId,
+      user_id: 'guest',
+      character_id: character.id,
+      persona_id: persona.id,
+      title: `Chat with ${character.name}`,
+      leaf_id: null,
+      memory_cursor_id: null,
+      authors_note: '',
+      settings: {},
+      pinned: false,
+      archived: false,
+      message_count: 1,
+      last_message_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      character: character,
+    });
+
     router.push(`/chat/${localChatId}?charId=${encodeURIComponent(character.id || character.name)}`);
   };
 
+  const handleDeleteRecentChat = async (e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    await deleteChat(chatId);
+    toast.success('Chat removed from history');
+    await loadData();
+  };
+
   return (
-    <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 md:py-10 space-y-10">
-      {/* Top Banner / Hero */}
-      <section className="relative overflow-hidden rounded-3xl p-8 sm:p-12 glass-card border border-black/[0.06] dark:border-white/[0.08] shadow-sm">
-        <div className="relative z-10 max-w-2xl space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 border border-accent/20 text-accent text-xs font-semibold uppercase tracking-wider">
-            <Sparkles className="w-3.5 h-3.5" />
-            DeepSeek V4.1 Flash • 1M Context Engine
+    <div className="flex-1 flex flex-col w-full pb-20">
+      {/* ─────────────────── TAB 2: MY CHATS VIEW (Matching JanitorAI Images 3, 4, 5) ─────────────────── */}
+      {activeTab === 'chats' ? (
+        <MyChatsView
+          groups={chatGroups}
+          onSelectCharacter={(char) => setDrawerCharacter(char)}
+          onExploreClick={() => setActiveTab('explore')}
+          onOpenSettings={() => setSettingsDialogOpen(true)}
+        />
+      ) : (
+        /* ─────────────────── TAB 1: EXPLORE / CHARACTERS VIEW (Clean, No Cluttered Hero) ─────────────────── */
+        <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto px-4 sm:px-6 py-4 md:py-6 space-y-6">
+          {/* Top Control Bar: Search & Filter Pills */}
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              {/* Search Bar */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search characters or keywords..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-zinc-800/40 dark:bg-zinc-800/60 border border-white/[0.08] text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40 transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Action Buttons: Create & PWA Install Helper */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setCreateDrawerOpen(true)}
+                  className="px-4 py-2.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs sm:text-sm apple-button flex items-center gap-1.5 shadow-md shadow-purple-600/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create / Import</span>
+                </button>
+
+                <button
+                  onClick={() => setIosPromptOpen(true)}
+                  className="p-2.5 rounded-full bg-zinc-800/60 hover:bg-zinc-700/60 border border-white/[0.08] text-zinc-300 hover:text-white transition-colors apple-button"
+                  title="Install Cadenza on iPhone"
+                  aria-label="Install App"
+                >
+                  <Smartphone className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-none">
+              {tags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setSelectedTag(tag)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap apple-button ${
+                    selectedTag === tag
+                      ? 'bg-purple-600 text-white font-semibold shadow-sm'
+                      : 'bg-zinc-800/50 hover:bg-zinc-800 border border-white/[0.06] text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-foreground leading-[1.12]">
-            Your Private Roleplay Studio.
-            <br />
-            <span className="text-muted-foreground font-normal">Uncensored Fiction & Deep Memory.</span>
-          </h1>
+          {/* Jump Back In (Compact Recent Chats Strip with Delete Option) */}
+          {chats.length > 0 && !searchQuery && selectedTag === 'All' && (
+            <section className="space-y-2.5 pt-1">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xs font-bold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-purple-400" />
+                  Continue Recent Chats
+                </h2>
+                <button
+                  onClick={() => setActiveTab('chats')}
+                  className="text-xs font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 apple-button"
+                >
+                  View All ({chats.length})
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
 
-          <p className="text-sm sm:text-base text-muted-foreground max-w-xl leading-relaxed">
-            Create completely custom characters from scratch, auto-generate them with DeepSeek, or drop in cards from Janitor AI and Chub AI.
-          </p>
+              {/* Horizontal Scroll / Compact Grid of Recent Chats */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {chats.slice(0, 3).map((chat) => {
+                  const charName = chat.character?.name || chat.title.replace(/^Chat with\s+/i, '');
+                  const avatarUrl = chat.character?.avatar_url;
+                  const timeFormatted = formatChatTimestamp(chat.last_message_at || chat.created_at);
 
-          <div className="pt-2 flex flex-wrap items-center gap-3">
-            <Link
-              href="/c/new"
-              className="px-5 py-2.5 rounded-full bg-accent text-white hover:bg-accent-hover font-semibold text-xs sm:text-sm apple-button flex items-center gap-2 shadow-md shadow-accent/20"
-            >
-              <UserPlus className="w-4 h-4" />
-              Create Character
-            </Link>
+                  return (
+                    <div
+                      key={chat.id}
+                      onClick={() => router.push(`/chat/${chat.id}`)}
+                      className="group relative flex items-center justify-between p-3 rounded-2xl bg-zinc-800/40 hover:bg-zinc-800/70 border border-white/[0.06] hover:border-purple-500/30 transition-all cursor-pointer shadow-xs"
+                    >
+                      <div className="flex items-center space-x-3 truncate">
+                        <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-800 shrink-0 border border-white/10 relative">
+                          <CharacterAvatar
+                            name={charName}
+                            avatarUrl={avatarUrl}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="truncate">
+                          <div className="text-xs sm:text-sm font-semibold text-foreground group-hover:text-purple-300 transition-colors truncate">
+                            {charName}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {chat.title}
+                          </div>
+                          <div className="text-[10px] text-zinc-500 font-medium mt-0.5">
+                            {timeFormatted}
+                          </div>
+                        </div>
+                      </div>
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2.5 rounded-full bg-black/[0.05] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] text-foreground font-medium text-xs sm:text-sm apple-button flex items-center gap-2"
-            >
-              <Upload className="w-4 h-4" />
-              Import Card (JSON / PNG)
-            </button>
+                      {/* Delete button on recent chat pill */}
+                      <button
+                        onClick={(e) => handleDeleteRecentChat(e, chat.id)}
+                        className="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-500/20 text-zinc-400 hover:text-red-400 transition-all apple-button shrink-0"
+                        title="Delete chat from recent history"
+                        aria-label="Delete chat"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
-            <button
-              onClick={() => setShowImportGuide(!showImportGuide)}
-              className="px-3.5 py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.06] text-muted-foreground hover:text-foreground text-xs apple-button flex items-center gap-1.5"
-            >
-              <HelpCircle className="w-4 h-4" />
-              <span>Import Guide</span>
-            </button>
+          {/* Character Roster Gallery */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                Featured Characters
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                {filteredCharacters.length} {filteredCharacters.length === 1 ? 'character' : 'characters'}
+              </span>
+            </div>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json, .png, image/png, application/json"
-              onChange={handleDirectImport}
-              className="hidden"
-            />
-          </div>
+            {filteredCharacters.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-5">
+                {filteredCharacters.map((character) => (
+                  <div
+                    key={character.id}
+                    onClick={() => handleStartChat(character)}
+                    className="flex flex-col rounded-3xl overflow-hidden bg-zinc-900/40 hover:bg-zinc-800/40 border border-white/[0.06] hover:border-purple-500/30 group cursor-pointer transition-all shadow-sm"
+                  >
+                    {/* Image & Header */}
+                    <div className="relative h-52 w-full overflow-hidden bg-zinc-900">
+                      <CharacterAvatar
+                        name={character.name}
+                        avatarUrl={character.avatar_url}
+                        accentColor={character.accent_color}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none" />
+
+                      {/* Rating badge */}
+                      {character.content_rating !== 'sfw' && (
+                        <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-red-600/80 backdrop-blur-md text-[10px] font-bold text-white uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                          <Flame className="w-3 h-3" />
+                          18+
+                        </div>
+                      )}
+
+                      {/* Name & Tagline */}
+                      <div className="absolute bottom-3 left-4 right-4 text-white">
+                        <h3 className="font-bold text-base sm:text-lg tracking-tight group-hover:text-purple-300 transition-colors">
+                          {character.name}
+                        </h3>
+                        <p className="text-xs text-zinc-300 line-clamp-1 mt-0.5">
+                          {character.tagline}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Card Body */}
+                    <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                        {character.description}
+                      </p>
+
+                      {/* Tags */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {character.tags?.slice(0, 3).map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2 py-0.5 rounded-md bg-white/[0.05] text-[10px] text-zinc-400"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Bottom Actions */}
+                      <div className="pt-2 border-t border-white/[0.04] flex items-center justify-between text-xs">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/c/${character.id}`);
+                          }}
+                          className="px-2.5 py-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
+                        >
+                          Details
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartChat(character);
+                          }}
+                          className="px-4 py-1.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold apple-button flex items-center gap-1 shadow-sm"
+                        >
+                          Chat
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Empty Search State */
+              !loading && (
+                <div className="py-14 text-center space-y-3 bg-zinc-900/20 rounded-3xl border border-white/[0.04]">
+                  <Compass className="w-8 h-8 text-muted-foreground mx-auto opacity-40" />
+                  <h3 className="text-sm font-semibold">No characters found matching &ldquo;{searchQuery}&rdquo;</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Try adjusting your search query or switching categories.
+                  </p>
+                </div>
+              )
+            )}
+          </section>
         </div>
+      )}
 
-        {/* Ambient subtle glow background */}
-        <div className="absolute -right-20 -bottom-20 w-96 h-96 rounded-full bg-gradient-to-tr from-accent/20 to-purple-500/10 blur-3xl pointer-events-none" />
-      </section>
+      {/* ─────────────────── FLOATING MOBILE PWA DOCK (Matching JanitorAI Image 3) ─────────────────── */}
+      <MobileDock
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        totalChatsCount={chats.length}
+      />
 
-      {/* Janitor AI / Chub AI Import Guide (Expandable) */}
+      {/* ─────────────────── JANITOR-AI CHAT SESSIONS DRAWER (Images 4 & 5) ─────────────────── */}
+      <CharacterChatsDrawer
+        open={Boolean(drawerCharacter)}
+        onClose={() => setDrawerCharacter(null)}
+        character={drawerCharacter}
+        chats={chatsForDrawer}
+        onStartNewChat={(char) => {
+          setDrawerCharacter(null);
+          handleStartChat(char);
+        }}
+        onChatDeleted={loadData}
+      />
+
+      {/* ─────────────────── CREATE / IMPORT DRAWER ─────────────────── */}
+      <CreateDrawer
+        open={createDrawerOpen}
+        onClose={() => setCreateDrawerOpen(false)}
+        onImportFile={handleDirectImport}
+        onOpenImportGuide={() => setShowImportGuide(true)}
+      />
+
+      {/* ─────────────────── IMPORT GUIDE MODAL ─────────────────── */}
       {showImportGuide && (
-        <section className="p-6 rounded-3xl glass-panel border border-accent/20 bg-accent/5 space-y-4 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
-              <BookOpen className="w-4 h-4 text-accent" />
-              How to Import from Janitor AI, Chub AI & Tavern
-            </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg bg-[#18181b] border border-white/10 rounded-3xl p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                <BookOpen className="w-4 h-4 text-purple-400" />
+                Importing from Janitor AI & Chub
+              </h3>
+              <button
+                onClick={() => setShowImportGuide(false)}
+                className="p-1 rounded-full text-zinc-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs text-muted-foreground">
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] space-y-1">
+                <span className="font-semibold text-foreground block">1. Export Card</span>
+                <p>On Janitor AI or Chub.ai, open any character and click <em>Export / Download Card (PNG or JSON)</em>.</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] space-y-1">
+                <span className="font-semibold text-foreground block">2. Tap Import Card</span>
+                <p>Select your downloaded image or JSON file. Cadenza automatically extracts personality, scenario, greeting, and embedded avatar.</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] space-y-1">
+                <span className="font-semibold text-foreground block">3. Immediate Play</span>
+                <p>The character is ready to chat immediately with deep memory and uncensored responses.</p>
+              </div>
+            </div>
             <button
               onClick={() => setShowImportGuide(false)}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold apple-button"
             >
-              Close
+              Got it
             </button>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-muted-foreground">
-            <div className="p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] space-y-2">
-              <span className="font-semibold text-foreground block">1. Download Card</span>
-              <p>
-                On <strong>Janitor AI</strong>, <strong>Chub.ai</strong>, or <strong>CharacterHub</strong>, find any character and click <em>Export / Download Card</em>. You can download either a <code>.png</code> character image or <code>.json</code> file.
-              </p>
-            </div>
-            <div className="p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] space-y-2">
-              <span className="font-semibold text-foreground block">2. Click Import Card</span>
-              <p>
-                Click <strong>Import Card (JSON / PNG)</strong> above and select the downloaded file. Cadenza automatically extracts the name, backstory, personality, greeting, and embedded avatar.
-              </p>
-            </div>
-            <div className="p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] space-y-2">
-              <span className="font-semibold text-foreground block">3. Chat Immediately</span>
-              <p>
-                Your imported character is added to your roster instantly. Click <strong>Chat</strong> to begin roleplaying powered by DeepSeek V4.1 Flash with layered memory.
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Recent Chats Shelf */}
-      {recentChats.length > 0 && (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-accent" />
-              Continue Recent Chats
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {recentChats.map((chat) => (
-              <Link
-                key={chat.id}
-                href={`/chat/${chat.id}`}
-                className="group flex items-center justify-between p-4 rounded-2xl glass-card hover:border-accent/40 transition-all shadow-sm"
-              >
-                <div className="flex items-center space-x-3 truncate">
-                  <div className="w-10 h-10 rounded-full overflow-hidden bg-black/10 shrink-0">
-                    <CharacterAvatar
-                      name={(chat as any).character?.name || chat.title}
-                      avatarUrl={(chat as any).character?.avatar_url}
-                      className="w-full h-full"
-                    />
-                  </div>
-                  <div className="truncate">
-                    <div className="text-sm font-medium group-hover:text-accent transition-colors truncate">
-                      {(chat as any).character?.name || chat.title}
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {chat.title}
-                    </div>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-accent group-hover:translate-x-1 transition-all" />
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Roster / Gallery Section */}
-      <section id="gallery" className="space-y-6">
-        {/* Search & Tags */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-          {/* Search bar */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search your characters by name or keywords..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
-            />
-          </div>
-
-          {/* Tags Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            {tags.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => setSelectedTag(tag)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap ${
-                  selectedTag === tag
-                    ? 'bg-foreground text-background font-semibold shadow-sm'
-                    : 'bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
         </div>
+      )}
 
-        {/* Character Cards Grid */}
-        {filteredCharacters.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-6">
-            {filteredCharacters.map((character) => (
-              <div
-                key={character.id}
-                className="flex flex-col rounded-3xl overflow-hidden glass-card group cursor-pointer"
-                onClick={() => handleStartChat(character)}
-              >
-                {/* Image & Header */}
-                <div className="relative h-48 w-full overflow-hidden bg-black/10">
-                  <CharacterAvatar
-                    name={character.name}
-                    avatarUrl={character.avatar_url}
-                    accentColor={character.accent_color}
-                    className="w-full h-full group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
-
-                  {/* Rating badge */}
-                  {character.content_rating !== 'sfw' && (
-                    <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-red-500/80 backdrop-blur-md text-[10px] font-bold text-white uppercase tracking-wider flex items-center gap-1">
-                      <Flame className="w-3 h-3" />
-                      18+
-                    </div>
-                  )}
-
-                  {/* Name & Tagline */}
-                  <div className="absolute bottom-3 left-4 right-4 text-white">
-                    <h3 className="font-semibold text-base sm:text-lg tracking-tight group-hover:text-accent transition-colors">
-                      {character.name}
-                    </h3>
-                    <p className="text-xs text-white/80 line-clamp-1">
-                      {character.tagline}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Card Body */}
-                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                  <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                    {character.description}
-                  </p>
-
-                  {/* Tags */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {character.tags?.slice(0, 3).map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-2 py-0.5 rounded-md bg-black/[0.04] dark:bg-white/[0.06] text-[10px] text-muted-foreground"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Bottom Actions */}
-                  <div className="pt-2 border-t border-black/[0.04] dark:border-white/[0.06] flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground text-[11px]">
-                      {character.first_message ? 'Ready to chat' : 'Custom'}
-                    </span>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/c/${character.id}`);
-                        }}
-                        className="px-2.5 py-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
-                      >
-                        Details
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStartChat(character);
-                        }}
-                        className="px-3.5 py-1 rounded-full bg-accent text-white hover:bg-accent-hover text-xs font-semibold apple-button flex items-center gap-1 shadow-sm"
-                      >
-                        Chat
-                        <ArrowRight className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Apple-grade Empty State */}
-        {characters.length === 0 && !loading && (
-          <div className="py-14 px-6 rounded-3xl glass-card border border-dashed border-black/10 dark:border-white/15 text-center max-w-2xl mx-auto space-y-5 animate-in fade-in duration-300">
-            <div className="w-14 h-14 rounded-2xl bg-accent/15 flex items-center justify-center text-accent mx-auto">
-              <UserPlus className="w-7 h-7" />
-            </div>
-
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-semibold tracking-tight">Your Character Roster is Empty</h3>
-              <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-                Create a bespoke roleplay character, generate one with DeepSeek V4.1 Flash, or import any Character Card (JSON or PNG) from Janitor AI or Chub.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-              <Link
-                href="/c/new"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-white text-xs sm:text-sm font-semibold apple-button shadow-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Create First Character
-              </Link>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-black/[0.05] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] text-xs sm:text-sm font-medium apple-button"
-              >
-                <Upload className="w-4 h-4" />
-                Import Janitor / Chub Card
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Filtered empty state (when search produces 0 matches) */}
-        {characters.length > 0 && filteredCharacters.length === 0 && !loading && (
-          <div className="py-12 text-center space-y-3">
-            <Compass className="w-8 h-8 text-muted-foreground mx-auto opacity-50" />
-            <h3 className="text-sm font-semibold">No characters matching &ldquo;{searchQuery}&rdquo;</h3>
-            <p className="text-xs text-muted-foreground">
-              Try adjusting your search terms or filter tags.
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* Persona Selection & AI Generator Modal */}
+      {/* ─────────────────── PERSONA MODAL ─────────────────── */}
       <PersonaModal
         open={personaModalOpen}
         onClose={() => setPersonaModalOpen(false)}
         character={selectedCharForChat}
         onSelectPersona={handleStartChatWithPersona}
       />
+
+      {/* ─────────────────── SETTINGS DIALOG ─────────────────── */}
+      <SettingsDialog
+        open={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
+      />
+
+      {/* ─────────────────── IPHONE PWA INSTALL PROMPT ─────────────────── */}
+      <IOSInstallPrompt
+        forceOpen={iosPromptOpen}
+        onClose={() => setIosPromptOpen(false)}
+      />
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="flex-1 flex items-center justify-center p-12">
+          <div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+        </div>
+      }
+    >
+      <HomePageContent />
+    </React.Suspense>
   );
 }

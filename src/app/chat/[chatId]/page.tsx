@@ -26,6 +26,8 @@ import {
   Check,
   User,
   Settings,
+  MoreVertical,
+  ExternalLink,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
@@ -33,6 +35,7 @@ import { makeCharacter } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
 import { formatRoleplayText } from '@/lib/prompt/macros';
+import { saveLocalChat, deleteChat } from '@/lib/chats/chat-manager';
 import { toast } from 'sonner';
 import type { Character, Persona, Message, Memory, ChatState } from '@/lib/supabase/types';
 
@@ -67,6 +70,15 @@ export default function ChatPage() {
   // Author's note
   const [authorsNote, setAuthorsNote] = useState('');
   const [showAuthorsNote, setShowAuthorsNote] = useState(false);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+
+  const handleDeleteCurrentChat = async () => {
+    if (confirm('Delete this entire chat session? This cannot be undone.')) {
+      await deleteChat(chatId);
+      toast.success('Chat deleted');
+      router.push('/?tab=chats');
+    }
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -253,6 +265,28 @@ export default function ChatPage() {
         };
         setMessages([initialMsg]);
       }
+
+      // Record in local chats for guest/offline sessions
+      if (charObj && chatId.startsWith('local-')) {
+        saveLocalChat({
+          id: chatId,
+          user_id: 'guest',
+          character_id: charObj.id,
+          character: charObj,
+          persona_id: resolvedPersona?.id || null,
+          title: `Chat with ${charObj.name}`,
+          leaf_id: null,
+          memory_cursor_id: null,
+          authors_note: '',
+          settings: {},
+          pinned: false,
+          archived: false,
+          message_count: 1,
+          last_message_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
     }
 
     initChat();
@@ -408,6 +442,40 @@ export default function ChatPage() {
             : m
         )
       );
+
+      // Update chat message count & timestamp for "My Chats"
+      if (character) {
+        const nowIso = new Date().toISOString();
+        if (chatId.startsWith('local-')) {
+          saveLocalChat({
+            id: chatId,
+            user_id: 'guest',
+            character_id: character.id,
+            character: character,
+            persona_id: activePersona?.id || null,
+            title: `Chat with ${character.name}`,
+            leaf_id: null,
+            memory_cursor_id: null,
+            authors_note: '',
+            settings: {},
+            pinned: false,
+            archived: false,
+            message_count: messages.length + 2,
+            last_message_at: nowIso,
+            created_at: nowIso,
+            updated_at: nowIso,
+          });
+        } else {
+          supabase
+            .from('chats')
+            .update({
+              last_message_at: nowIso,
+              message_count: messages.length + 2,
+            })
+            .eq('id', chatId)
+            .then();
+        }
+      }
 
       // Refresh memory & state after a few seconds
       setTimeout(async () => {
@@ -597,6 +665,42 @@ export default function ChatPage() {
               <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent" />
             )}
           </button>
+
+          {/* More Actions Menu (Delete Chat, View Profile) */}
+          <div className="relative">
+            <button
+              onClick={() => setHeaderMenuOpen(!headerMenuOpen)}
+              className="p-2 rounded-full border border-black/[0.06] dark:border-white/[0.08] hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground apple-button"
+              title="More options"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {headerMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-52 rounded-2xl bg-[#202024] border border-white/10 shadow-2xl p-1.5 z-40 animate-in fade-in duration-150">
+                {character?.id && (
+                  <Link
+                    href={`/c/${character.id}`}
+                    onClick={() => setHeaderMenuOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5 rounded-xl transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4 text-zinc-400" />
+                    Character Profile
+                  </Link>
+                )}
+                <button
+                  onClick={() => {
+                    setHeaderMenuOpen(false);
+                    handleDeleteCurrentChat();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-xl transition-colors text-left"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete This Chat
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

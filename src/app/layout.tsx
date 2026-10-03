@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Navbar } from '@/components/navbar';
+import { PwaRegister } from '@/components/pwa-register';
 import { Toaster } from 'sonner';
 
 const geistSans = Geist({
@@ -55,6 +56,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <PwaRegister />
           <Navbar />
           <main className="flex-1 flex flex-col">{children}</main>
           <Toaster

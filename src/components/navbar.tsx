@@ -13,6 +13,7 @@ import {
   Flame,
   Sun,
   Moon,
+  MessageSquare,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { SettingsDialog } from '@/components/settings-dialog';
@@ -67,6 +68,15 @@ export function Navbar() {
                   <span className="flex items-center gap-1.5">
                     <Compass className="w-3.5 h-3.5" />
                     Explore
+                  </span>
+                </Link>
+                <Link
+                  href="/?tab=chats"
+                  className="px-3 py-1.5 rounded-full transition-colors text-muted-foreground hover:text-foreground"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    My Chats
                   </span>
                 </Link>
                 <Link
