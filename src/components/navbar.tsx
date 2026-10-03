@@ -36,7 +36,7 @@ export function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 w-full border-b border-black/[0.06] dark:border-white/[0.08] glass-panel transition-all">
+      <header className="sticky top-0 z-40 w-full border-b border-black/[0.06] dark:border-white/[0.08] glass-panel transition-all pt-safe">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           {/* Left Brand */}
           <div className="flex items-center gap-6">
@@ -118,6 +118,15 @@ export function Navbar() {
               <Plus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Create Character</span>
               <span className="sm:hidden">New</span>
+            </Link>
+
+            <Link
+              href="/personas"
+              aria-label="View Personas"
+              title="View Personas"
+              className="md:hidden p-2 rounded-full hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground apple-button"
+            >
+              <Users className="w-4 h-4" />
             </Link>
 
             <button

@@ -17,7 +17,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { CharacterAvatar } from '@/components/character-avatar';
-import { formatChatTimestamp, deleteChat, deleteChatsForCharacter } from '@/lib/chats/chat-manager';
+import { formatChatTimestamp, deleteChat, deleteChatsForCharacter, deleteCharacter } from '@/lib/chats/chat-manager';
 import { toast } from 'sonner';
 import type { Character, Chat } from '@/lib/supabase/types';
 
@@ -28,6 +28,7 @@ interface CharacterChatsDrawerProps {
   chats: Chat[];
   onStartNewChat: (character: Character) => void;
   onChatDeleted?: () => void;
+  onCharacterDeleted?: () => void;
 }
 
 export function CharacterChatsDrawer({
@@ -37,18 +38,21 @@ export function CharacterChatsDrawer({
   chats,
   onStartNewChat,
   onChatDeleted,
+  onCharacterDeleted,
 }: CharacterChatsDrawerProps) {
   const router = useRouter();
   const [sortOrder, setSortOrder] = useState<'latest' | 'oldest'>('latest');
   const [menuOpen, setMenuOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [confirmDeleteCharacter, setConfirmDeleteCharacter] = useState(false);
 
   // Close menus on outside click / escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (confirmDeleteAll) setConfirmDeleteAll(false);
+        if (confirmDeleteCharacter) setConfirmDeleteCharacter(false);
+        else if (confirmDeleteAll) setConfirmDeleteAll(false);
         else if (menuOpen) setMenuOpen(false);
         else onClose();
       }
@@ -97,6 +101,19 @@ export function CharacterChatsDrawer({
       onClose();
     } catch {
       toast.error('Failed to delete chats');
+    }
+  };
+
+  const handleDeleteCharacterFromRoster = async () => {
+    try {
+      await deleteCharacter(character.id);
+      toast.success(`Removed "${character.name}" from your roster`);
+      setConfirmDeleteCharacter(false);
+      setMenuOpen(false);
+      onCharacterDeleted?.();
+      onClose();
+    } catch {
+      toast.error('Failed to delete character');
     }
   };
 
@@ -175,12 +192,50 @@ export function CharacterChatsDrawer({
                   <Trash2 className="w-4 h-4" />
                   Delete all chats with {character.name}
                 </button>
+                <button
+                  onClick={() => {
+                    setConfirmDeleteCharacter(true);
+                    setMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-red-500 hover:bg-red-500/15 rounded-xl transition-colors text-left font-semibold border-t border-white/[0.04] mt-1 pt-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Character from Roster
+                </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* Delete All Confirmation Dialog */}
+        {/* Delete Character Confirmation Dialog */}
+        {confirmDeleteCharacter && (
+          <div className="mx-5 my-3 p-4 rounded-2xl bg-red-600/15 border border-red-500/40 text-xs text-red-100 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 font-bold text-red-300">
+              <AlertTriangle className="w-4 h-4" />
+              Delete &ldquo;{character.name}&rdquo; from Roster?
+            </div>
+            <p className="text-zinc-200">
+              This will permanently delete this character and all chat histories with them. This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                onClick={() => setConfirmDeleteCharacter(false)}
+                className="px-3.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteCharacterFromRoster}
+                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Yes, Delete Character
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Delete All Chats Confirmation Dialog */}
         {confirmDeleteAll && (
           <div className="mx-5 my-3 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs text-red-200 space-y-3 animate-in fade-in duration-200">
             <div className="flex items-center gap-2 font-semibold text-red-300">

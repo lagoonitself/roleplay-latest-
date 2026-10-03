@@ -194,6 +194,56 @@ export async function deleteChatsForCharacter(characterId: string, chatIds: stri
 }
 
 /**
+ * Delete a character from the roster completely (Supabase + localStorage)
+ * and clean up all associated chats and messages
+ */
+export async function deleteCharacter(characterId: string): Promise<boolean> {
+  const supabase = createClient();
+  let success = false;
+
+  // 1. Delete associated chats first
+  try {
+    await deleteChatsForCharacter(characterId);
+  } catch (err) {
+    console.error('Failed to delete associated chats:', err);
+  }
+
+  // 2. Delete from Supabase characters table
+  try {
+    const { error } = await supabase.from('characters').delete().eq('id', characterId);
+    if (!error) success = true;
+  } catch (err) {
+    console.error('Failed to delete character from Supabase:', err);
+  }
+
+  // 3. Delete from LocalStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const localChars: Character[] = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+      const filtered = localChars.filter((c) => c.id !== characterId && c.name !== characterId);
+      localStorage.setItem('cadenza_local_characters', JSON.stringify(filtered));
+
+      // Also track in deleted IDs list so public characters are filtered out for this client
+      const deletedIds: string[] = JSON.parse(localStorage.getItem('cadenza_deleted_character_ids') || '[]');
+      if (!deletedIds.includes(characterId)) {
+        deletedIds.push(characterId);
+        localStorage.setItem('cadenza_deleted_character_ids', JSON.stringify(deletedIds));
+      }
+
+      success = true;
+    } catch (err) {
+      console.error('Failed to delete character from localStorage:', err);
+    }
+  }
+
+  notifyChatsChanged();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('cadenza-characters-changed'));
+  }
+  return success;
+}
+
+/**
  * Group list of chats by character (matching JanitorAI's structure)
  */
 export function groupChatsByCharacter(chats: Chat[], allCharacters: Character[] = []): CharacterChatGroup[] {

@@ -13,11 +13,13 @@ import {
   Edit,
   Tag,
   BookOpen,
+  Trash2,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { exportCharacterToCardV2 } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
+import { deleteCharacter } from '@/lib/chats/chat-manager';
 import { useSettings } from '@/lib/store/settings';
 import { toast } from 'sonner';
 import type { Character, Persona } from '@/lib/supabase/types';
@@ -132,8 +134,17 @@ export default function CharacterProfilePage() {
     toast.success('Character Card V2 JSON downloaded!');
   };
 
+  const handleDeleteCharacter = async () => {
+    if (!character) return;
+    if (window.confirm(`Permanently delete "${character.name}" and all associated chats? This cannot be undone.`)) {
+      await deleteCharacter(character.id);
+      toast.success(`Deleted "${character.name}"`);
+      router.push('/');
+    }
+  };
+
   return (
-    <div className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8">
+    <div className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
       {/* Top Navigation */}
       <div className="flex items-center justify-between">
         <Link
@@ -150,6 +161,14 @@ export default function CharacterProfilePage() {
           >
             <Download className="w-3.5 h-3.5" />
             Export Card V2
+          </button>
+          <button
+            onClick={handleDeleteCharacter}
+            className="px-3.5 py-1.5 rounded-full bg-red-600/15 hover:bg-red-600/25 text-red-500 hover:text-red-400 border border-red-500/20 text-xs font-medium apple-button flex items-center gap-1.5 transition-colors"
+            title="Delete this character"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete Character
           </button>
         </div>
       </div>

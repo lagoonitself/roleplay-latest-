@@ -17,7 +17,6 @@ import {
   Layers,
   Trash2,
   ExternalLink,
-  Smartphone,
   Settings,
   X,
   User,
@@ -27,16 +26,17 @@ import { useSettings } from '@/lib/store/settings';
 import { parseCharacterCardJson, parseCharacterFromPng, makeCharacter } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
+import { PersonaDrawer } from '@/components/persona-drawer';
 import { CharacterChatsDrawer } from '@/components/character-chats-drawer';
 import { MyChatsView } from '@/components/my-chats-view';
 import { MobileDock, type AppTab } from '@/components/mobile-dock';
 import { CreateDrawer } from '@/components/create-drawer';
-import { IOSInstallPrompt } from '@/components/ios-install-prompt';
 import { SettingsDialog } from '@/components/settings-dialog';
 import {
   getUnifiedChats,
   groupChatsByCharacter,
   deleteChat,
+  deleteCharacter,
   saveLocalChat,
   formatChatTimestamp,
   CHATS_CHANGED_EVENT,
@@ -67,14 +67,27 @@ function HomePageContent() {
   const [showImportGuide, setShowImportGuide] = useState(false);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [personaDrawerOpen, setPersonaDrawerOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [iosPromptOpen, setIosPromptOpen] = useState(false);
+  const [activePersonaName, setActivePersonaName] = useState<string>('Standard Persona');
 
   // Character selection for chat and drawer
   const [selectedCharForChat, setSelectedCharForChat] = useState<Character | null>(null);
   const [drawerCharacter, setDrawerCharacter] = useState<Character | null>(null);
 
   const tags = ['All', 'Romance', 'Fantasy', 'Sci-Fi', 'Cyberpunk', 'Mystery', 'Mature', 'Companion'];
+
+  // Resolve active persona name
+  useEffect(() => {
+    try {
+      const localList: Persona[] = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
+      const found =
+        localList.find((p) => p.id === settings.activePersonaId) ||
+        localList.find((p) => p.is_default) ||
+        localList[0];
+      if (found) setActivePersonaName(found.name);
+    } catch {}
+  }, [settings.activePersonaId, personaDrawerOpen]);
 
   // Load all characters and unified chats
   const loadData = async () => {
@@ -95,10 +108,17 @@ function HomePageContent() {
       const dbList = (dbChars as Character[]) || [];
       const dbIds = new Set(dbList.map((c) => c.id));
       const combinedChars = [...dbList, ...localChars.filter((c) => !dbIds.has(c.id))];
-      setCharacters(combinedChars);
 
-      // 4. Load Unified Chats (Supabase + LocalStorage)
-      const unifiedChats = await getUnifiedChats(combinedChars);
+      // 4. Filter out any deleted characters
+      let deletedIds: string[] = [];
+      try {
+        deletedIds = JSON.parse(localStorage.getItem('cadenza_deleted_character_ids') || '[]');
+      } catch {}
+      const activeChars = combinedChars.filter((c) => !deletedIds.includes(c.id));
+      setCharacters(activeChars);
+
+      // 5. Load Unified Chats (Supabase + LocalStorage)
+      const unifiedChats = await getUnifiedChats(activeChars);
       setChats(unifiedChats);
     } catch (err) {
       console.error('Failed to load data:', err);
@@ -110,13 +130,17 @@ function HomePageContent() {
   useEffect(() => {
     loadData();
 
-    // Listen to cross-tab/cross-component chat updates
-    const handleChatsChanged = () => {
+    // Listen to cross-tab/cross-component chat & character updates
+    const handleChanged = () => {
       loadData();
     };
 
-    window.addEventListener(CHATS_CHANGED_EVENT, handleChatsChanged);
-    return () => window.removeEventListener(CHATS_CHANGED_EVENT, handleChatsChanged);
+    window.addEventListener(CHATS_CHANGED_EVENT, handleChanged);
+    window.addEventListener('cadenza-characters-changed', handleChanged);
+    return () => {
+      window.removeEventListener(CHATS_CHANGED_EVENT, handleChanged);
+      window.removeEventListener('cadenza-characters-changed', handleChanged);
+    };
   }, [supabase]);
 
   // Sync tab with URL query parameter if present
@@ -150,7 +174,7 @@ function HomePageContent() {
       return;
     }
     if (tab === 'profile') {
-      setSettingsDialogOpen(true);
+      setPersonaDrawerOpen(true);
       return;
     }
     setActiveTab(tab);
@@ -324,7 +348,7 @@ function HomePageContent() {
           groups={chatGroups}
           onSelectCharacter={(char) => setDrawerCharacter(char)}
           onExploreClick={() => setActiveTab('explore')}
-          onOpenSettings={() => setSettingsDialogOpen(true)}
+          onOpenSettings={() => setPersonaDrawerOpen(true)}
         />
       ) : (
         /* ─────────────────── TAB 1: EXPLORE / CHARACTERS VIEW (Clean, No Cluttered Hero) ─────────────────── */
@@ -352,23 +376,26 @@ function HomePageContent() {
                 )}
               </div>
 
-              {/* Action Buttons: Create & PWA Install Helper */}
+              {/* Action Buttons: Persona Switcher & Create */}
               <div className="flex items-center gap-2 shrink-0">
+                {/* Persona Pill: View and Switch Personas */}
                 <button
-                  onClick={() => setCreateDrawerOpen(true)}
-                  className="px-4 py-2.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs sm:text-sm apple-button flex items-center gap-1.5 shadow-md shadow-purple-600/20"
+                  onClick={() => setPersonaDrawerOpen(true)}
+                  className="px-3 py-2 rounded-full bg-zinc-800/60 hover:bg-zinc-700/60 border border-white/[0.08] text-zinc-200 hover:text-white transition-all apple-button flex items-center gap-1.5 text-xs font-medium shadow-xs"
+                  title="Click to view and switch your roleplay persona"
+                  aria-label="Your Personas"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Create / Import</span>
+                  <User className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="hidden sm:inline text-zinc-400">Persona:</span>
+                  <span className="font-semibold max-w-[110px] truncate">{activePersonaName}</span>
                 </button>
 
                 <button
-                  onClick={() => setIosPromptOpen(true)}
-                  className="p-2.5 rounded-full bg-zinc-800/60 hover:bg-zinc-700/60 border border-white/[0.08] text-zinc-300 hover:text-white transition-colors apple-button"
-                  title="Install Cadenza on iPhone"
-                  aria-label="Install App"
+                  onClick={() => setCreateDrawerOpen(true)}
+                  className="px-3.5 py-2 rounded-full bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs apple-button flex items-center gap-1.5 shadow-md shadow-purple-600/20"
                 >
-                  <Smartphone className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Create</span>
                 </button>
               </div>
             </div>
@@ -527,15 +554,33 @@ function HomePageContent() {
 
                       {/* Bottom Actions */}
                       <div className="pt-2 border-t border-white/[0.04] flex items-center justify-between text-xs">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/c/${character.id}`);
-                          }}
-                          className="px-2.5 py-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
-                        >
-                          Details
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/c/${character.id}`);
+                            }}
+                            className="px-2.5 py-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
+                          >
+                            Details
+                          </button>
+
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Permanently delete "${character.name}" from your roster?`)) {
+                                await deleteCharacter(character.id);
+                                toast.success(`Deleted "${character.name}"`);
+                                await loadData();
+                              }
+                            }}
+                            className="p-1.5 rounded-full hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors apple-button"
+                            title="Delete character"
+                            aria-label="Delete character"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
 
                         <button
                           onClick={(e) => {
@@ -586,6 +631,7 @@ function HomePageContent() {
           handleStartChat(char);
         }}
         onChatDeleted={loadData}
+        onCharacterDeleted={loadData}
       />
 
       {/* ─────────────────── CREATE / IMPORT DRAWER ─────────────────── */}
@@ -644,16 +690,17 @@ function HomePageContent() {
         onSelectPersona={handleStartChatWithPersona}
       />
 
+      {/* ─────────────────── PERSONA DRAWER (Full Persona Viewing, Switching & Management) ─────────────────── */}
+      <PersonaDrawer
+        open={personaDrawerOpen}
+        onClose={() => setPersonaDrawerOpen(false)}
+        onOpenSettingsDialog={() => setSettingsDialogOpen(true)}
+      />
+
       {/* ─────────────────── SETTINGS DIALOG ─────────────────── */}
       <SettingsDialog
         open={settingsDialogOpen}
         onClose={() => setSettingsDialogOpen(false)}
-      />
-
-      {/* ─────────────────── IPHONE PWA INSTALL PROMPT ─────────────────── */}
-      <IOSInstallPrompt
-        forceOpen={iosPromptOpen}
-        onClose={() => setIosPromptOpen(false)}
       />
     </div>
   );

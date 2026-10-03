@@ -597,8 +597,9 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-background select-none">
       {/* Mobile-First Immersive Top Header */}
-      <header className="h-14 px-3 sm:px-6 border-b border-black/[0.06] dark:border-white/[0.08] glass-panel flex items-center justify-between shrink-0 z-30">
-        {/* Left: Back & Character Identity */}
+      <header className="pt-safe px-3 sm:px-6 border-b border-black/[0.06] dark:border-white/[0.08] glass-panel shrink-0 z-30">
+        <div className="h-14 flex items-center justify-between">
+          {/* Left: Back & Character Identity */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link
             href="/"
@@ -701,6 +702,7 @@ export default function ChatPage() {
               </div>
             )}
           </div>
+        </div>
         </div>
       </header>
 
@@ -951,7 +953,7 @@ export default function ChatPage() {
       </div>
 
       {/* Mobile-First Reachable Bottom Input Composer */}
-      <footer className="p-2 sm:p-4 border-t border-black/[0.06] dark:border-white/[0.08] glass-panel shrink-0 pb-safe">
+      <footer className="p-2 sm:p-4 border-t border-black/[0.06] dark:border-white/[0.08] glass-panel shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
         <div className="max-w-3xl mx-auto space-y-2">
           {/* Quick Action Chips (Horizontally Scrollable) */}
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px] px-0.5">
