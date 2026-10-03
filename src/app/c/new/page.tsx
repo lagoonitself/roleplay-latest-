@@ -27,6 +27,7 @@ import { useSettings } from '@/lib/store/settings';
 import { parseCharacterCardJson, parseCharacterFromPng } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { toast } from 'sonner';
+import { saveLocalChat } from '@/lib/chats/chat-manager';
 
 const POPULAR_TAGS = ['Fantasy', 'Romance', 'Sci-Fi', 'Cyberpunk', 'Mystery', 'Supernatural', 'Adventure', 'Companion'];
 
@@ -186,7 +187,7 @@ export default function CreateCharacterPage() {
 
       setAiModalOpen(false);
       setAiPrompt('');
-      toast.success(`Generated "${char.name}" with DeepSeek V4.1 Flash!`);
+      toast.success(`Generated "${char.name}" successfully!`);
     } catch (err: any) {
       toast.error(err.message || 'Generation error');
     } finally {
@@ -281,6 +282,24 @@ export default function CreateCharacterPage() {
 
     toast.success(`Character "${name}" created! Starting chat...`);
     const localChatId = 'local-' + Date.now();
+    saveLocalChat({
+      id: localChatId,
+      user_id: 'guest',
+      character_id: localCharId,
+      character: localChar as any,
+      persona_id: null,
+      title: `Chat with ${name}`,
+      leaf_id: null,
+      memory_cursor_id: null,
+      authors_note: '',
+      settings: {},
+      pinned: false,
+      archived: false,
+      message_count: 1,
+      last_message_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
     router.push(`/chat/${localChatId}?charId=${encodeURIComponent(localCharId)}`);
   };
 
@@ -784,7 +803,7 @@ export default function CreateCharacterPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-purple-500 font-semibold text-sm">
                 <Sparkles className="w-4 h-4" />
-                <span>DeepSeek V4.1 Flash • Character Generator</span>
+                <span>AI Character Generator</span>
               </div>
               <button
                 onClick={() => setAiModalOpen(false)}
@@ -795,7 +814,7 @@ export default function CreateCharacterPage() {
             </div>
 
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Describe your idea, <strong>or paste copied text/bio from Janitor AI or Character.AI</strong>. DeepSeek will auto-generate all 14 traits: name, appearance, opening greeting, scenario, psychology, and speech style.
+              Describe your idea, <strong>or paste copied text/bio from Janitor AI or Character.AI</strong>. We will auto-generate all 14 traits: name, appearance, opening greeting, scenario, psychology, and speech style.
             </p>
 
             <textarea

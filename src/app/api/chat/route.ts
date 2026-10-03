@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
       thinking,
       authorsNote,
       character: clientCharacter,
+      history: clientHistory,
     } = body;
 
     if (!chatId || !characterId || !userMessage) {
@@ -135,14 +136,22 @@ export async function POST(req: NextRequest) {
     // 5. Fetch Recent History
     let history: Message[] = [];
     if (userId) {
-      const { data: historyData } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true })
-        .limit(40);
+      try {
+        const { data: historyData } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: true })
+          .limit(40);
 
-      history = (historyData as Message[]) || [];
+        history = (historyData as Message[]) || [];
+      } catch (err) {
+        console.warn('Failed to fetch history from Supabase:', err);
+      }
+    }
+
+    if (history.length === 0 && Array.isArray(clientHistory) && clientHistory.length > 0) {
+      history = clientHistory;
     }
 
     // 6. Assemble Cache-Optimized Prompt

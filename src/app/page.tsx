@@ -438,14 +438,24 @@ function HomePageContent() {
               {/* Horizontal Scroll / Compact Grid of Recent Chats */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {chats.slice(0, 3).map((chat) => {
-                  const charName = chat.character?.name || chat.title.replace(/^Chat with\s+/i, '');
-                  const avatarUrl = chat.character?.avatar_url;
+                  const resolvedChar =
+                    chat.character ||
+                    characters.find(
+                      (c) =>
+                        c.id === chat.character_id ||
+                        c.name.toLowerCase() === chat.character_id?.toLowerCase() ||
+                        c.name.toLowerCase() === chat.title.replace(/^Chat with\s+/i, '').toLowerCase()
+                    );
+                  const charName = resolvedChar?.name || chat.character?.name || chat.title.replace(/^Chat with\s+/i, '');
+                  const avatarUrl = resolvedChar?.avatar_url || chat.character?.avatar_url;
                   const timeFormatted = formatChatTimestamp(chat.last_message_at || chat.created_at);
+                  const charIdentifier = resolvedChar?.id || chat.character_id || chat.character?.id || resolvedChar?.name || '';
+                  const queryParam = charIdentifier ? `?charId=${encodeURIComponent(charIdentifier)}` : '';
 
                   return (
                     <div
                       key={chat.id}
-                      onClick={() => router.push(`/chat/${chat.id}`)}
+                      onClick={() => router.push(`/chat/${chat.id}${queryParam}`)}
                       className="group relative flex items-center justify-between p-3 rounded-2xl bg-zinc-800/40 hover:bg-zinc-800/70 border border-white/[0.06] hover:border-purple-500/30 transition-all cursor-pointer shadow-xs"
                     >
                       <div className="flex items-center space-x-3 truncate">

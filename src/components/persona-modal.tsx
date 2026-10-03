@@ -260,7 +260,7 @@ export function PersonaModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       {/* Mobile Bottom Sheet / Desktop Modal Dialog */}
-      <div className="w-full sm:max-w-lg max-h-[92vh] sm:max-h-[85vh] flex flex-col bg-background/95 border border-black/[0.08] dark:border-white/[0.12] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-250">
+      <div className="w-full sm:max-w-xl max-h-[92vh] sm:max-h-[85vh] flex flex-col bg-background/95 border border-black/[0.08] dark:border-white/[0.12] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-250">
         {/* Mobile Grab Bar */}
         <div className="sm:hidden flex justify-center pt-3 pb-1">
           <div className="w-10 h-1 rounded-full bg-black/20 dark:bg-white/20" />
@@ -385,7 +385,7 @@ export function PersonaModal({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
-                    DeepSeek V4.1 • Persona Generator
+                    AI Persona Generator
                   </span>
                   {character && (
                     <span className="text-[10px] text-muted-foreground font-mono">
@@ -395,35 +395,40 @@ export function PersonaModal({
                 </div>
 
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Describe what kind of character you want to play, or leave blank to let DeepSeek design a counterpart with rich backstory!
+                  Describe what kind of character you want to play, or leave blank to automatically design a counterpart with rich backstory!
                 </p>
 
-                <div className="flex gap-2">
-                  <input
-                    type="text"
+                <div className="space-y-2.5">
+                  <textarea
+                    rows={3}
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="e.g. Her estranged ex-husband, a cynical detective..."
-                    className="flex-1 px-3.5 py-2 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                    placeholder="Describe your character concept (e.g. Her estranged ex-husband, a cynical detective who still carries an old silver lighter she gave him)..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-500/40 resize-y min-h-[76px] max-h-[180px] overflow-y-auto"
                   />
-                  <button
-                    type="button"
-                    onClick={handleGenerateAI}
-                    disabled={aiLoading}
-                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold apple-button flex items-center gap-1.5 shrink-0 shadow-sm disabled:opacity-50"
-                  >
-                    {aiLoading ? (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Generate
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-muted-foreground">
+                      {aiPrompt.length > 0 ? `${aiPrompt.length} characters` : 'Optional • Leave blank for auto-generation'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleGenerateAI}
+                      disabled={aiLoading}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold apple-button flex items-center gap-1.5 shrink-0 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      {aiLoading ? (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Generate
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 

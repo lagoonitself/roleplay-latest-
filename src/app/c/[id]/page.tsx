@@ -19,7 +19,7 @@ import { createClient } from '@/lib/supabase/client';
 import { exportCharacterToCardV2 } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
-import { deleteCharacter } from '@/lib/chats/chat-manager';
+import { deleteCharacter, saveLocalChat } from '@/lib/chats/chat-manager';
 import { useSettings } from '@/lib/store/settings';
 import { toast } from 'sonner';
 import type { Character, Persona } from '@/lib/supabase/types';
@@ -118,7 +118,25 @@ export default function CharacterProfilePage() {
     }
 
     const localChatId = 'local-' + Date.now();
-    router.push(`/chat/${localChatId}?charId=${encodeURIComponent(character.name)}`);
+    saveLocalChat({
+      id: localChatId,
+      user_id: 'guest',
+      character_id: character.id,
+      character: character,
+      persona_id: persona.id,
+      title: `Chat with ${character.name}`,
+      leaf_id: null,
+      memory_cursor_id: null,
+      authors_note: '',
+      settings: {},
+      pinned: false,
+      archived: false,
+      message_count: 1,
+      last_message_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    router.push(`/chat/${localChatId}?charId=${encodeURIComponent(character.id || character.name)}`);
   };
 
   const handleExportCard = () => {

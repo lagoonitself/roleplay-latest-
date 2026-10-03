@@ -1,7 +1,10 @@
 import { createClient } from '@/lib/supabase/client';
-import type { Chat, Character } from '@/lib/supabase/types';
+import type { Chat, Character, Message, Memory } from '@/lib/supabase/types';
 
 export const LOCAL_CHATS_KEY = 'cadenza_local_chats';
+export const LOCAL_MESSAGES_PREFIX = 'cadenza_local_messages_';
+export const LOCAL_STATE_PREFIX = 'cadenza_local_state_';
+export const LOCAL_MEMORIES_PREFIX = 'cadenza_local_memories_';
 export const CHATS_CHANGED_EVENT = 'cadenza-chats-changed';
 
 export interface CharacterChatGroup {
@@ -32,20 +35,80 @@ export function getLocalChats(): Chat[] {
 }
 
 /**
+ * Get a specific chat from localStorage by ID
+ */
+export function getLocalChat(chatId: string): Chat | null {
+  if (typeof window === 'undefined' || !chatId) return null;
+  try {
+    const chats = getLocalChats();
+    return chats.find((c) => c.id === chatId) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Save or update a chat in localStorage
  */
-export function saveLocalChat(chat: Chat): void {
-  if (typeof window === 'undefined') return;
+export function saveLocalChat(chat: Partial<Chat> & { id: string }): void {
+  if (typeof window === 'undefined' || !chat?.id) return;
   try {
     const existing = getLocalChats();
     const index = existing.findIndex((c) => c.id === chat.id);
     let updated: Chat[];
+
     if (index >= 0) {
+      const prev = existing[index];
+
+      // Never let a fallback/dummy character overwrite a legitimate character
+      const isNewCharFallback =
+        chat.character &&
+        (chat.character.name === 'Roleplay Partner' ||
+          chat.character.name === 'Unnamed Character' ||
+          !chat.character.name);
+      const isPrevCharValid =
+        prev.character &&
+        prev.character.name !== 'Roleplay Partner' &&
+        prev.character.name !== 'Unnamed Character' &&
+        Boolean(prev.character.name);
+
+      const mergedCharacter =
+        isNewCharFallback && isPrevCharValid
+          ? prev.character
+          : (chat.character || prev.character);
+
+      const isNewTitleFallback =
+        chat.title &&
+        (chat.title === 'Chat with Roleplay Partner' ||
+          chat.title === 'Chat with Unnamed Character' ||
+          chat.title === 'Chat with Character');
+      const isPrevTitleValid =
+        prev.title &&
+        prev.title !== 'Chat with Roleplay Partner' &&
+        prev.title !== 'Chat with Unnamed Character' &&
+        prev.title !== 'Chat with Character';
+
+      const mergedTitle =
+        isNewTitleFallback && isPrevTitleValid
+          ? prev.title
+          : (chat.title || prev.title);
+
+      const mergedCharId =
+        (isNewCharFallback && isPrevCharValid ? prev.character_id : (chat.character_id || prev.character_id));
+
       updated = [...existing];
-      updated[index] = { ...updated[index], ...chat, updated_at: new Date().toISOString() };
+      updated[index] = {
+        ...prev,
+        ...chat,
+        character_id: mergedCharId || prev.character_id,
+        character: mergedCharacter,
+        title: mergedTitle || prev.title,
+        updated_at: new Date().toISOString(),
+      };
     } else {
-      updated = [chat, ...existing];
+      updated = [chat as Chat, ...existing];
     }
+
     localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(updated));
     notifyChatsChanged();
   } catch (err) {
@@ -54,7 +117,82 @@ export function saveLocalChat(chat: Chat): void {
 }
 
 /**
- * Fetch unified chats from Supabase (if logged in) + localStorage
+ * Get all messages for a specific chat from localStorage
+ */
+export function getLocalMessages(chatId: string): Message[] {
+  if (typeof window === 'undefined' || !chatId) return [];
+  try {
+    const raw = localStorage.getItem(`${LOCAL_MESSAGES_PREFIX}${chatId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save messages for a specific chat to localStorage
+ */
+export function saveLocalMessages(chatId: string, messages: Message[]): void {
+  if (typeof window === 'undefined' || !chatId) return;
+  try {
+    localStorage.setItem(`${LOCAL_MESSAGES_PREFIX}${chatId}`, JSON.stringify(messages));
+  } catch (err) {
+    console.error('Failed to save local messages:', err);
+  }
+}
+
+/**
+ * Get memories for a specific chat from localStorage
+ */
+export function getLocalMemories(chatId: string): Memory[] {
+  if (typeof window === 'undefined' || !chatId) return [];
+  try {
+    const raw = localStorage.getItem(`${LOCAL_MEMORIES_PREFIX}${chatId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save memories for a specific chat to localStorage
+ */
+export function saveLocalMemories(chatId: string, memories: Memory[]): void {
+  if (typeof window === 'undefined' || !chatId) return;
+  try {
+    localStorage.setItem(`${LOCAL_MEMORIES_PREFIX}${chatId}`, JSON.stringify(memories));
+  } catch (err) {
+    console.error('Failed to save local memories:', err);
+  }
+}
+
+/**
+ * Get state for a specific chat from localStorage
+ */
+export function getLocalChatState(chatId: string): Record<string, any> {
+  if (typeof window === 'undefined' || !chatId) return {};
+  try {
+    const raw = localStorage.getItem(`${LOCAL_STATE_PREFIX}${chatId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save state for a specific chat to localStorage
+ */
+export function saveLocalChatState(chatId: string, state: Record<string, any>): void {
+  if (typeof window === 'undefined' || !chatId) return;
+  try {
+    localStorage.setItem(`${LOCAL_STATE_PREFIX}${chatId}`, JSON.stringify(state));
+  } catch (err) {
+    console.error('Failed to save local chat state:', err);
+  }
+}
+
+/**
+ * Fetch unified chats from Supabase (if logged in) + localStorage with deep character resolution
  */
 export async function getUnifiedChats(charactersList: Character[] = []): Promise<Chat[]> {
   const supabase = createClient();
@@ -78,36 +216,112 @@ export async function getUnifiedChats(charactersList: Character[] = []): Promise
     console.error('Error fetching Supabase chats:', err);
   }
 
+  // Aggregate all known characters from props + localStorage
+  const allCharacters: Character[] = [...charactersList];
+  if (typeof window !== 'undefined') {
+    try {
+      const localChars: Character[] = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+      const knownIds = new Set(allCharacters.map((c) => c.id));
+      for (const lc of localChars) {
+        if (!knownIds.has(lc.id)) {
+          allCharacters.push(lc);
+          knownIds.add(lc.id);
+        }
+      }
+    } catch {}
+  }
+
+  // Helper to reliably find the Character object for a given chat
+  function resolveCharacterForChat(chat: Chat): Character | undefined {
+    // 1. If chat already has a valid character object with a name and not fallback
+    if (
+      chat.character &&
+      chat.character.name &&
+      chat.character.name !== 'Roleplay Partner' &&
+      chat.character.name !== 'Unnamed Character'
+    ) {
+      // If missing avatar_url, try to find full version
+      if (!chat.character.avatar_url && allCharacters.length > 0) {
+        const full = allCharacters.find(
+          (c) => c.id === chat.character?.id || c.name.toLowerCase() === chat.character?.name.toLowerCase()
+        );
+        if (full?.avatar_url) {
+          return { ...chat.character, avatar_url: full.avatar_url };
+        }
+      }
+      return chat.character;
+    }
+
+    const targetId = chat.character_id;
+    const cleanTitle = chat.title?.replace(/^Chat with\s+/i, '').trim();
+
+    // 2. Try match by ID or exact name
+    let found = allCharacters.find((ch) => {
+      if (targetId && (ch.id === targetId || ch.name.toLowerCase() === targetId.toLowerCase())) {
+        return true;
+      }
+      if (cleanTitle && ch.name.toLowerCase() === cleanTitle.toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+
+    // 3. Try fuzzy/partial match on title
+    if (!found && cleanTitle) {
+      found = allCharacters.find((ch) => {
+        return (
+          ch.name.toLowerCase().includes(cleanTitle.toLowerCase()) ||
+          cleanTitle.toLowerCase().includes(ch.name.toLowerCase())
+        );
+      });
+    }
+
+    return found;
+  }
+
   // Combine and deduplicate
   const chatMap = new Map<string, Chat>();
 
   // Add DB chats first
   for (const c of dbChats) {
+    const resolvedChar = resolveCharacterForChat(c);
+    if (resolvedChar) {
+      c.character = resolvedChar;
+    }
     chatMap.set(c.id, c);
   }
 
-  // Add local chats (if not already present in DB)
+  // Add local chats
+  let hasLocalUpdates = false;
   for (const c of localList) {
     if (!chatMap.has(c.id)) {
-      // Attach character object if not present
-      if (!c.character && charactersList.length > 0) {
-        const found = charactersList.find((ch) => ch.id === c.character_id || ch.name === c.character_id);
-        if (found) {
-          c.character = found;
+      const resolvedChar = resolveCharacterForChat(c);
+      if (resolvedChar) {
+        if (!c.character || c.character.name !== resolvedChar.name || !c.character.avatar_url) {
+          c.character = resolvedChar;
+          c.character_id = resolvedChar.id;
+          hasLocalUpdates = true;
         }
       }
       chatMap.set(c.id, c);
     }
   }
 
+  // If we enriched any local chats with proper characters, persist it
+  if (hasLocalUpdates && typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(localList));
+    } catch {}
+  }
+
   const allChats = Array.from(chatMap.values());
 
-  // Attach characters for any chat missing its character relation
+  // Final pass for character resolution
   for (const chat of allChats) {
-    if (!chat.character && charactersList.length > 0) {
-      const found = charactersList.find((ch) => ch.id === chat.character_id || ch.name === chat.character_id);
-      if (found) {
-        chat.character = found;
+    if (!chat.character) {
+      const resolvedChar = resolveCharacterForChat(chat);
+      if (resolvedChar) {
+        chat.character = resolvedChar;
       }
     }
   }
@@ -141,8 +355,9 @@ export async function deleteChat(chatId: string): Promise<boolean> {
       const local = getLocalChats();
       const filtered = local.filter((c) => c.id !== chatId);
       localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(filtered));
-      localStorage.removeItem(`cadenza_local_messages_${chatId}`);
-      localStorage.removeItem(`cadenza_local_state_${chatId}`);
+      localStorage.removeItem(`${LOCAL_MESSAGES_PREFIX}${chatId}`);
+      localStorage.removeItem(`${LOCAL_STATE_PREFIX}${chatId}`);
+      localStorage.removeItem(`${LOCAL_MEMORIES_PREFIX}${chatId}`);
       success = true;
     } catch (err) {
       console.error('Failed to delete chat from localStorage:', err);
@@ -177,8 +392,9 @@ export async function deleteChatsForCharacter(characterId: string, chatIds: stri
       const filtered = local.filter((c) => {
         const match = c.character_id === characterId || chatIds.includes(c.id);
         if (match) {
-          localStorage.removeItem(`cadenza_local_messages_${c.id}`);
-          localStorage.removeItem(`cadenza_local_state_${c.id}`);
+          localStorage.removeItem(`${LOCAL_MESSAGES_PREFIX}${c.id}`);
+          localStorage.removeItem(`${LOCAL_STATE_PREFIX}${c.id}`);
+          localStorage.removeItem(`${LOCAL_MEMORIES_PREFIX}${c.id}`);
         }
         return !match;
       });
@@ -249,15 +465,41 @@ export async function deleteCharacter(characterId: string): Promise<boolean> {
 export function groupChatsByCharacter(chats: Chat[], allCharacters: Character[] = []): CharacterChatGroup[] {
   const groupsMap = new Map<string, CharacterChatGroup>();
 
-  for (const chat of chats) {
-    const charId = chat.character_id || (chat.character?.id ?? 'unknown');
-    let resolvedChar = chat.character || allCharacters.find((c) => c.id === charId || c.name === charId);
+  // Ensure all characters list includes local characters
+  const fullCharactersList: Character[] = [...allCharacters];
+  if (typeof window !== 'undefined') {
+    try {
+      const localChars: Character[] = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+      const knownIds = new Set(fullCharactersList.map((c) => c.id));
+      for (const lc of localChars) {
+        if (!knownIds.has(lc.id)) {
+          fullCharactersList.push(lc);
+          knownIds.add(lc.id);
+        }
+      }
+    } catch {}
+  }
 
-    if (!resolvedChar) {
+  for (const chat of chats) {
+    const cleanTitle = chat.title?.replace(/^Chat with\s+/i, '').trim();
+    let charId = chat.character_id || (chat.character?.id ?? 'unknown');
+
+    let resolvedChar =
+      chat.character ||
+      fullCharactersList.find(
+        (c) =>
+          c.id === charId ||
+          c.name.toLowerCase() === charId.toLowerCase() ||
+          (cleanTitle && c.name.toLowerCase() === cleanTitle.toLowerCase())
+      );
+
+    if (resolvedChar) {
+      charId = resolvedChar.id;
+    } else {
       resolvedChar = {
         id: charId,
         user_id: 'system',
-        name: chat.title?.replace(/^Chat with\s+/i, '') || 'Character',
+        name: cleanTitle || 'Character',
         avatar_url: null,
         tagline: 'Roleplay Character',
         description: '',

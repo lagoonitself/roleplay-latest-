@@ -313,7 +313,9 @@ export function CharacterChatsDrawer({
                   key={chat.id}
                   onClick={() => {
                     onClose();
-                    router.push(`/chat/${chat.id}`);
+                    const charIdentifier = character.id || character.name;
+                    const queryParam = charIdentifier ? `?charId=${encodeURIComponent(charIdentifier)}` : '';
+                    router.push(`/chat/${chat.id}${queryParam}`);
                   }}
                   className="group relative pt-2.5 flex items-center justify-between gap-3 p-2.5 -mx-2 rounded-2xl hover:bg-white/[0.04] active:bg-white/[0.08] cursor-pointer transition-colors"
                 >

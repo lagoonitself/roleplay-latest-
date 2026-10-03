@@ -35,9 +35,19 @@ import { makeCharacter } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
 import { formatRoleplayText } from '@/lib/prompt/macros';
-import { saveLocalChat, deleteChat } from '@/lib/chats/chat-manager';
+import {
+  saveLocalChat,
+  getLocalChat,
+  deleteChat,
+  getLocalMessages,
+  saveLocalMessages,
+  getLocalMemories,
+  saveLocalMemories,
+  getLocalChatState,
+  saveLocalChatState,
+} from '@/lib/chats/chat-manager';
 import { toast } from 'sonner';
-import type { Character, Persona, Message, Memory, ChatState } from '@/lib/supabase/types';
+import type { Chat, Character, Persona, Message, Memory, ChatState } from '@/lib/supabase/types';
 
 export default function ChatPage() {
   const params = useParams();
@@ -86,6 +96,22 @@ export default function ChatPage() {
   // 1. Load Persona, Character, Messages, State
   useEffect(() => {
     async function initChat() {
+      // 0. Load any existing local or Supabase chat metadata
+      let existingChat: Chat | null = getLocalChat(chatId);
+
+      if (!existingChat && !chatId.startsWith('local-')) {
+        try {
+          const { data: dbChat } = await supabase
+            .from('chats')
+            .select('*, character:characters(*)')
+            .eq('id', chatId)
+            .maybeSingle();
+          if (dbChat) existingChat = dbChat as Chat;
+        } catch (e) {
+          console.error('Error fetching Supabase chat:', e);
+        }
+      }
+
       // A. Load Active Persona
       let resolvedPersona: Persona | null = null;
       let localPersonas: Persona[] = [];
@@ -95,6 +121,7 @@ export default function ChatPage() {
 
       const { data: authData } = await supabase.auth.getUser();
       const userId = authData.user?.id;
+      const targetPersonaId = existingChat?.persona_id || settings.activePersonaId;
 
       if (userId) {
         const { data: dbPersonas } = await supabase
@@ -105,7 +132,7 @@ export default function ChatPage() {
         if (dbPersonas && dbPersonas.length > 0) {
           const list = dbPersonas as Persona[];
           resolvedPersona =
-            list.find((p) => p.id === settings.activePersonaId) ||
+            list.find((p) => p.id === targetPersonaId) ||
             list.find((p) => p.is_default) ||
             list[0];
         }
@@ -113,7 +140,7 @@ export default function ChatPage() {
 
       if (!resolvedPersona && localPersonas.length > 0) {
         resolvedPersona =
-          localPersonas.find((p) => p.id === settings.activePersonaId) ||
+          localPersonas.find((p) => p.id === targetPersonaId) ||
           localPersonas.find((p) => p.is_default) ||
           localPersonas[0];
       }
@@ -136,57 +163,109 @@ export default function ChatPage() {
 
       setActivePersona(resolvedPersona);
 
-      // B. Load Character
+      // B. Load Character - Multi-tier reliable resolution
       let charObj: Character | null = null;
 
-      // 1. Try finding by charIdParam in DB
-      if (charIdParam) {
-        const { data: dbC } = await supabase
-          .from('characters')
-          .select('*')
-          .eq('id', charIdParam)
-          .maybeSingle();
-
-        if (dbC) {
-          charObj = dbC as Character;
-        }
+      // 1. If existing chat already has a valid character object with a name
+      if (
+        existingChat?.character &&
+        existingChat.character.name &&
+        existingChat.character.name !== 'Roleplay Partner' &&
+        existingChat.character.name !== 'Unnamed Character'
+      ) {
+        charObj = existingChat.character as Character;
       }
 
-      // 2. Try finding in local storage
-      if (!charObj && charIdParam) {
+      // 2. Identify target character identifier (from charIdParam, chat.character_id, or chat.character.id)
+      const targetCharIdentifier =
+        charIdParam ||
+        existingChat?.character_id ||
+        (existingChat?.character?.id && existingChat.character.id !== 'char-fallback' ? existingChat.character.id : null);
+
+      // 3. Search local characters roster in localStorage
+      let localChars: Character[] = [];
+      try {
+        localChars = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+      } catch {}
+
+      if (!charObj && targetCharIdentifier) {
+        const decodedTarget = decodeURIComponent(targetCharIdentifier).toLowerCase();
+        const found = localChars.find(
+          (c) =>
+            c.id === targetCharIdentifier ||
+            c.id.toLowerCase() === decodedTarget ||
+            c.name.toLowerCase() === decodedTarget
+        );
+        if (found) charObj = found;
+      }
+
+      // 4. Search Supabase characters
+      if (!charObj && targetCharIdentifier) {
         try {
-          const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
-          const found = localList.find(
-            (c: any) =>
-              c.id === charIdParam ||
-              c.name.toLowerCase() === decodeURIComponent(charIdParam).toLowerCase()
-          );
-          if (found) charObj = found as Character;
+          const { data: dbC } = await supabase
+            .from('characters')
+            .select('*')
+            .or(`id.eq.${targetCharIdentifier},name.eq.${targetCharIdentifier}`)
+            .maybeSingle();
+
+          if (dbC) charObj = dbC as Character;
         } catch {}
       }
 
-      // 3. Try finding through chat session in DB
-      if (!charObj && !chatId.startsWith('local-')) {
-        const { data: chatData } = await supabase
-          .from('chats')
-          .select('*, character:characters(*)')
-          .eq('id', chatId)
-          .maybeSingle();
-
-        if (chatData?.character) {
-          charObj = chatData.character as Character;
+      // 5. Match by chat title (e.g. "Chat with Cassandra \"Cass\" Miller" -> Cassandra "Cass" Miller)
+      if (!charObj && existingChat?.title) {
+        const titleCharName = existingChat.title.replace(/^Chat with\s+/i, '').trim();
+        if (
+          titleCharName &&
+          titleCharName !== 'Roleplay Partner' &&
+          titleCharName !== 'Unnamed Character' &&
+          titleCharName !== 'Character'
+        ) {
+          const lowerTitleName = titleCharName.toLowerCase();
+          // Check local chars
+          const foundInLocal = localChars.find(
+            (c) =>
+              c.name.toLowerCase() === lowerTitleName ||
+              c.name.toLowerCase().includes(lowerTitleName) ||
+              lowerTitleName.includes(c.name.toLowerCase())
+          );
+          if (foundInLocal) {
+            charObj = foundInLocal;
+          } else {
+            // Check DB
+            try {
+              const { data: dbMatches } = await supabase
+                .from('characters')
+                .select('*')
+                .ilike('name', `%${titleCharName}%`)
+                .limit(1);
+              if (dbMatches && dbMatches[0]) {
+                charObj = dbMatches[0] as Character;
+              }
+            } catch {}
+          }
         }
       }
 
-      // 4. Dynamic fallback if none matched
+      // 6. Enrich avatar if character object is missing avatar_url
+      if (charObj && !charObj.avatar_url) {
+        const match = localChars.find((c) => c.name.toLowerCase() === charObj?.name.toLowerCase());
+        if (match?.avatar_url) {
+          charObj = { ...charObj, avatar_url: match.avatar_url };
+        }
+      }
+
+      // 7. Dynamic fallback ONLY if completely unresolved
       if (!charObj) {
         const cleanName = charIdParam
           ? decodeURIComponent(charIdParam).replace(/^local-char-\d+-?/, '').replace(/-/g, ' ')
+          : existingChat?.title
+          ? existingChat.title.replace(/^Chat with\s+/i, '').trim()
           : 'Roleplay Partner';
 
         charObj = makeCharacter({
-          id: charIdParam || `char-${Date.now()}`,
-          user_id: 'guest',
+          id: targetCharIdentifier || `char-${Date.now()}`,
+          user_id: userId || 'guest',
           name: cleanName || 'Roleplay Partner',
           tagline: 'Custom Roleplay Character',
           description: 'An evocative roleplay partner.',
@@ -205,42 +284,41 @@ export default function ChatPage() {
       const charName = charObj.name || 'Character';
       const userName = resolvedPersona.name || 'User';
 
+      let loadedMessages: Message[] = [];
+
+      // 1. Fetch from Supabase if not a local chat
       if (!chatId.startsWith('local-')) {
-        const { data: msgsData } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('chat_id', chatId)
-          .order('created_at', { ascending: true });
+        try {
+          const { data: msgsData } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('chat_id', chatId)
+            .order('created_at', { ascending: true });
 
-        if (msgsData && msgsData.length > 0) {
-          const cleanedMsgs = (msgsData as Message[]).map((m) => ({
-            ...m,
-            content: formatRoleplayText(m.content, charName, userName),
-          }));
-          setMessages(cleanedMsgs);
+          if (msgsData && msgsData.length > 0) {
+            loadedMessages = msgsData as Message[];
+          }
+        } catch (e) {
+          console.error('Error fetching Supabase messages:', e);
         }
-
-        // Fetch memories & state
-        const { data: memData } = await supabase
-          .from('memories')
-          .select('*')
-          .eq('chat_id', chatId)
-          .is('superseded_by', null)
-          .order('importance', { ascending: false });
-
-        if (memData) setMemories(memData as Memory[]);
-
-        const { data: stateData } = await supabase
-          .from('chat_state')
-          .select('*')
-          .eq('chat_id', chatId)
-          .maybeSingle();
-
-        if (stateData?.state) setChatState(stateData.state);
       }
 
-      // If no messages yet, seed the character's first_message with macro substitution!
-      if (charObj && messages.length === 0) {
+      // 2. Fetch from LocalStorage (always check as primary for local chats, or fallback for offline)
+      if (loadedMessages.length === 0) {
+        const localMsgs = getLocalMessages(chatId);
+        if (localMsgs.length > 0) {
+          loadedMessages = localMsgs;
+        }
+      }
+
+      if (loadedMessages.length > 0) {
+        const cleanedMsgs = loadedMessages.map((m) => ({
+          ...m,
+          content: formatRoleplayText(m.content, charName, userName),
+        }));
+        setMessages(cleanedMsgs);
+      } else {
+        // ONLY if no messages exist anywhere, seed the character's initial greeting
         const rawFirst = charObj.first_message || '*I look at you with quiet attention.*';
         const formattedFirst = formatRoleplayText(rawFirst, charName, userName);
 
@@ -263,27 +341,62 @@ export default function ChatPage() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
+
         setMessages([initialMsg]);
+        saveLocalMessages(chatId, [initialMsg]);
       }
 
-      // Record in local chats for guest/offline sessions
-      if (charObj && chatId.startsWith('local-')) {
+      // D. Load Memories & State
+      if (!chatId.startsWith('local-')) {
+        try {
+          const { data: memData } = await supabase
+            .from('memories')
+            .select('*')
+            .eq('chat_id', chatId)
+            .is('superseded_by', null)
+            .order('importance', { ascending: false });
+
+          if (memData) setMemories(memData as Memory[]);
+
+          const { data: stateData } = await supabase
+            .from('chat_state')
+            .select('*')
+            .eq('chat_id', chatId)
+            .maybeSingle();
+
+          if (stateData?.state) setChatState(stateData.state);
+        } catch {}
+      }
+
+      // Also load local memories and state
+      const localMems = getLocalMemories(chatId);
+      if (localMems.length > 0) {
+        setMemories((prev) => (prev.length > 0 ? prev : localMems));
+      }
+
+      const localSt = getLocalChatState(chatId);
+      if (localSt && Object.keys(localSt).length > 0) {
+        setChatState((prev) => (Object.keys(prev).length > 0 ? prev : localSt));
+      }
+
+      // E. Persist / Refresh local chat metadata with the verified character
+      if (charObj && (chatId.startsWith('local-') || !existingChat)) {
         saveLocalChat({
           id: chatId,
-          user_id: 'guest',
+          user_id: userId || 'guest',
           character_id: charObj.id,
           character: charObj,
           persona_id: resolvedPersona?.id || null,
-          title: `Chat with ${charObj.name}`,
+          title: existingChat?.title || `Chat with ${charObj.name}`,
           leaf_id: null,
           memory_cursor_id: null,
-          authors_note: '',
+          authors_note: existingChat?.authors_note || '',
           settings: {},
-          pinned: false,
+          pinned: existingChat?.pinned || false,
           archived: false,
-          message_count: 1,
-          last_message_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
+          message_count: loadedMessages.length || 1,
+          last_message_at: existingChat?.last_message_at || new Date().toISOString(),
+          created_at: existingChat?.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
       }
@@ -354,7 +467,9 @@ export default function ChatPage() {
       updated_at: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, newUserMsg, newAssistantMsg]);
+    const initialUpdatedMsgs = [...messages, newUserMsg, newAssistantMsg];
+    setMessages(initialUpdatedMsgs);
+    saveLocalMessages(chatId, initialUpdatedMsgs);
     setInputText('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsGenerating(true);
@@ -379,6 +494,7 @@ export default function ChatPage() {
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
           authorsNote: authorsNote.trim() || undefined,
+          history: messages,
         }),
       });
 
@@ -431,8 +547,9 @@ export default function ChatPage() {
         }
       }
 
-      setMessages((prev) =>
-        prev.map((m) =>
+      let finalMessages: Message[] = [];
+      setMessages((prev) => {
+        finalMessages = prev.map((m) =>
           m.id === assistantMsgId
             ? {
                 ...m,
@@ -440,8 +557,10 @@ export default function ChatPage() {
                 content: formatRoleplayText(m.content, charName, userName),
               }
             : m
-        )
-      );
+        );
+        return finalMessages;
+      });
+      saveLocalMessages(chatId, finalMessages);
 
       // Update chat message count & timestamp for "My Chats"
       if (character) {
@@ -456,11 +575,11 @@ export default function ChatPage() {
             title: `Chat with ${character.name}`,
             leaf_id: null,
             memory_cursor_id: null,
-            authors_note: '',
+            authors_note: authorsNote.trim(),
             settings: {},
             pinned: false,
             archived: false,
-            message_count: messages.length + 2,
+            message_count: finalMessages.length,
             last_message_at: nowIso,
             created_at: nowIso,
             updated_at: nowIso,
@@ -470,7 +589,7 @@ export default function ChatPage() {
             .from('chats')
             .update({
               last_message_at: nowIso,
-              message_count: messages.length + 2,
+              message_count: finalMessages.length,
             })
             .eq('id', chatId)
             .then();
@@ -496,8 +615,9 @@ export default function ChatPage() {
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         toast.error(err.message || 'Generation error');
-        setMessages((prev) =>
-          prev.map((m) =>
+        let errMessages: Message[] = [];
+        setMessages((prev) => {
+          errMessages = prev.map((m) =>
             m.id === assistantMsgId
               ? {
                   ...m,
@@ -505,8 +625,10 @@ export default function ChatPage() {
                   content: m.content || '*[Connection interrupted. Tap retry to continue.]*',
                 }
               : m
-          )
-        );
+          );
+          return errMessages;
+        });
+        saveLocalMessages(chatId, errMessages);
       }
     } finally {
       setIsGenerating(false);
@@ -535,8 +657,9 @@ export default function ChatPage() {
       currentIndex++;
     }
 
-    setMessages((prev) =>
-      prev.map((m, i) =>
+    let updatedMsgs: Message[] = [];
+    setMessages((prev) => {
+      updatedMsgs = prev.map((m, i) =>
         i === msgIndex
           ? {
               ...m,
@@ -544,13 +667,25 @@ export default function ChatPage() {
               meta: { ...m.meta, active_swipe_index: currentIndex },
             }
           : m
-      )
-    );
+      );
+      return updatedMsgs;
+    });
+    saveLocalMessages(chatId, updatedMsgs);
   };
 
   // Delete message
   const handleDeleteMessage = (msgId: string) => {
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    let updatedMsgs: Message[] = [];
+    setMessages((prev) => {
+      updatedMsgs = prev.filter((m) => m.id !== msgId);
+      return updatedMsgs;
+    });
+    saveLocalMessages(chatId, updatedMsgs);
+    saveLocalChat({
+      id: chatId,
+      message_count: updatedMsgs.length,
+      last_message_at: new Date().toISOString(),
+    });
     toast.info('Message deleted');
   };
 
@@ -580,16 +715,20 @@ export default function ChatPage() {
       updated_at: new Date().toISOString(),
     };
 
-    setMemories((prev) => [newMem, ...prev]);
+    const nextMemories = [newMem, ...memories];
+    setMemories(nextMemories);
+    saveLocalMemories(chatId, nextMemories);
     setNewMemoryText('');
 
-    await supabase.from('memories').insert({
-      chat_id: chatId,
-      content: newMem.content,
-      kind: 'fact',
-      importance: 8,
-      pinned: true,
-    });
+    if (!chatId.startsWith('local-')) {
+      await supabase.from('memories').insert({
+        chat_id: chatId,
+        content: newMem.content,
+        kind: 'fact',
+        importance: 8,
+        pinned: true,
+      });
+    }
 
     toast.success('Pinned to roleplay memory');
   };
@@ -920,7 +1059,7 @@ export default function ChatPage() {
 
                 {memories.length === 0 && (
                   <p className="text-xs text-muted-foreground text-center py-4">
-                    No memories recorded yet. DeepSeek will auto-record durable facts here as the roleplay progresses.
+                    No memories recorded yet. Important facts and lore will be recorded here automatically as the roleplay progresses.
                   </p>
                 )}
               </div>
