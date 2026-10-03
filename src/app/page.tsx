@@ -21,12 +21,14 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
 import { parseCharacterCardJson, parseCharacterFromPng, makeCharacter } from '@/lib/cards/card-parser';
+import { CharacterAvatar } from '@/components/character-avatar';
+import { PersonaModal } from '@/components/persona-modal';
 import { toast } from 'sonner';
-import type { Character, Chat } from '@/lib/supabase/types';
+import type { Character, Chat, Persona } from '@/lib/supabase/types';
 
 export default function HomePage() {
   const router = useRouter();
-  const [settings] = useSettings();
+  const [settings, updateSettings] = useSettings();
   const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,6 +38,8 @@ export default function HomePage() {
   const [recentChats, setRecentChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const [showImportGuide, setShowImportGuide] = useState(false);
+  const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [selectedCharForChat, setSelectedCharForChat] = useState<Character | null>(null);
 
   const tags = ['All', 'Fantasy', 'Romance', 'Sci-Fi', 'Cyberpunk', 'Mystery', 'Mature', 'Companion'];
 
@@ -113,7 +117,7 @@ export default function HomePage() {
 
       const newCharPayload = {
         name: parsedChar.name || file.name.replace(/\.[^/.]+$/, ''),
-        avatar_url: avatarUrl || parsedChar.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
+        avatar_url: avatarUrl || parsedChar.avatar_url || null,
         tagline: parsedChar.tagline || parsedChar.creator_notes || 'Imported Character',
         description: parsedChar.description || '',
         personality: parsedChar.personality || '',
@@ -183,7 +187,14 @@ export default function HomePage() {
     return matchesSearch && matchesTag;
   });
 
-  const handleStartChat = async (character: Character) => {
+  const handleStartChat = (character: Character) => {
+    setSelectedCharForChat(character);
+    setPersonaModalOpen(true);
+  };
+
+  const handleStartChatWithPersona = async (persona: Persona) => {
+    if (!selectedCharForChat) return;
+    const character = selectedCharForChat;
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData.user?.id;
 
@@ -194,7 +205,7 @@ export default function HomePage() {
           user_id: userId,
           character_id: character.id,
           title: `Chat with ${character.name}`,
-          persona_id: settings.activePersonaId || null,
+          persona_id: persona.id,
         })
         .select()
         .single();
@@ -327,14 +338,10 @@ export default function HomePage() {
               >
                 <div className="flex items-center space-x-3 truncate">
                   <div className="w-10 h-10 rounded-full overflow-hidden bg-black/10 shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={
-                        (chat as any).character?.avatar_url ||
-                        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'
-                      }
-                      alt="Avatar"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    <CharacterAvatar
+                      name={(chat as any).character?.name || chat.title}
+                      avatarUrl={(chat as any).character?.avatar_url}
+                      className="w-full h-full"
                     />
                   </div>
                   <div className="truncate">
@@ -398,13 +405,13 @@ export default function HomePage() {
               >
                 {/* Image & Header */}
                 <div className="relative h-48 w-full overflow-hidden bg-black/10">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={character.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'}
-                    alt={character.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  <CharacterAvatar
+                    name={character.name}
+                    avatarUrl={character.avatar_url}
+                    accentColor={character.accent_color}
+                    className="w-full h-full group-hover:scale-105 transition-transform duration-500"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
 
                   {/* Rating badge */}
                   {character.content_rating !== 'sfw' && (
@@ -521,6 +528,14 @@ export default function HomePage() {
           </div>
         )}
       </section>
+
+      {/* Persona Selection & AI Generator Modal */}
+      <PersonaModal
+        open={personaModalOpen}
+        onClose={() => setPersonaModalOpen(false)}
+        character={selectedCharForChat}
+        onSelectPersona={handleStartChatWithPersona}
+      />
     </div>
   );
 }

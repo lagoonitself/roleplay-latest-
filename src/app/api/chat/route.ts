@@ -5,6 +5,7 @@ import { assemblePrompt } from '@/lib/prompt/assembler';
 import { retrieveContextForChat, type RetrievedContext } from '@/lib/memory/retriever';
 import { extractMemoriesAndState } from '@/lib/memory/extractor';
 import { makeCharacter } from '@/lib/cards/card-parser';
+import { formatRoleplayText } from '@/lib/prompt/macros';
 import type { Character, Persona, Message } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -16,6 +17,7 @@ export async function POST(req: NextRequest) {
       chatId,
       characterId,
       personaId,
+      persona: clientPersona,
       userMessage,
       parentMessageId,
       apiKey: clientApiKey,
@@ -70,13 +72,28 @@ export async function POST(req: NextRequest) {
 
     // 2. Fetch Persona
     let persona: Persona | null = null;
-    if (personaId && userId) {
+    if (clientPersona && clientPersona.name) {
+      persona = clientPersona as Persona;
+    } else if (personaId && userId) {
       const { data: dbPersona } = await supabase
         .from('personas')
         .select('*')
         .eq('id', personaId)
         .maybeSingle();
       persona = (dbPersona as Persona) || null;
+    }
+
+    if (!persona) {
+      persona = {
+        id: 'default-user',
+        user_id: userId || 'guest',
+        name: 'User',
+        avatar_url: null,
+        description: '',
+        is_default: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
     }
 
     // 3. Save User Message to Database (if authenticated)
@@ -226,7 +243,7 @@ export async function POST(req: NextRequest) {
                 user_id: userId,
                 parent_id: savedUserMsgId,
                 role: 'assistant',
-                content: fullAssistantContent,
+                content: formatRoleplayText(fullAssistantContent, character.name, persona.name),
                 reasoning: fullReasoningContent || null,
                 status: 'done',
                 meta: {

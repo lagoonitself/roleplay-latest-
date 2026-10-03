@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Check, Trash2, Edit2, User, Sparkles } from 'lucide-react';
+import { ArrowLeft, Plus, Check, Trash2, User, Sparkles } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
+import { CharacterAvatar } from '@/components/character-avatar';
+import { PersonaModal } from '@/components/persona-modal';
 import { toast } from 'sonner';
 import type { Persona } from '@/lib/supabase/types';
 
@@ -13,105 +15,57 @@ export default function PersonasPage() {
   const supabase = createClient();
 
   const [personas, setPersonas] = useState<Persona[]>([]);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    async function loadPersonas() {
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) {
-        // Fallback default local persona
-        setPersonas([
-          {
-            id: 'persona-default',
-            user_id: 'local',
-            name: 'User',
-            avatar_url: null,
-            description: 'A curious and adaptable traveler exploring new stories.',
-            is_default: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ]);
-        return;
-      }
-
-      const { data } = await supabase
-        .from('personas')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (data && data.length > 0) {
-        setPersonas(data as Persona[]);
-      } else {
-        // Create an initial persona
-        const initPersona = {
-          user_id: authData.user.id,
-          name: authData.user.user_metadata?.full_name || 'User',
-          avatar_url: authData.user.user_metadata?.avatar_url || null,
-          description: 'A thoughtful adventurer.',
-          is_default: true,
-        };
-        const { data: created } = await supabase
-          .from('personas')
-          .insert(initPersona)
-          .select()
-          .single();
-        if (created) setPersonas([created as Persona]);
-      }
-    }
-
-    loadPersonas();
-  }, [supabase]);
-
-  const handleCreatePersona = async () => {
-    if (!name.trim()) {
-      toast.error('Persona name is required');
-      return;
-    }
+  const loadPersonas = async () => {
+    let localList: Persona[] = [];
+    try {
+      localList = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
+    } catch {}
 
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData.user?.id;
 
-    const newObj: Persona = {
-      id: 'p-' + Date.now(),
-      user_id: userId || 'local',
-      name: name.trim(),
-      description: description.trim(),
-      avatar_url: avatarUrl.trim() || null,
-      is_default: personas.length === 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
     if (userId) {
-      const { data, error } = await supabase
+      const { data: dbPersonas } = await supabase
         .from('personas')
-        .insert({
-          user_id: userId,
-          name: newObj.name,
-          description: newObj.description,
-          avatar_url: newObj.avatar_url,
-          is_default: newObj.is_default,
-        })
-        .select()
-        .single();
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        setPersonas([data as Persona, ...personas]);
+      if (dbPersonas && dbPersonas.length > 0) {
+        const combined = [...(dbPersonas as Persona[])];
+        const dbIds = new Set(combined.map((p) => p.id));
+        for (const lp of localList) {
+          if (!dbIds.has(lp.id)) combined.push(lp);
+        }
+        setPersonas(combined);
+        return;
       }
-    } else {
-      setPersonas([newObj, ...personas]);
     }
 
-    setName('');
-    setDescription('');
-    setAvatarUrl('');
-    setModalOpen(false);
-    toast.success(`Persona "${newObj.name}" created!`);
+    if (localList.length === 0) {
+      localList = [
+        {
+          id: 'persona-default-alexander',
+          user_id: 'guest',
+          name: 'Alexander Vance',
+          avatar_url: null,
+          description: 'A sharp, composed, yet deeply observant companion navigating the unfolding story.',
+          is_default: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ];
+      try {
+        localStorage.setItem('cadenza_local_personas', JSON.stringify(localList));
+      } catch {}
+    }
+    setPersonas(localList);
   };
+
+  useEffect(() => {
+    loadPersonas();
+  }, [supabase]);
 
   const handleSetActive = (persona: Persona) => {
     updateSettings({ activePersonaId: persona.id });
@@ -119,19 +73,23 @@ export default function PersonasPage() {
   };
 
   const handleDelete = async (id: string) => {
-    setPersonas(personas.filter((p) => p.id !== id));
+    const updated = personas.filter((p) => p.id !== id);
+    setPersonas(updated);
+    try {
+      localStorage.setItem('cadenza_local_personas', JSON.stringify(updated));
+    } catch {}
     await supabase.from('personas').delete().eq('id', id);
     toast.info('Persona removed');
   };
 
   return (
-    <div className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
+    <div className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       {/* Top Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-black/[0.06] dark:border-white/[0.08]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-black/[0.06] dark:border-white/[0.08]">
         <div className="flex items-center gap-3">
           <Link
             href="/"
-            className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+            className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
@@ -145,47 +103,44 @@ export default function PersonasPage() {
 
         <button
           onClick={() => setModalOpen(true)}
-          className="px-4 py-2 rounded-full bg-accent text-white hover:bg-accent-hover text-xs font-semibold apple-button flex items-center gap-1.5 shadow-sm"
+          className="px-4 py-2 rounded-full bg-accent text-white hover:bg-accent-hover text-xs font-semibold apple-button flex items-center justify-center gap-1.5 shadow-sm self-start sm:self-auto"
         >
           <Plus className="w-3.5 h-3.5" />
-          New Persona
+          <span>New Persona</span>
         </button>
       </div>
 
       {/* Personas List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {personas.map((persona) => {
-          const isActive = settings.activePersonaId === persona.id || (!settings.activePersonaId && persona.is_default);
+          const isActive =
+            settings.activePersonaId === persona.id ||
+            (!settings.activePersonaId && persona.is_default);
 
           return (
             <div
               key={persona.id}
-              className={`p-5 rounded-3xl glass-card border transition-all ${
+              className={`p-5 rounded-3xl glass-card border transition-all space-y-4 ${
                 isActive
-                  ? 'border-accent/40 bg-accent/[0.02]'
+                  ? 'border-accent/40 bg-accent/[0.02] shadow-sm'
                   : 'border-black/[0.06] dark:border-white/[0.08]'
               }`}
             >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-black/10 overflow-hidden flex items-center justify-center shrink-0 border border-white/10">
-                    {persona.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={persona.avatar_url}
-                        alt={persona.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <User className="w-6 h-6 text-muted-foreground" />
-                    )}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl overflow-hidden shrink-0 border border-white/10 shadow-xs">
+                    <CharacterAvatar
+                      name={persona.name}
+                      avatarUrl={persona.avatar_url}
+                      className="w-full h-full"
+                    />
                   </div>
 
-                  <div>
-                    <h3 className="font-semibold text-sm tracking-tight flex items-center gap-1.5">
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-sm tracking-tight flex items-center gap-1.5 truncate">
                       {persona.name}
                       {isActive && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent text-white font-bold">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent text-white font-bold shrink-0">
                           Active
                         </span>
                       )}
@@ -196,15 +151,21 @@ export default function PersonasPage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleDelete(persona.id)}
-                  className="p-1.5 text-muted-foreground hover:text-red-500 rounded-lg hover:bg-red-500/10 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {personas.length > 1 && (
+                  <button
+                    onClick={() => handleDelete(persona.id)}
+                    className="p-1.5 text-muted-foreground hover:text-red-500 rounded-lg hover:bg-red-500/10 transition-colors shrink-0"
+                    title="Delete persona"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
-              <div className="pt-4 flex items-center justify-end gap-2 border-t border-black/[0.04] dark:border-white/[0.06] mt-4">
+              <div className="pt-3 flex items-center justify-between border-t border-black/[0.04] dark:border-white/[0.06]">
+                <span className="text-[11px] text-muted-foreground">
+                  {isActive ? 'Current active persona in chats' : 'Ready to use'}
+                </span>
                 {!isActive && (
                   <button
                     onClick={() => handleSetActive(persona)}
@@ -219,70 +180,15 @@ export default function PersonasPage() {
         })}
       </div>
 
-      {/* Create Persona Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md glass-panel rounded-3xl p-6 space-y-4 shadow-2xl border border-white/10">
-            <h2 className="text-lg font-bold tracking-tight">Create User Persona</h2>
-
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Persona Name *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Detective Miller"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Description & Traits
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Physical appearance, occupation, background, relationship to world..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Avatar Image URL
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://..."
-                  value={avatarUrl}
-                  onChange={(e) => setAvatarUrl(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-xs font-medium rounded-full hover:bg-black/5 dark:hover:bg-white/10 apple-button"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreatePersona}
-                className="px-5 py-2 text-xs font-semibold rounded-full bg-accent text-white apple-button shadow-sm"
-              >
-                Create Persona
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Universal Persona Modal with DeepSeek AI Generator */}
+      <PersonaModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSelectPersona={(p) => {
+          handleSetActive(p);
+          loadPersonas();
+        }}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -19,11 +19,19 @@ import { SettingsDialog } from '@/components/settings-dialog';
 
 export function Navbar() {
   const pathname = usePathname();
+  const isChatPage = pathname.startsWith('/chat/');
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // If in active fullscreen chat, render a compact or translucent navbar
-  const isChatPage = pathname.startsWith('/chat/');
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // If in active fullscreen chat, hide global header to avoid double navigation on mobile
+  if (isChatPage) {
+    return <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />;
+  }
 
   return (
     <>
@@ -105,9 +113,13 @@ export function Navbar() {
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               aria-label="Toggle theme"
-              className="p-2 rounded-full hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground apple-button"
+              className="p-2 rounded-full hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground apple-button w-8 h-8 flex items-center justify-center"
             >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {mounted ? (
+                theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />
+              ) : (
+                <span className="w-4 h-4" />
+              )}
             </button>
 
             <button

@@ -127,6 +127,7 @@ export interface Message {
     swipes?: string[]; // swipe variations
     active_swipe_index?: number;
     model?: string;
+    persona_name?: string;
   };
   created_at: string;
   updated_at: string;

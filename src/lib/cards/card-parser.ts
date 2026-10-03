@@ -31,9 +31,7 @@ export function makeCharacter(overrides: Partial<Character>): Character {
     id: overrides.id || `char-${Date.now()}`,
     user_id: overrides.user_id || 'guest',
     name: overrides.name || 'Unnamed Character',
-    avatar_url:
-      overrides.avatar_url ??
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
+    avatar_url: overrides.avatar_url || null,
     tagline: overrides.tagline || '',
     description: overrides.description || '',
     personality: overrides.personality || '',

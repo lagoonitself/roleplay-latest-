@@ -16,9 +16,11 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { exportCharacterToCardV2 } from '@/lib/cards/card-parser';
+import { CharacterAvatar } from '@/components/character-avatar';
+import { PersonaModal } from '@/components/persona-modal';
 import { useSettings } from '@/lib/store/settings';
 import { toast } from 'sonner';
-import type { Character } from '@/lib/supabase/types';
+import type { Character, Persona } from '@/lib/supabase/types';
 
 export default function CharacterProfilePage() {
   const params = useParams();
@@ -30,6 +32,7 @@ export default function CharacterProfilePage() {
   const [character, setCharacter] = useState<Character | null>(null);
   const [selectedGreetingIndex, setSelectedGreetingIndex] = useState(0);
   const [notFound, setNotFound] = useState(false);
+  const [personaModalOpen, setPersonaModalOpen] = useState(false);
 
   useEffect(() => {
     async function loadChar() {
@@ -86,7 +89,11 @@ export default function CharacterProfilePage() {
 
   const greetings = [character.first_message, ...(character.alternate_greetings || [])];
 
-  const handleStartChat = async () => {
+  const handleStartChat = () => {
+    setPersonaModalOpen(true);
+  };
+
+  const handleConfirmStartChat = async (persona: Persona) => {
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData.user?.id;
 
@@ -97,7 +104,7 @@ export default function CharacterProfilePage() {
           user_id: userId,
           character_id: character.id,
           title: `Chat with ${character.name}`,
-          persona_id: settings.activePersonaId || null,
+          persona_id: persona.id,
         })
         .select()
         .single();
@@ -152,11 +159,11 @@ export default function CharacterProfilePage() {
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
           {/* Avatar */}
           <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-3xl overflow-hidden bg-black/10 shrink-0 border border-white/20 shadow-md">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={character.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'}
-              alt={character.name}
-              className="w-full h-full object-cover"
+            <CharacterAvatar
+              name={character.name}
+              avatarUrl={character.avatar_url}
+              accentColor={character.accent_color}
+              className="w-full h-full"
             />
           </div>
 
@@ -259,6 +266,13 @@ export default function CharacterProfilePage() {
           {greetings[selectedGreetingIndex]}
         </div>
       </div>
+
+      <PersonaModal
+        open={personaModalOpen}
+        onClose={() => setPersonaModalOpen(false)}
+        character={character}
+        onSelectPersona={handleConfirmStartChat}
+      />
     </div>
   );
 }

@@ -70,14 +70,5 @@ ${
 - Advance the scene forward with interesting choices or dialogue, inviting ${userName}'s next turn naturally.`;
 }
 
-/**
- * Macro substitution helper (replaces {{char}}, {{user}}, <USER>, <BOT>)
- */
-export function substituteMacros(text: string, charName: string, userName: string): string {
-  if (!text) return '';
-  return text
-    .replace(/\{\{char\}\}/gi, charName)
-    .replace(/\{\{user\}\}/gi, userName)
-    .replace(/<BOT>/gi, charName)
-    .replace(/<USER>/gi, userName);
-}
+export { substituteMacros, formatRoleplayText, repairMojibake } from './macros';
+

@@ -1,4 +1,4 @@
-import { buildSystemPrompt, substituteMacros } from './jailbreak';
+import { buildSystemPrompt, substituteMacros, formatRoleplayText } from './jailbreak';
 import type { Character, Persona, Memory, Summary, ChatState, LorebookEntry, Message } from '@/lib/supabase/types';
 import type { ChatMessage } from '@/lib/llm/client';
 
@@ -45,31 +45,31 @@ export function assemblePrompt(params: AssemblePromptParams): ChatMessage[] {
   // 2. Character Definition Block
   const charBlock = [
     `<character name="${charName}">`,
-    character.description ? `<description>\n${substituteMacros(character.description, charName, userName)}\n</description>` : '',
-    character.personality ? `<personality>\n${substituteMacros(character.personality, charName, userName)}\n</personality>` : '',
-    character.scenario ? `<scenario>\n${substituteMacros(character.scenario, charName, userName)}\n</scenario>` : '',
-    character.speech_style ? `<speech_style>\n${substituteMacros(character.speech_style, charName, userName)}\n</speech_style>` : '',
-    character.system_prompt ? `<creator_directives>\n${substituteMacros(character.system_prompt, charName, userName)}\n</creator_directives>` : '',
+    character.description ? `<description>\n${formatRoleplayText(character.description, charName, userName)}\n</description>` : '',
+    character.personality ? `<personality>\n${formatRoleplayText(character.personality, charName, userName)}\n</personality>` : '',
+    character.scenario ? `<scenario>\n${formatRoleplayText(character.scenario, charName, userName)}\n</scenario>` : '',
+    character.speech_style ? `<speech_style>\n${formatRoleplayText(character.speech_style, charName, userName)}\n</speech_style>` : '',
+    character.system_prompt ? `<creator_directives>\n${formatRoleplayText(character.system_prompt, charName, userName)}\n</creator_directives>` : '',
     `</character>`,
   ].filter(Boolean).join('\n');
 
   // 3. User Persona Block
   const personaBlock = persona?.description
-    ? `<user_persona name="${userName}">\n${substituteMacros(persona.description, charName, userName)}\n</user_persona>`
+    ? `<user_persona name="${userName}">\n${formatRoleplayText(persona.description, charName, userName)}\n</user_persona>`
     : `<user_persona name="${userName}" />`;
 
   // 4. Example Dialogue (Style anchor)
   const exampleBlock = character.example_dialogue
-    ? `<example_dialogue style="reference_only">\n${substituteMacros(character.example_dialogue, charName, userName)}\n</example_dialogue>`
+    ? `<example_dialogue style="reference_only">\n${formatRoleplayText(character.example_dialogue, charName, userName)}\n</example_dialogue>`
     : '';
 
   // 5. Pinned Memories & Story Summary (Prefix elements)
   const pinnedBlock = pinnedMemories.length > 0
-    ? `<pinned_facts>\n${pinnedMemories.map((m) => `- ${substituteMacros(m.content, charName, userName)}`).join('\n')}\n</pinned_facts>`
+    ? `<pinned_facts>\n${pinnedMemories.map((m) => `- ${formatRoleplayText(m.content, charName, userName)}`).join('\n')}\n</pinned_facts>`
     : '';
 
   const summaryBlock = summary?.content
-    ? `<story_so_far>\n${substituteMacros(summary.content, charName, userName)}\n</story_so_far>`
+    ? `<story_so_far>\n${formatRoleplayText(summary.content, charName, userName)}\n</story_so_far>`
     : '';
 
   // Combine static prefix
@@ -91,7 +91,7 @@ export function assemblePrompt(params: AssemblePromptParams): ChatMessage[] {
     if (msg.role === 'user' || msg.role === 'assistant') {
       messages.push({
         role: msg.role,
-        content: substituteMacros(msg.content, charName, userName),
+        content: formatRoleplayText(msg.content, charName, userName),
       });
     }
   }

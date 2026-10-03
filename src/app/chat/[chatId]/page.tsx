@@ -24,14 +24,17 @@ import {
   Plus,
   Flame,
   Check,
-  MoreVertical,
-  Maximize2,
+  User,
+  Settings,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
 import { makeCharacter } from '@/lib/cards/card-parser';
+import { CharacterAvatar } from '@/components/character-avatar';
+import { PersonaModal } from '@/components/persona-modal';
+import { formatRoleplayText } from '@/lib/prompt/macros';
 import { toast } from 'sonner';
-import type { Character, Message, Memory, ChatState, Summary } from '@/lib/supabase/types';
+import type { Character, Persona, Message, Memory, ChatState } from '@/lib/supabase/types';
 
 export default function ChatPage() {
   const params = useParams();
@@ -40,10 +43,12 @@ export default function ChatPage() {
   const chatId = params?.chatId as string;
   const charIdParam = searchParams.get('charId');
 
-  const [settings] = useSettings();
+  const [settings, updateSettings] = useSettings();
   const supabase = createClient();
 
   const [character, setCharacter] = useState<Character | null>(null);
+  const [activePersona, setActivePersona] = useState<Persona | null>(null);
+  const [personaModalOpen, setPersonaModalOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -53,7 +58,6 @@ export default function ChatPage() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [chatState, setChatState] = useState<ChatState['state']>({});
-  const [summary, setSummary] = useState<string>('');
   const [newMemoryText, setNewMemoryText] = useState('');
 
   // Editing in-place
@@ -67,10 +71,60 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // 1. Load Character, Messages, State
+  // 1. Load Persona, Character, Messages, State
   useEffect(() => {
     async function initChat() {
-      // Find character
+      // A. Load Active Persona
+      let resolvedPersona: Persona | null = null;
+      let localPersonas: Persona[] = [];
+      try {
+        localPersonas = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
+      } catch {}
+
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+
+      if (userId) {
+        const { data: dbPersonas } = await supabase
+          .from('personas')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (dbPersonas && dbPersonas.length > 0) {
+          const list = dbPersonas as Persona[];
+          resolvedPersona =
+            list.find((p) => p.id === settings.activePersonaId) ||
+            list.find((p) => p.is_default) ||
+            list[0];
+        }
+      }
+
+      if (!resolvedPersona && localPersonas.length > 0) {
+        resolvedPersona =
+          localPersonas.find((p) => p.id === settings.activePersonaId) ||
+          localPersonas.find((p) => p.is_default) ||
+          localPersonas[0];
+      }
+
+      if (!resolvedPersona) {
+        resolvedPersona = {
+          id: 'persona-default-alexander',
+          user_id: userId || 'guest',
+          name: 'Alexander Vance',
+          avatar_url: null,
+          description: 'A sharp, composed, yet deeply observant companion.',
+          is_default: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        try {
+          localStorage.setItem('cadenza_local_personas', JSON.stringify([resolvedPersona]));
+        } catch {}
+      }
+
+      setActivePersona(resolvedPersona);
+
+      // B. Load Character
       let charObj: Character | null = null;
 
       // 1. Try finding by charIdParam in DB
@@ -90,7 +144,11 @@ export default function ChatPage() {
       if (!charObj && charIdParam) {
         try {
           const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
-          const found = localList.find((c: any) => c.id === charIdParam || c.name.toLowerCase() === charIdParam.toLowerCase());
+          const found = localList.find(
+            (c: any) =>
+              c.id === charIdParam ||
+              c.name.toLowerCase() === decodeURIComponent(charIdParam).toLowerCase()
+          );
           if (found) charObj = found as Character;
         } catch {}
       }
@@ -108,28 +166,33 @@ export default function ChatPage() {
         }
       }
 
-      // 4. Clean dynamic fallback if none matched
+      // 4. Dynamic fallback if none matched
       if (!charObj) {
         const cleanName = charIdParam
           ? decodeURIComponent(charIdParam).replace(/^local-char-\d+-?/, '').replace(/-/g, ' ')
-          : 'Character';
+          : 'Roleplay Partner';
 
         charObj = makeCharacter({
           id: charIdParam || `char-${Date.now()}`,
           user_id: 'guest',
           name: cleanName || 'Roleplay Partner',
           tagline: 'Custom Roleplay Character',
-          description: 'A custom roleplay partner.',
-          personality: 'Immersive, descriptive, observant, deeply engaging.',
+          description: 'An evocative roleplay partner.',
+          personality: 'Immersive, observant, deeply engaging.',
           scenario: 'An ongoing interactive narrative.',
-          first_message: `*I look at you with quiet curiosity, waiting for your first words.*`,
+          first_message: `*I look at you quietly, taking in your arrival.* "You're finally here," I murmur softly.`,
           speech_style: 'Descriptive, evocative prose.',
           tags: ['Custom'],
           content_rating: 'mature',
         });
       }
 
-      // If existing DB chat, fetch messages for this chat
+      setCharacter(charObj);
+
+      // C. Load Messages & History
+      const charName = charObj.name || 'Character';
+      const userName = resolvedPersona.name || 'User';
+
       if (!chatId.startsWith('local-')) {
         const { data: msgsData } = await supabase
           .from('messages')
@@ -138,7 +201,11 @@ export default function ChatPage() {
           .order('created_at', { ascending: true });
 
         if (msgsData && msgsData.length > 0) {
-          setMessages(msgsData as Message[]);
+          const cleanedMsgs = (msgsData as Message[]).map((m) => ({
+            ...m,
+            content: formatRoleplayText(m.content, charName, userName),
+          }));
+          setMessages(cleanedMsgs);
         }
 
         // Fetch memories & state
@@ -160,21 +227,25 @@ export default function ChatPage() {
         if (stateData?.state) setChatState(stateData.state);
       }
 
-      setCharacter(charObj);
-
-      // If no messages yet, seed the character's first_message
+      // If no messages yet, seed the character's first_message with macro substitution!
       if (charObj && messages.length === 0) {
+        const rawFirst = charObj.first_message || '*I look at you with quiet attention.*';
+        const formattedFirst = formatRoleplayText(rawFirst, charName, userName);
+
+        const rawSwipes = [rawFirst, ...(charObj.alternate_greetings || [])];
+        const formattedSwipes = rawSwipes.map((s) => formatRoleplayText(s, charName, userName));
+
         const initialMsg: Message = {
           id: 'msg-greeting',
           chat_id: chatId,
           user_id: 'system',
           parent_id: null,
           role: 'assistant',
-          content: charObj.first_message,
+          content: formattedFirst,
           reasoning: null,
           status: 'done',
           meta: {
-            swipes: [charObj.first_message, ...(charObj.alternate_greetings || [])],
+            swipes: formattedSwipes,
             active_swipe_index: 0,
           },
           created_at: new Date().toISOString(),
@@ -197,7 +268,7 @@ export default function ChatPage() {
     setInputText(e.target.value);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
     }
   };
 
@@ -211,6 +282,9 @@ export default function ChatPage() {
       return;
     }
 
+    const charName = character.name || 'Character';
+    const userName = activePersona?.name || 'User';
+
     const userMsgId = 'usr-' + Date.now();
     const newUserMsg: Message = {
       id: userMsgId,
@@ -218,10 +292,12 @@ export default function ChatPage() {
       user_id: 'user',
       parent_id: messages.length > 0 ? messages[messages.length - 1].id : null,
       role: 'user',
-      content: textToSend,
+      content: formatRoleplayText(textToSend, charName, userName),
       reasoning: null,
       status: 'done',
-      meta: {},
+      meta: {
+        persona_name: userName,
+      },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -260,7 +336,9 @@ export default function ChatPage() {
         body: JSON.stringify({
           chatId,
           characterId: character.id,
-          personaId: settings.activePersonaId,
+          personaId: activePersona?.id,
+          persona: activePersona,
+          character,
           userMessage: textToSend,
           parentMessageId: newUserMsg.parent_id,
           apiKey: settings.opencodeApiKey,
@@ -294,15 +372,17 @@ export default function ChatPage() {
                 const parsed = JSON.parse(trimmed.slice(6));
                 if (parsed.text) {
                   streamedContent += parsed.text;
+                  const formattedLive = formatRoleplayText(streamedContent, charName, userName);
+
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantMsgId
                         ? {
                             ...m,
-                            content: streamedContent,
+                            content: formattedLive,
                             meta: {
                               ...m.meta,
-                              swipes: [streamedContent],
+                              swipes: [formattedLive],
                             },
                           }
                         : m
@@ -319,7 +399,13 @@ export default function ChatPage() {
 
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantMsgId ? { ...m, status: 'done' } : m
+          m.id === assistantMsgId
+            ? {
+                ...m,
+                status: 'done',
+                content: formatRoleplayText(m.content, charName, userName),
+              }
+            : m
         )
       );
 
@@ -339,13 +425,18 @@ export default function ChatPage() {
           .maybeSingle();
         if (stData?.state) setChatState(stData.state);
       }, 3500);
-
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         toast.error(err.message || 'Generation error');
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantMsgId ? { ...m, status: 'error', content: m.content || '*[Connection interrupted]*' } : m
+            m.id === assistantMsgId
+              ? {
+                  ...m,
+                  status: 'error',
+                  content: m.content || '*[Connection interrupted. Tap retry to continue.]*',
+                }
+              : m
           )
         );
       }
@@ -360,7 +451,7 @@ export default function ChatPage() {
       abortController.abort();
       setIsGenerating(false);
       setAbortController(null);
-      toast.info('Generation stopped');
+      toast.info('Generation paused');
     }
   };
 
@@ -389,10 +480,16 @@ export default function ChatPage() {
     );
   };
 
-  // Rewind / Delete message
+  // Delete message
   const handleDeleteMessage = (msgId: string) => {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    toast.info('Message removed');
+    toast.info('Message deleted');
+  };
+
+  // Copy message
+  const handleCopyMessage = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Copied message to clipboard');
   };
 
   // Pin memory manually
@@ -426,78 +523,96 @@ export default function ChatPage() {
       pinned: true,
     });
 
-    toast.success('Pinned to long-term memory');
+    toast.success('Pinned to roleplay memory');
   };
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100dvh-3.5rem)] overflow-hidden bg-background">
-      {/* Top Chat Sub-Header */}
-      <div className="h-14 px-4 sm:px-6 border-b border-black/[0.06] dark:border-white/[0.08] glass-panel flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-3">
+    <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-background select-none">
+      {/* Mobile-First Immersive Top Header */}
+      <header className="h-14 px-3 sm:px-6 border-b border-black/[0.06] dark:border-white/[0.08] glass-panel flex items-center justify-between shrink-0 z-30">
+        {/* Left: Back & Character Identity */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link
             href="/"
-            className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+            className="p-2 -ml-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            title="Back to Roster"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-5 h-5" />
           </Link>
 
-          {/* Character info */}
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full overflow-hidden bg-black/10 shrink-0 border border-white/20 shadow-xs">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={character?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'}
-                alt={character?.name || 'Character'}
-                className="w-full h-full object-cover"
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-2xl overflow-hidden bg-black/10 shrink-0 border border-white/20 shadow-xs relative">
+              <CharacterAvatar
+                name={character?.name || 'Character'}
+                avatarUrl={character?.avatar_url}
+                accentColor={character?.accent_color}
+                className="w-full h-full"
               />
             </div>
-            <div>
+
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-semibold tracking-tight">{character?.name}</span>
+                <span className="text-sm font-semibold tracking-tight truncate">
+                  {character?.name}
+                </span>
                 {character?.content_rating !== 'sfw' && (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-red-500/15 text-red-500 font-bold">
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-red-500/15 text-red-500 font-bold shrink-0">
                     18+
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-muted-foreground truncate max-w-xs sm:max-w-md">
+              <p className="text-[11px] text-muted-foreground truncate hidden xs:block">
                 {character?.tagline}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Right tools */}
-        <div className="flex items-center gap-2">
+        {/* Right: Persona Switcher & Memory Drawer Button */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Active Persona Switcher Pill */}
+          <button
+            onClick={() => setPersonaModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-full bg-accent/10 hover:bg-accent/20 text-accent text-xs font-semibold apple-button flex items-center gap-1.5 border border-accent/20 transition-all max-w-[140px] sm:max-w-[200px]"
+            title="Click to change your roleplay persona"
+          >
+            <User className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">
+              {activePersona?.name || 'Set Persona'}
+            </span>
+          </button>
+
           {/* Memory Inspector Button */}
           <button
             onClick={() => setInspectorOpen(!inspectorOpen)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium apple-button flex items-center gap-1.5 border transition-all ${
+            className={`p-2 rounded-full apple-button flex items-center justify-center border transition-all ${
               inspectorOpen
                 ? 'bg-accent/15 border-accent text-accent'
                 : 'border-black/[0.06] dark:border-white/[0.08] hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground'
             }`}
+            title="Inspect story facts & memories"
           >
-            <Brain className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Memory</span>
+            <Brain className="w-4 h-4" />
             {memories.length > 0 && (
-              <span className="w-4 h-4 rounded-full bg-accent text-white text-[10px] flex items-center justify-center font-bold">
-                {memories.length}
-              </span>
+              <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent" />
             )}
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Main Chat Body (with Collapsible Inspector) */}
+      {/* Main Chat Canvas with Messages Timeline */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Messages Stream Timeline */}
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6">
-          <div className="max-w-3xl mx-auto space-y-6 pb-6">
+        <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5">
+          <div className="max-w-3xl mx-auto space-y-5 pb-6">
             {messages.map((message, index) => {
               const isAssistant = message.role === 'assistant';
               const swipes = message.meta?.swipes || [message.content];
               const swipeIndex = message.meta?.active_swipe_index ?? 0;
+              const formattedContent = formatRoleplayText(
+                message.content,
+                character?.name || 'Character',
+                activePersona?.name || 'User'
+              );
 
               return (
                 <div
@@ -505,103 +620,108 @@ export default function ChatPage() {
                   className={`flex flex-col group ${isAssistant ? 'items-start' : 'items-end'}`}
                 >
                   {isAssistant ? (
-                    /* Assistant Roleplay Message */
-                    <div className="flex items-start gap-3.5 w-full">
-                      <div className="w-9 h-9 rounded-2xl overflow-hidden bg-black/10 shrink-0 border border-white/10 shadow-xs mt-1">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={character?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'}
-                          alt={character?.name || 'Character'}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-
-                      <div className="flex-1 min-w-0 space-y-2">
-                        <div className="flex items-center justify-between">
+                    /* Assistant Roleplay Prose (Spacious & Mobile-Optimized) */
+                    <div className="w-full space-y-1.5">
+                      {/* Author Line & Swipes */}
+                      <div className="flex items-center justify-between px-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg overflow-hidden bg-black/10 shrink-0 border border-white/10">
+                            <CharacterAvatar
+                              name={character?.name || 'Character'}
+                              avatarUrl={character?.avatar_url}
+                              accentColor={character?.accent_color}
+                              className="w-full h-full"
+                            />
+                          </div>
                           <span className="text-xs font-semibold tracking-tight text-foreground/90">
                             {character?.name}
                           </span>
-
-                          {/* Swipes controls if multiple alternatives exist */}
-                          {swipes.length > 1 && (
-                            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[11px] text-muted-foreground">
-                              <button
-                                onClick={() => handleSwipe(index, 'prev')}
-                                disabled={swipeIndex === 0}
-                                className="disabled:opacity-30 hover:text-foreground"
-                              >
-                                <ChevronLeft className="w-3 h-3" />
-                              </button>
-                              <span>
-                                {swipeIndex + 1}/{swipes.length}
-                              </span>
-                              <button
-                                onClick={() => handleSwipe(index, 'next')}
-                                disabled={swipeIndex === swipes.length - 1}
-                                className="disabled:opacity-30 hover:text-foreground"
-                              >
-                                <ChevronRight className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
                         </div>
 
-                        {/* Content text */}
-                        <div className="p-4 sm:p-5 rounded-3xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {message.content}
-                          </ReactMarkdown>
+                        {/* Swipes Controller */}
+                        {swipes.length > 1 && (
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[11px] text-muted-foreground font-mono">
+                            <button
+                              onClick={() => handleSwipe(index, 'prev')}
+                              disabled={swipeIndex === 0}
+                              className="disabled:opacity-30 hover:text-foreground p-0.5"
+                            >
+                              <ChevronLeft className="w-3 h-3" />
+                            </button>
+                            <span>
+                              {swipeIndex + 1}/{swipes.length}
+                            </span>
+                            <button
+                              onClick={() => handleSwipe(index, 'next')}
+                              disabled={swipeIndex === swipes.length - 1}
+                              className="disabled:opacity-30 hover:text-foreground p-0.5"
+                            >
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
 
-                          {message.status === 'streaming' && (
-                            <span className="streaming-cursor" />
-                          )}
-                        </div>
+                      {/* Narrative Bubble */}
+                      <div className="p-4 sm:p-5 rounded-2xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs border border-black/[0.05] dark:border-white/[0.07] select-text">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {formattedContent}
+                        </ReactMarkdown>
 
-                        {/* Actions bar on hover */}
-                        <div className="flex items-center gap-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity text-xs pl-1">
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(message.content);
-                              toast.success('Copied to clipboard');
-                            }}
-                            className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10"
-                            title="Copy message"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
+                        {message.status === 'streaming' && (
+                          <span className="inline-block w-1.5 h-4 ml-1 bg-accent animate-pulse align-middle" />
+                        )}
+                      </div>
+
+                      {/* Action Bar (Copy, Delete, Reroll) */}
+                      <div className="flex items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleCopyMessage(formattedContent)}
+                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] flex items-center gap-1 transition-colors"
+                          title="Copy message"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        {index > 0 && (
                           <button
                             onClick={() => handleDeleteMessage(message.id)}
-                            className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-red-500/80 hover:text-red-500"
+                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 text-[11px] flex items-center gap-1 transition-colors"
                             title="Delete message"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                        </div>
+                        )}
                       </div>
                     </div>
                   ) : (
-                    /* User Message */
-                    <div className="max-w-[85%] sm:max-w-xl space-y-1">
-                      <div className="px-4 py-3 rounded-3xl rounded-tr-sm bg-accent text-white text-xs sm:text-sm shadow-sm leading-relaxed roleplay-prose">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {message.content}
-                        </ReactMarkdown>
+                    /* User Response Bubble */
+                    <div className="max-w-[85%] sm:max-w-[75%] space-y-1">
+                      {/* Persona Name & Monogram */}
+                      <div className="flex items-center justify-end gap-1.5 px-1">
+                        <span className="text-[11px] font-semibold text-muted-foreground">
+                          {activePersona?.name || 'You'}
+                        </span>
+                        <div className="w-5 h-5 rounded-md overflow-hidden shrink-0 border border-white/10">
+                          <CharacterAvatar
+                            name={activePersona?.name || 'User'}
+                            avatarUrl={activePersona?.avatar_url}
+                            className="w-full h-full"
+                          />
+                        </div>
                       </div>
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs pr-1 text-muted-foreground">
+
+                      {/* User Message Card */}
+                      <div className="p-3.5 sm:p-4 rounded-2xl rounded-tr-sm bg-accent text-white text-xs sm:text-sm leading-relaxed shadow-sm select-text">
+                        <p className="whitespace-pre-wrap">{formattedContent}</p>
+                      </div>
+
+                      <div className="flex justify-end px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(message.content);
-                            toast.success('Copied');
-                          }}
-                          className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10"
+                          onClick={() => handleCopyMessage(formattedContent)}
+                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
+                          title="Copy"
                         >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMessage(message.id)}
-                          className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-red-500"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Copy className="w-3 h-3" />
                         </button>
                       </div>
                     </div>
@@ -611,53 +731,42 @@ export default function ChatPage() {
             })}
             <div ref={messagesEndRef} />
           </div>
-        </div>
+        </main>
 
-        {/* Collapsible Memory & Scene State Inspector */}
+        {/* Slide-over Memory & Lore Inspector */}
         {inspectorOpen && (
-          <aside className="w-80 sm:w-96 border-l border-black/[0.06] dark:border-white/[0.08] glass-panel p-5 overflow-y-auto space-y-6 animate-in slide-in-from-right-8 duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-black/[0.06] dark:border-white/[0.08]">
+          <aside className="w-full sm:w-80 border-l border-black/[0.06] dark:border-white/[0.08] glass-panel p-5 space-y-5 overflow-y-auto shrink-0 z-30 absolute sm:relative inset-0 sm:inset-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-black/[0.06] dark:border-white/[0.08]">
               <div className="flex items-center gap-2">
                 <Brain className="w-4 h-4 text-accent" />
-                <h3 className="text-sm font-semibold tracking-tight">Active Context & Memory</h3>
+                <h3 className="text-sm font-bold tracking-tight">Story Memory & Facts</h3>
               </div>
               <button
                 onClick={() => setInspectorOpen(false)}
-                className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Scene State Tracker */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Scene State
-              </h4>
-              <div className="p-3.5 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.06] space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Location</span>
-                  <span className="font-medium">{chatState.location || 'Default setting'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Mood</span>
-                  <span className="font-medium">{chatState.char_mood || 'Attentive'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Relationship</span>
-                  <span className="font-medium text-accent">
-                    {chatState.affection_level || 'Neutral'} ({chatState.relationship_score ?? 0})
-                  </span>
-                </div>
-
-                {/* Relationship Bar */}
-                <div className="w-full bg-black/10 dark:bg-white/10 h-1.5 rounded-full overflow-hidden mt-1">
-                  <div
-                    className="bg-accent h-full transition-all duration-500 rounded-full"
-                    style={{
-                      width: `${Math.max(5, Math.min(100, ((chatState.relationship_score ?? 0) + 100) / 2))}%`,
-                    }}
+            {/* Persona playing info in inspector */}
+            <div className="p-3.5 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.06] space-y-1.5">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                Current Persona
+              </span>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-white/10">
+                  <CharacterAvatar
+                    name={activePersona?.name || 'User'}
+                    avatarUrl={activePersona?.avatar_url}
+                    className="w-full h-full"
                   />
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold">{activePersona?.name}</h4>
+                  <p className="text-[11px] text-muted-foreground line-clamp-1">
+                    {activePersona?.description || 'Standard companion'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -666,7 +775,7 @@ export default function ChatPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Durable Facts ({memories.length})
+                  Pinned Facts ({memories.length})
                 </h4>
               </div>
 
@@ -674,11 +783,11 @@ export default function ChatPage() {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Pin a fact (e.g. loves tea)..."
+                  placeholder="Pin a memory..."
                   value={newMemoryText}
                   onChange={(e) => setNewMemoryText(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAddMemory()}
-                  className="flex-1 px-3 py-1.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-xs focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="flex-1 px-3 py-1.5 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs focus:outline-none focus:ring-1 focus:ring-accent"
                 />
                 <button
                   onClick={handleAddMemory}
@@ -698,23 +807,20 @@ export default function ChatPage() {
                       <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-accent/10 text-accent font-semibold uppercase">
                         {m.kind}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        Importance: {m.importance}/10
-                      </span>
                     </div>
-                    <p className="text-muted-foreground">{m.content}</p>
+                    <p className="text-muted-foreground text-[11px] leading-relaxed">{m.content}</p>
                   </div>
                 ))}
 
                 {memories.length === 0 && (
                   <p className="text-xs text-muted-foreground text-center py-4">
-                    No memories recorded yet. As you chat, DeepSeek will automatically record durable facts here.
+                    No memories recorded yet. DeepSeek will auto-record durable facts here as the roleplay progresses.
                   </p>
                 )}
               </div>
             </div>
 
-            {/* Author's Note Toggle in Drawer */}
+            {/* Author's Note Toggle */}
             <div className="space-y-2 pt-2 border-t border-black/[0.06] dark:border-white/[0.08]">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -724,15 +830,15 @@ export default function ChatPage() {
                   onClick={() => setShowAuthorsNote(!showAuthorsNote)}
                   className="text-xs text-accent hover:underline"
                 >
-                  {showAuthorsNote ? 'Hide' : 'Set Note'}
+                  {showAuthorsNote ? 'Hide' : 'Configure'}
                 </button>
               </div>
               {showAuthorsNote && (
                 <textarea
                   value={authorsNote}
                   onChange={(e) => setAuthorsNote(e.target.value)}
-                  placeholder="Direct the scene (e.g. Focus on atmospheric rain and intimate eye contact)..."
-                  className="w-full p-2.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-xs resize-none h-20 focus:outline-none focus:ring-1 focus:ring-accent"
+                  placeholder="Direct the scene (e.g. Focus on intimate tension, rain against the window)..."
+                  className="w-full p-2.5 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs resize-none h-20 focus:outline-none focus:ring-1 focus:ring-accent leading-relaxed"
                 />
               )}
             </div>
@@ -740,34 +846,57 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* Bottom Floating Composer */}
-      <div className="p-3 sm:p-5 border-t border-black/[0.06] dark:border-white/[0.08] glass-panel shrink-0">
+      {/* Mobile-First Reachable Bottom Input Composer */}
+      <footer className="p-2 sm:p-4 border-t border-black/[0.06] dark:border-white/[0.08] glass-panel shrink-0 pb-safe">
         <div className="max-w-3xl mx-auto space-y-2">
-          {/* Quick Steering Helpers */}
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
+          {/* Quick Action Chips (Horizontally Scrollable) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px] px-0.5">
             <button
               onClick={() => handleSendMessage('*Continues the scene*')}
               disabled={isGenerating}
-              className="px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors"
+              className="px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors touch-manipulation"
             >
               Continue Scene
             </button>
             <button
-              onClick={() => handleSendMessage('*Waits in silence, watching your reaction closely*')}
+              onClick={() => handleSendMessage('*Waits in silence, observing your expression*')}
               disabled={isGenerating}
-              className="px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors"
+              className="px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors touch-manipulation"
             >
               Wait in silence
             </button>
             <button
               onClick={() => setShowAuthorsNote(!showAuthorsNote)}
-              className="px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors"
+              className={`px-3 py-1 rounded-full font-medium whitespace-nowrap transition-colors touch-manipulation ${
+                authorsNote
+                  ? 'bg-accent/15 text-accent font-semibold'
+                  : 'bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground hover:text-foreground'
+              }`}
             >
-              {authorsNote ? "Author's Note active" : "+ Author's Note"}
+              {authorsNote ? "Author's Note Active" : "+ Author's Note"}
             </button>
           </div>
 
-          {/* Text Input Row */}
+          {/* Author's Note Quick Drawer */}
+          {showAuthorsNote && (
+            <div className="p-2 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.06] dark:border-white/[0.08] space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>Steering directive injected at end of prompt:</span>
+                <button onClick={() => setShowAuthorsNote(false)} className="hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <input
+                type="text"
+                value={authorsNote}
+                onChange={(e) => setAuthorsNote(e.target.value)}
+                placeholder="e.g. Focus on dramatic conflict, sensory descriptions..."
+                className="w-full px-3 py-1.5 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+          )}
+
+          {/* Input Box with Big Thumb Send Button */}
           <div className="relative flex items-end gap-2 p-1.5 sm:p-2 rounded-3xl glass-card border border-black/[0.08] dark:border-white/[0.1] focus-within:ring-2 focus-within:ring-accent/40 shadow-xs">
             <textarea
               ref={textareaRef}
@@ -780,14 +909,14 @@ export default function ChatPage() {
                   handleSendMessage();
                 }
               }}
-              placeholder={`Write your turn... (Shift+Enter for new line)`}
-              className="flex-1 bg-transparent px-3 py-2 text-xs sm:text-sm text-foreground focus:outline-none resize-none max-h-44 min-h-[38px] leading-relaxed"
+              placeholder={`Write your turn as ${activePersona?.name || 'User'}...`}
+              className="flex-1 bg-transparent px-3 py-2 text-xs sm:text-sm text-foreground focus:outline-none resize-none max-h-40 min-h-[40px] leading-relaxed"
             />
 
             {isGenerating ? (
               <button
                 onClick={handleStop}
-                className="w-9 h-9 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shrink-0 apple-button shadow-xs"
+                className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shrink-0 apple-button shadow-xs touch-manipulation"
                 title="Stop generation"
               >
                 <Square className="w-4 h-4 fill-white" />
@@ -796,7 +925,7 @@ export default function ChatPage() {
               <button
                 onClick={() => handleSendMessage()}
                 disabled={!inputText.trim()}
-                className="w-9 h-9 rounded-full bg-accent hover:bg-accent-hover disabled:opacity-40 disabled:hover:bg-accent text-white flex items-center justify-center shrink-0 apple-button shadow-xs transition-colors"
+                className="w-10 h-10 rounded-full bg-accent hover:bg-accent-hover disabled:opacity-40 disabled:hover:bg-accent text-white flex items-center justify-center shrink-0 apple-button shadow-xs transition-colors touch-manipulation"
                 title="Send message"
               >
                 <Send className="w-4 h-4" />
@@ -804,7 +933,20 @@ export default function ChatPage() {
             )}
           </div>
         </div>
-      </div>
+      </footer>
+
+      {/* Universal Persona Selection & AI Generator Modal */}
+      <PersonaModal
+        open={personaModalOpen}
+        onClose={() => setPersonaModalOpen(false)}
+        character={character}
+        currentPersonaId={activePersona?.id}
+        onSelectPersona={(newPersona) => {
+          setActivePersona(newPersona);
+          updateSettings({ activePersonaId: newPersona.id });
+          toast.success(`Roleplaying as "${newPersona.name}"`);
+        }}
+      />
     </div>
   );
 }
