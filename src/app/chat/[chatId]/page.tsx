@@ -34,7 +34,10 @@ import { useSettings } from '@/lib/store/settings';
 import { makeCharacter } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
+import { ThinkingProcess } from '@/components/thinking-process';
 import { formatRoleplayText } from '@/lib/prompt/macros';
+import { extractThinking } from '@/lib/llm/stream-parser';
+import { recordLocalUsage } from '@/lib/usage/tokens';
 import {
   saveLocalChat,
   getLocalChat,
@@ -312,10 +315,20 @@ export default function ChatPage() {
       }
 
       if (loadedMessages.length > 0) {
-        const cleanedMsgs = loadedMessages.map((m) => ({
-          ...m,
-          content: formatRoleplayText(m.content, charName, userName),
-        }));
+        const cleanedMsgs = loadedMessages.map((m) => {
+          let reasoning = m.reasoning;
+          let content = m.content || '';
+          if (!reasoning && (content.includes('<think>') || content.includes('<thought>'))) {
+            const extracted = extractThinking(content);
+            content = extracted.text;
+            reasoning = extracted.reasoning;
+          }
+          return {
+            ...m,
+            reasoning: reasoning || null,
+            content: formatRoleplayText(content, charName, userName),
+          };
+        });
         setMessages(cleanedMsgs);
       } else {
         // ONLY if no messages exist anywhere, seed the character's initial greeting
@@ -462,6 +475,8 @@ export default function ChatPage() {
       meta: {
         swipes: [''],
         active_swipe_index: 0,
+        reasoning_swipes: [''],
+        reasoning_durations: [],
       },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -506,6 +521,10 @@ export default function ChatPage() {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let streamedContent = '';
+      let streamedReasoning = '';
+      let thinkingEnded = false;
+      let reasoningDuration = 0;
+      const genStartTime = Date.now();
 
       if (reader) {
         while (true) {
@@ -520,7 +539,59 @@ export default function ChatPage() {
             if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
               try {
                 const parsed = JSON.parse(trimmed.slice(6));
+                // Feature 2 (additive): instant local token ledger — ignores text/reasoning.
+                if (parsed.usage) {
+                  const uIn = Math.max(0, Math.floor(Number(parsed.usage.input) || 0));
+                  const uOut = Math.max(0, Math.floor(Number(parsed.usage.output) || 0));
+                  if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
+                }
+
+                if (parsed.reasoning) {
+                  streamedReasoning += parsed.reasoning;
+                  setMessages((prev) =>
+                    prev.map((m) => {
+                      if (m.id !== assistantMsgId) return m;
+                      const rList = m.meta?.reasoning_swipes ? [...m.meta.reasoning_swipes] : [streamedReasoning];
+                      const sIdx = m.meta?.active_swipe_index ?? 0;
+                      rList[sIdx] = streamedReasoning;
+                      return {
+                        ...m,
+                        reasoning: streamedReasoning,
+                        meta: {
+                          ...m.meta,
+                          reasoning_swipes: rList,
+                        },
+                      };
+                    })
+                  );
+                }
+
+                if (parsed.reasoningDone && !thinkingEnded) {
+                  thinkingEnded = true;
+                  reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
+                  setMessages((prev) =>
+                    prev.map((m) => {
+                      if (m.id !== assistantMsgId) return m;
+                      const dList = m.meta?.reasoning_durations ? [...(m.meta.reasoning_durations || [])] : [];
+                      const sIdx = m.meta?.active_swipe_index ?? 0;
+                      dList[sIdx] = reasoningDuration;
+                      return {
+                        ...m,
+                        meta: {
+                          ...m.meta,
+                          reasoning_duration_seconds: reasoningDuration,
+                          reasoning_durations: dList,
+                        },
+                      };
+                    })
+                  );
+                }
+
                 if (parsed.text) {
+                  if (!thinkingEnded && streamedReasoning) {
+                    thinkingEnded = true;
+                    reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
+                  }
                   streamedContent += parsed.text;
                   const formattedLive = formatRoleplayText(streamedContent, charName, userName);
 
@@ -537,6 +608,7 @@ export default function ChatPage() {
                           ...m.meta,
                           swipes: sList,
                           active_swipe_index: sIdx,
+                          reasoning_duration_seconds: reasoningDuration || m.meta?.reasoning_duration_seconds,
                         },
                       };
                     })
@@ -550,6 +622,10 @@ export default function ChatPage() {
         }
       }
 
+      if (!reasoningDuration && streamedReasoning) {
+        reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
+      }
+
       let finalMessages: Message[] = [];
       setMessages((prev) => {
         finalMessages = prev.map((m) => {
@@ -558,14 +634,25 @@ export default function ChatPage() {
           const sIdx = m.meta?.active_swipe_index ?? 0;
           const finalVal = formatRoleplayText(m.content, charName, userName);
           sList[sIdx] = finalVal;
+
+          const rList = m.meta?.reasoning_swipes ? [...m.meta.reasoning_swipes] : [streamedReasoning];
+          rList[sIdx] = streamedReasoning || m.reasoning || null;
+
+          const dList = m.meta?.reasoning_durations ? [...(m.meta.reasoning_durations || [])] : [];
+          dList[sIdx] = reasoningDuration || m.meta?.reasoning_duration_seconds || undefined;
+
           return {
             ...m,
             status: 'done',
             content: finalVal,
+            reasoning: streamedReasoning || m.reasoning || null,
             meta: {
               ...m.meta,
               swipes: sList,
               active_swipe_index: sIdx,
+              reasoning_swipes: rList,
+              reasoning_duration_seconds: reasoningDuration || m.meta?.reasoning_duration_seconds,
+              reasoning_durations: dList,
             },
           };
         });
@@ -660,6 +747,8 @@ export default function ChatPage() {
   const handleSwipe = (msgIndex: number, direction: 'prev' | 'next') => {
     const msg = messages[msgIndex];
     const swipes = msg.meta?.swipes || [msg.content];
+    const reasoningSwipes = msg.meta?.reasoning_swipes || [];
+    const reasoningDurations = msg.meta?.reasoning_durations || [];
     let currentIndex = msg.meta?.active_swipe_index ?? 0;
 
     if (direction === 'prev' && currentIndex > 0) {
@@ -668,6 +757,20 @@ export default function ChatPage() {
       currentIndex++;
     }
 
+    const currentReasoning =
+      reasoningSwipes[currentIndex] !== undefined
+        ? reasoningSwipes[currentIndex]
+        : currentIndex === 0
+        ? msg.reasoning
+        : null;
+
+    const currentDuration =
+      reasoningDurations[currentIndex] !== undefined
+        ? reasoningDurations[currentIndex]
+        : currentIndex === 0
+        ? msg.meta?.reasoning_duration_seconds
+        : undefined;
+
     let updatedMsgs: Message[] = [];
     setMessages((prev) => {
       updatedMsgs = prev.map((m, i) =>
@@ -675,7 +778,12 @@ export default function ChatPage() {
           ? {
               ...m,
               content: swipes[currentIndex],
-              meta: { ...m.meta, active_swipe_index: currentIndex },
+              reasoning: currentReasoning || null,
+              meta: {
+                ...m.meta,
+                active_swipe_index: currentIndex,
+                reasoning_duration_seconds: currentDuration,
+              },
             }
           : m
       );
@@ -714,8 +822,10 @@ export default function ChatPage() {
 
     // Add a new swipe slot
     const prevSwipes = targetMsg.meta?.swipes || [targetMsg.content];
+    const prevReasoningSwipes = targetMsg.meta?.reasoning_swipes || [targetMsg.reasoning || ''];
     const newSwipeIndex = prevSwipes.length;
     const updatedSwipes = [...prevSwipes, ''];
+    const updatedReasoningSwipes = [...prevReasoningSwipes, ''];
 
     setMessages((prev) =>
       prev.map((m, i) =>
@@ -723,10 +833,12 @@ export default function ChatPage() {
           ? {
               ...m,
               content: '',
+              reasoning: null,
               status: 'streaming',
               meta: {
                 ...m.meta,
                 swipes: updatedSwipes,
+                reasoning_swipes: updatedReasoningSwipes,
                 active_swipe_index: newSwipeIndex,
               },
             }
@@ -766,6 +878,10 @@ export default function ChatPage() {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let streamedContent = '';
+      let streamedReasoning = '';
+      let thinkingEnded = false;
+      let reasoningDuration = 0;
+      const genStartTime = Date.now();
 
       if (reader) {
         while (true) {
@@ -780,7 +896,57 @@ export default function ChatPage() {
             if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
               try {
                 const parsed = JSON.parse(trimmed.slice(6));
+                // Feature 2 (additive): instant local token ledger — ignores text/reasoning.
+                if (parsed.usage) {
+                  const uIn = Math.max(0, Math.floor(Number(parsed.usage.input) || 0));
+                  const uOut = Math.max(0, Math.floor(Number(parsed.usage.output) || 0));
+                  if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
+                }
+
+                if (parsed.reasoning) {
+                  streamedReasoning += parsed.reasoning;
+                  setMessages((prev) =>
+                    prev.map((m, i) => {
+                      if (i !== assistantMsgIndex) return m;
+                      const rList = m.meta?.reasoning_swipes ? [...m.meta.reasoning_swipes] : [streamedReasoning];
+                      rList[newSwipeIndex] = streamedReasoning;
+                      return {
+                        ...m,
+                        reasoning: streamedReasoning,
+                        meta: {
+                          ...m.meta,
+                          reasoning_swipes: rList,
+                        },
+                      };
+                    })
+                  );
+                }
+
+                if (parsed.reasoningDone && !thinkingEnded) {
+                  thinkingEnded = true;
+                  reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
+                  setMessages((prev) =>
+                    prev.map((m, i) => {
+                      if (i !== assistantMsgIndex) return m;
+                      const dList = m.meta?.reasoning_durations ? [...(m.meta.reasoning_durations || [])] : [];
+                      dList[newSwipeIndex] = reasoningDuration;
+                      return {
+                        ...m,
+                        meta: {
+                          ...m.meta,
+                          reasoning_duration_seconds: reasoningDuration,
+                          reasoning_durations: dList,
+                        },
+                      };
+                    })
+                  );
+                }
+
                 if (parsed.text) {
+                  if (!thinkingEnded && streamedReasoning) {
+                    thinkingEnded = true;
+                    reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
+                  }
                   streamedContent += parsed.text;
                   const formattedLive = formatRoleplayText(streamedContent, charName, userName);
 
@@ -796,6 +962,7 @@ export default function ChatPage() {
                           ...m.meta,
                           swipes: sList,
                           active_swipe_index: newSwipeIndex,
+                          reasoning_duration_seconds: reasoningDuration || m.meta?.reasoning_duration_seconds,
                         },
                       };
                     })
@@ -807,6 +974,10 @@ export default function ChatPage() {
         }
       }
 
+      if (!reasoningDuration && streamedReasoning) {
+        reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
+      }
+
       let finalMessages: Message[] = [];
       setMessages((prev) => {
         finalMessages = prev.map((m, i) => {
@@ -814,14 +985,25 @@ export default function ChatPage() {
           const sList = m.meta?.swipes ? [...m.meta.swipes] : [m.content];
           const finalVal = formatRoleplayText(m.content, charName, userName);
           sList[newSwipeIndex] = finalVal;
+
+          const rList = m.meta?.reasoning_swipes ? [...m.meta.reasoning_swipes] : [streamedReasoning];
+          rList[newSwipeIndex] = streamedReasoning || m.reasoning || null;
+
+          const dList = m.meta?.reasoning_durations ? [...(m.meta.reasoning_durations || [])] : [];
+          dList[newSwipeIndex] = reasoningDuration || m.meta?.reasoning_duration_seconds || undefined;
+
           return {
             ...m,
             status: 'done',
             content: finalVal,
+            reasoning: streamedReasoning || m.reasoning || null,
             meta: {
               ...m.meta,
               swipes: sList,
               active_swipe_index: newSwipeIndex,
+              reasoning_swipes: rList,
+              reasoning_duration_seconds: reasoningDuration || m.meta?.reasoning_duration_seconds,
+              reasoning_durations: dList,
             },
           };
         });
@@ -1174,13 +1356,27 @@ export default function ChatPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="p-4 sm:p-5 rounded-2xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs border border-black/[0.05] dark:border-white/[0.07] select-text">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {formattedContent}
-                          </ReactMarkdown>
+                        <div className="w-full space-y-2">
+                          {/* Live Model Thinking Stream & Collapsible Disclosure Widget */}
+                          <ThinkingProcess
+                            reasoning={message.reasoning}
+                            isStreaming={message.status === 'streaming'}
+                            hasContent={Boolean(message.content && message.content.trim().length > 0)}
+                            durationSeconds={message.meta?.reasoning_duration_seconds}
+                            characterName={character?.name}
+                          />
 
-                          {message.status === 'streaming' && (
-                            <span className="inline-block w-1.5 h-4 ml-1 bg-accent animate-pulse align-middle" />
+                          {/* Roleplay Prose Bubble */}
+                          {(message.content || (!message.reasoning && message.status !== 'streaming')) && (
+                            <div className="p-4 sm:p-5 rounded-2xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs border border-black/[0.05] dark:border-white/[0.07] select-text">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {formattedContent}
+                              </ReactMarkdown>
+
+                              {message.status === 'streaming' && (
+                                <span className="inline-block w-1.5 h-4 ml-1 bg-accent animate-pulse align-middle" />
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
@@ -1435,6 +1631,22 @@ export default function ChatPage() {
               className="px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors touch-manipulation"
             >
               Wait in silence
+            </button>
+            <button
+              onClick={() => {
+                const nextVal = !settings.thinkingEnabled;
+                updateSettings({ thinkingEnabled: nextVal });
+                toast.info(nextVal ? 'Deep Thinking Mode: ON' : 'Deep Thinking Mode: OFF');
+              }}
+              className={`px-3 py-1 rounded-full font-medium whitespace-nowrap transition-colors touch-manipulation flex items-center gap-1.5 ${
+                settings.thinkingEnabled
+                  ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 font-semibold border border-purple-500/30'
+                  : 'bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground hover:text-foreground'
+              }`}
+              title="Toggle Deep Thinking (live reasoning process)"
+            >
+              <Brain className="w-3.5 h-3.5 text-purple-500" />
+              {settings.thinkingEnabled ? 'Thinking: ON' : 'Thinking: OFF'}
             </button>
             <button
               onClick={() => setShowAuthorsNote(!showAuthorsNote)}

@@ -78,7 +78,7 @@ export function MobileDock({ activeTab, onTabChange, totalChatsCount = 0 }: Mobi
           <Plus className="w-5 h-5" />
         </button>
 
-        {/* Tab 4: Personas & Settings Profile */}
+        {/* Tab 4: Dedicated Profile section (account, personas, token usage) */}
         <button
           onClick={() => onTabChange('profile')}
           className={`flex items-center justify-center w-12 h-12 rounded-full transition-all apple-button ${
@@ -86,7 +86,7 @@ export function MobileDock({ activeTab, onTabChange, totalChatsCount = 0 }: Mobi
               ? 'bg-zinc-800 text-white shadow-sm ring-1 ring-white/10'
               : 'text-zinc-400 hover:text-zinc-200'
           }`}
-          title="Personas & Settings"
+          title="Profile"
           aria-label="Profile"
         >
           <User className="w-5 h-5" />

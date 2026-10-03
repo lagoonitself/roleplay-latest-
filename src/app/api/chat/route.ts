@@ -7,6 +7,8 @@ import { retrieveContextForChat, type RetrievedContext } from '@/lib/memory/retr
 import { extractMemoriesAndState } from '@/lib/memory/extractor';
 import { makeCharacter } from '@/lib/cards/card-parser';
 import { formatRoleplayText } from '@/lib/prompt/macros';
+import { estimateTokens } from '@/lib/prompt/tokens';
+import { ThinkingStreamParser } from '@/lib/llm/stream-parser';
 import type { Character, Persona, Message } from '@/lib/supabase/types';
 
 /** Removes a leading "Name:" speaker tag the model sometimes adds, and trailing whitespace. */
@@ -210,8 +212,15 @@ export async function POST(req: NextRequest) {
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
 
+    const streamStartTime = Date.now();
     let fullAssistantContent = '';
     let fullReasoningContent = '';
+    const parser = new ThinkingStreamParser();
+    // Feature 2 (additive): exact provider token counts for the Token HUD.
+    // Never touches reasoning/text parsing — only observes `usage` payloads.
+    let providerPromptTokens = 0;
+    let providerCompletionTokens = 0;
+    let providerCachedTokens = 0;
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -231,6 +240,26 @@ export async function POST(req: NextRequest) {
               if (!trimmed || trimmed.startsWith(':')) continue;
 
               if (trimmed === 'data: [DONE]') {
+                const flushed = parser.flush();
+                for (const chunk of flushed) {
+                  if (chunk.reasoning) {
+                    fullReasoningContent += chunk.reasoning;
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`)
+                    );
+                  }
+                  if (chunk.reasoningDone) {
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
+                    );
+                  }
+                  if (chunk.text) {
+                    fullAssistantContent += chunk.text;
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ text: chunk.text })}\n\n`)
+                    );
+                  }
+                }
                 controller.enqueue(encoder.encode('data: [DONE]\n\n'));
                 continue;
               }
@@ -239,22 +268,55 @@ export async function POST(req: NextRequest) {
                 const jsonStr = trimmed.slice(6);
                 try {
                   const data = JSON.parse(jsonStr);
-                  const delta = data.choices?.[0]?.delta;
-                  const token = delta?.content || '';
-                  const reasoning = delta?.reasoning_content || '';
-
-                  if (token) {
-                    fullAssistantContent += token;
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ text: token })}\n\n`)
-                    );
+                  // Feature 2 (additive): capture exact usage when the provider
+                  // attaches it to a chunk (usually the final chunk, no delta).
+                  const u =
+                    data?.usage && typeof data.usage === 'object' ? data.usage : null;
+                  if (u) {
+                    const p =
+                      u.prompt_tokens ?? u.input_tokens ?? u.promptTokens ?? 0;
+                    const c =
+                      u.completion_tokens ?? u.output_tokens ?? u.completionTokens ?? 0;
+                    const cached =
+                      u.prompt_tokens_details?.cached_tokens ??
+                      u.prompt_cache_hit_tokens ??
+                      0;
+                    if (Number.isFinite(Number(p)) && Number(p) > 0)
+                      providerPromptTokens = Math.floor(Number(p));
+                    if (Number.isFinite(Number(c)) && Number(c) > 0)
+                      providerCompletionTokens = Math.floor(Number(c));
+                    if (Number.isFinite(Number(cached)) && Number(cached) >= 0)
+                      providerCachedTokens = Math.floor(Number(cached));
+                    // Usage chunks carry no text — keep reasoning flow untouched.
+                    if (!data.choices?.[0]?.delta) continue;
                   }
+                  const delta = data.choices?.[0]?.delta;
+                  if (!delta) continue;
 
-                  if (reasoning) {
-                    fullReasoningContent += reasoning;
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ reasoning })}\n\n`)
-                    );
+                  const parsedChunks = parser.process({
+                    content: delta.content,
+                    reasoning_content: delta.reasoning_content,
+                    reasoning: delta.reasoning,
+                  });
+
+                  for (const chunk of parsedChunks) {
+                    if (chunk.reasoning) {
+                      fullReasoningContent += chunk.reasoning;
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`)
+                      );
+                    }
+                    if (chunk.reasoningDone) {
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
+                      );
+                    }
+                    if (chunk.text) {
+                      fullAssistantContent += chunk.text;
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify({ text: chunk.text })}\n\n`)
+                      );
+                    }
                   }
                 } catch {
                   // ignore non-json lines
@@ -263,11 +325,78 @@ export async function POST(req: NextRequest) {
             }
           }
 
+          const flushed = parser.flush();
+          for (const chunk of flushed) {
+            if (chunk.reasoning) {
+              fullReasoningContent += chunk.reasoning;
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`)
+              );
+            }
+            if (chunk.reasoningDone) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
+              );
+            }
+            if (chunk.text) {
+              fullAssistantContent += chunk.text;
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ text: chunk.text })}\n\n`)
+              );
+            }
+          }
+
+          // Feature 2 (additive): finalize exact token counts.
+          // Provider usage wins; otherwise estimate so guests still accumulate.
+          // Output already includes thinking/reasoning tokens server-side.
+          let finalInput = providerPromptTokens;
+          let finalOutput = providerCompletionTokens;
+          if (finalInput <= 0 || finalOutput <= 0) {
+            const estIn = estimateTokens(userMessage);
+            const estOut =
+              estimateTokens(fullAssistantContent) +
+              estimateTokens(fullReasoningContent);
+            if (finalInput <= 0) finalInput = estIn;
+            if (finalOutput <= 0) finalOutput = estOut;
+          }
+          if (finalInput > 0 || finalOutput > 0) {
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    usage: { input: finalInput, output: finalOutput, total: finalInput + finalOutput },
+                  })}\n\n`
+                )
+              );
+            } catch {}
+          }
+
           controller.close();
 
+          // Feature 2 (additive): persist one ledger row per turn + token meta.
+          if ((finalInput > 0 || finalOutput > 0) && userId) {
+            try {
+              await supabase.from('usage_events').insert({
+                user_id: userId,
+                chat_id: chatId,
+                kind: 'chat',
+                model: 'chat-completion',
+                prompt_tokens: finalInput,
+                completion_tokens: finalOutput,
+                cached_tokens: providerCachedTokens,
+              });
+            } catch (e) {
+              console.warn('usage_events insert skipped:', e);
+            }
+          }
+
           // 9. Persist Assistant Message & Trigger Background Memory Extraction
-          if (userId && fullAssistantContent) {
+          if (userId && (fullAssistantContent || fullReasoningContent)) {
             const cleanedAssistant = cleanReply(fullAssistantContent, character.name);
+            const reasoningDurationSeconds = fullReasoningContent
+              ? Math.max(1, Math.round((Date.now() - streamStartTime) / 1000))
+              : undefined;
+
             const { data: assistantMsgRow } = await supabase
               .from('messages')
               .insert({
@@ -280,6 +409,10 @@ export async function POST(req: NextRequest) {
                 status: 'done',
                 meta: {
                   model: 'deepseek-v4.1-flash',
+                  reasoning_duration_seconds: reasoningDurationSeconds,
+                  tokens_in: finalInput > 0 ? finalInput : undefined,
+                  tokens_out: finalOutput > 0 ? finalOutput : undefined,
+                  cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : undefined,
                 },
               })
               .select('id')

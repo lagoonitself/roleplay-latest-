@@ -126,6 +126,9 @@ export interface Message {
     cached_tokens?: number;
     swipes?: string[]; // swipe variations
     active_swipe_index?: number;
+    reasoning_swipes?: (string | null)[];
+    reasoning_duration_seconds?: number;
+    reasoning_durations?: (number | undefined)[];
     model?: string;
     persona_name?: string;
   };
@@ -181,4 +184,23 @@ export interface ChatState {
     custom?: Record<string, any>;
   };
   updated_at: string;
+}
+
+// Feature 2: token usage ledger (raw counts only — never expose model/cost to UI).
+export interface UsageEvent {
+  id: number;
+  user_id: string;
+  chat_id: string | null;
+  kind: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_tokens: number;
+  created_at: string;
+}
+
+export interface TokenUsageTotals {
+  input: number;
+  output: number;
+  total: number;
+  turns: number;
 }

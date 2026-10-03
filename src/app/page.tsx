@@ -32,6 +32,7 @@ import { MyChatsView } from '@/components/my-chats-view';
 import { MobileDock, type AppTab } from '@/components/mobile-dock';
 import { CreateDrawer } from '@/components/create-drawer';
 import { SettingsDialog } from '@/components/settings-dialog';
+import { ProfileView } from '@/components/profile/profile-view';
 import {
   getUnifiedChats,
   groupChatsByCharacter,
@@ -168,13 +169,15 @@ function HomePageContent() {
   }, [chats, drawerCharacter]);
 
   // Handle Tab Switch from Mobile Dock or Top Bar
+  // Feature 2: `profile` is now a full dedicated view (not a popup drawer).
   const handleTabChange = (tab: AppTab) => {
     if (tab === 'create') {
       setCreateDrawerOpen(true);
       return;
     }
     if (tab === 'profile') {
-      setPersonaDrawerOpen(true);
+      setActiveTab('profile');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     setActiveTab(tab);
@@ -342,8 +345,10 @@ function HomePageContent() {
 
   return (
     <div className="flex-1 flex flex-col w-full pb-20">
-      {/* ─────────────────── TAB 2: MY CHATS VIEW (Matching JanitorAI Images 3, 4, 5) ─────────────────── */}
-      {activeTab === 'chats' ? (
+      {/* ─────────────────── TAB: PROFILE (Feature 2 — full dedicated section) ─────────────────── */}
+      {activeTab === 'profile' ? (
+        <ProfileView onOpenSettingsDialog={() => setSettingsDialogOpen(true)} />
+      ) : activeTab === 'chats' ? (
         <MyChatsView
           groups={chatGroups}
           onSelectCharacter={(char) => setDrawerCharacter(char)}
