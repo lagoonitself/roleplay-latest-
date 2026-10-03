@@ -52,6 +52,122 @@ import {
 import { toast } from 'sonner';
 import type { Chat, Character, Persona, Message, Memory, ChatState } from '@/lib/supabase/types';
 
+// Unknown-safe AbortError check for stream/fetch failure branches.
+function isAbortError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'name' in err &&
+    (err as { name?: unknown }).name === 'AbortError'
+  );
+}
+
+// ── Edit-rewind SSE consumer (module scope, not a hook) ──
+// Consumes the /api/chat event stream for Feature 3 regeneration and returns a
+// deterministic result. Callers persist from the returned value instead of
+// re-reading React state (updater closures can be stale/batched, which would
+// risk saving the wrong timeline to localStorage/Supabase).
+async function streamRegeneratedReply(
+  response: Response,
+  opts: {
+    charName: string;
+    userName: string;
+    onReasoning: (fullReasoning: string) => void;
+    onThinkingDone: (seconds: number) => void;
+    onText: (formattedLive: string) => void;
+  }
+): Promise<{ text: string; reasoning: string; reasoningDuration: number; aborted: boolean; failed: boolean }> {
+  const { charName, userName, onReasoning, onThinkingDone, onText } = opts;
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+  let streamedContent = '';
+  let streamedReasoning = '';
+  let thinkingEnded = false;
+  let reasoningDuration = 0;
+  const genStartTime = Date.now();
+
+  const finishThinking = () => {
+    if (thinkingEnded) return reasoningDuration;
+    thinkingEnded = true;
+    reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
+    onThinkingDone(reasoningDuration);
+    return reasoningDuration;
+  };
+
+  try {
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          const lineTrimmed = line.trim();
+          if (lineTrimmed.startsWith('data: ') && lineTrimmed !== 'data: [DONE]') {
+            try {
+              const parsed = JSON.parse(lineTrimmed.slice(6));
+              // Feature 2 (additive): instant local token ledger — ignores text/reasoning.
+              if (parsed.usage) {
+                const uIn = Math.max(0, Math.floor(Number(parsed.usage.input) || 0));
+                const uOut = Math.max(0, Math.floor(Number(parsed.usage.output) || 0));
+                if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
+              }
+              if (parsed.reasoning) {
+                streamedReasoning += parsed.reasoning;
+                onReasoning(streamedReasoning);
+              }
+              if (parsed.reasoningDone) finishThinking();
+              if (parsed.text) {
+                if (!thinkingEnded && streamedReasoning) finishThinking();
+                streamedContent += parsed.text;
+                onText(formatRoleplayText(streamedContent, charName, userName));
+              }
+            } catch {
+              // ignore malformed SSE lines
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (isAbortError(err)) {
+      return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: true, failed: false };
+    }
+    // Non-abort read failure: hand the partial transcript back so the caller
+    // can persist it as an error bubble instead of dropping it.
+    return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: false, failed: true };
+  }
+
+  if (!reasoningDuration && streamedReasoning) {
+    finishThinking();
+  }
+  return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: false, failed: false };
+}
+
+// Builds the streaming assistant placeholder for edit-rewind regeneration.
+// Module scope so id/timestamp creation stays out of the component body.
+function makeRegenPlaceholder(chatId: string, parentId: string | null): Message {
+  const nowIso = new Date().toISOString();
+  return {
+    id: 'ast-' + Date.now(),
+    chat_id: chatId,
+    user_id: 'assistant',
+    parent_id: parentId,
+    role: 'assistant',
+    content: '',
+    reasoning: null,
+    status: 'streaming',
+    meta: {
+      swipes: [''],
+      active_swipe_index: 0,
+      reasoning_swipes: [''],
+      reasoning_durations: [],
+    },
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+}
+
 export default function ChatPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -79,6 +195,12 @@ export default function ChatPage() {
   // Editing in-place
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+  // Two-step confirm for destructive "delete from here" truncation
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Local temp ids (usr-/ast-/msg-) are never valid Supabase UUIDs.
+  const isUuid = (id: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
   // Author's note
   const [authorsNote, setAuthorsNote] = useState('');
@@ -1037,8 +1159,120 @@ export default function ChatPage() {
     }
   };
 
+  // ── Truncation persistence helpers (dual-write: local cache + Supabase) ──
+
+  // Write the kept message list to the local cache and refresh the local chat
+  // row's count/timestamp. Never creates a stub local chat for cloud chats.
+  const persistTruncationLocal = (kept: Message[]) => {
+    saveLocalMessages(chatId, kept);
+    const nowIso = new Date().toISOString();
+    if (chatId.startsWith('local-') || getLocalChat(chatId)) {
+      saveLocalChat({
+        id: chatId,
+        message_count: kept.length,
+        last_message_at: kept.length > 0 ? kept[kept.length - 1].created_at : nowIso,
+      });
+    }
+  };
+
+  // Push count/timestamp/leaf pointer to the Supabase chats row (cloud chats only).
+  // Returns false when the cloud write fails so callers can warn instead of
+  // claiming full sync (local cache is still updated first).
+  const syncChatMetaToCloud = async (kept: Message[]): Promise<boolean> => {
+    if (chatId.startsWith('local-')) return true;
+    const nowIso = new Date().toISOString();
+    const lastKept = kept.length > 0 ? kept[kept.length - 1] : null;
+    try {
+      const { error } = await supabase
+        .from('chats')
+        .update({
+          message_count: kept.length,
+          last_message_at: lastKept?.created_at || nowIso,
+          leaf_id: lastKept && isUuid(lastKept.id) ? lastKept.id : null,
+        })
+        .eq('id', chatId);
+      if (error) {
+        console.warn('Failed to sync chat meta to Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Failed to sync chat meta to Supabase:', err);
+      return false;
+    }
+  };
+
+  // Delete the target message and everything after it from Supabase.
+  // Resolves the cutoff by reading the DB ordering first so local temp ids,
+  // clock skew, and server-generated UUIDs can never leave stale rows behind
+  // (stale rows would otherwise leak back into /api/chat history).
+  // Returns false when the cloud delete fails so callers can warn — the local
+  // cache is still truncated first and stays the UI source of truth.
+  const deleteRangeFromCloud = async (fromIndex: number, snapshot: Message[]): Promise<boolean> => {
+    if (chatId.startsWith('local-')) return true;
+    try {
+      const target = snapshot[fromIndex];
+      if (!target) return true;
+      const { data: dbRows, error: fetchErr } = await supabase
+        .from('messages')
+        .select('id,created_at')
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: true });
+      if (fetchErr) {
+        console.warn('Failed to list cloud messages for truncation:', fetchErr);
+        return false;
+      }
+      if (!dbRows || dbRows.length === 0) return true;
+
+      let cutoff = -1;
+      if (isUuid(target.id)) {
+        cutoff = dbRows.findIndex((r) => r.id === target.id);
+      }
+      if (cutoff === -1) {
+        const t = new Date(target.created_at).getTime();
+        cutoff = dbRows.findIndex((r) => new Date(r.created_at).getTime() >= t);
+      }
+      if (cutoff === -1) {
+        // No timestamp match (e.g. target is a local-only row newer than the
+        // DB tip): still remove any downstream rows we can address by UUID.
+        const uuids = snapshot.slice(fromIndex).map((m) => m.id).filter(isUuid);
+        if (uuids.length > 0) {
+          const { error } = await supabase.from('messages').delete().eq('chat_id', chatId).in('id', uuids);
+          if (error) {
+            console.warn('Cloud truncation delete failed:', error);
+            return false;
+          }
+        }
+        return true;
+      }
+      const idsToDelete = dbRows.slice(cutoff).map((r) => r.id);
+      let ok = true;
+      for (let i = 0; i < idsToDelete.length; i += 50) {
+        const chunk = idsToDelete.slice(i, i + 50);
+        const { error } = await supabase
+          .from('messages')
+          .delete()
+          .eq('chat_id', chatId)
+          .in('id', chunk);
+        if (error) {
+          console.warn('Cloud truncation delete failed:', error);
+          ok = false;
+        }
+      }
+      return ok;
+    } catch (err) {
+      console.warn('Failed to truncate cloud messages:', err);
+      return false;
+    }
+  };
+
   // Inline Message Editing
   const handleStartEdit = (msg: Message) => {
+    if (isGenerating) {
+      toast.error('Stop generation before editing');
+      return;
+    }
+    setDeleteConfirmId(null);
     setEditingMsgId(msg.id);
     setEditingText(msg.content);
   };
@@ -1048,15 +1282,33 @@ export default function ChatPage() {
     setEditingText('');
   };
 
+  // Feature 3 — Edit with rewind & auto-regeneration.
+  // User message: truncate everything after it, update it, stream a fresh reply.
+  // Assistant message: in-place text fix only (swipes/history preserved).
   const handleSaveEdit = async () => {
-    if (!editingMsgId || !editingText.trim()) return;
+    if (!editingMsgId || isGenerating) return;
+    const trimmed = editingText.trim();
+    if (!trimmed) {
+      toast.error('Message cannot be empty');
+      return;
+    }
+    const idx = messages.findIndex((m) => m.id === editingMsgId);
+    if (idx === -1) {
+      handleCancelEdit();
+      return;
+    }
+    const target = messages[idx];
     const charName = character?.name || 'Character';
     const userName = activePersona?.name || 'User';
-    const formatted = formatRoleplayText(editingText.trim(), charName, userName);
+    const formatted = formatRoleplayText(trimmed, charName, userName);
 
-    let updatedMsgs: Message[] = [];
-    setMessages((prev) => {
-      updatedMsgs = prev.map((m) => {
+    // ── Assistant edit: in-place only, no rewind, no regen ──
+    if (target.role !== 'user') {
+      if (trimmed === target.content) {
+        handleCancelEdit();
+        return;
+      }
+      const updatedMsgs = messages.map((m) => {
         if (m.id !== editingMsgId) return m;
         const currentSwipes = m.meta?.swipes ? [...m.meta.swipes] : [formatted];
         const swipeIdx = m.meta?.active_swipe_index ?? 0;
@@ -1064,48 +1316,320 @@ export default function ChatPage() {
         return {
           ...m,
           content: formatted,
-          meta: {
-            ...m.meta,
-            swipes: currentSwipes,
-          },
+          updated_at: new Date().toISOString(),
+          meta: { ...m.meta, swipes: currentSwipes },
         };
       });
-      return updatedMsgs;
-    });
+      setMessages(updatedMsgs);
+      persistTruncationLocal(updatedMsgs);
 
-    saveLocalMessages(chatId, updatedMsgs);
-
-    if (!chatId.startsWith('local-')) {
-      try {
-        await supabase
-          .from('messages')
-          .update({ content: formatted })
-          .eq('id', editingMsgId);
-      } catch (err) {
-        console.warn('Failed to update message in Supabase:', err);
+      if (!chatId.startsWith('local-') && isUuid(editingMsgId)) {
+        try {
+          await supabase
+            .from('messages')
+            .update({ content: formatted })
+            .eq('id', editingMsgId)
+            .eq('chat_id', chatId);
+        } catch (err) {
+          console.warn('Failed to update message in Supabase:', err);
+        }
       }
+
+      setEditingMsgId(null);
+      setEditingText('');
+      toast.success('Response updated');
+      return;
     }
 
+    // ── User edit: rewind + auto-regenerate ──
+    if (trimmed === target.content) {
+      handleCancelEdit();
+      return;
+    }
+    if (!character) return;
+    if (!settings.opencodeApiKey && !process.env.NEXT_PUBLIC_HAS_SERVER_KEY) {
+      toast.error('Please configure your OpenCode Go API key in Settings first.');
+      return;
+    }
+
+    const snapshot = [...messages];
+    const downstreamCount = snapshot.length - idx - 1;
+    const baseBefore = snapshot.slice(0, idx);
+    const nowIso = new Date().toISOString();
+    const updatedTarget: Message = {
+      ...target,
+      content: formatted,
+      updated_at: nowIso,
+      meta: { ...target.meta, persona_name: userName },
+    };
+    const truncatedBase = [...baseBefore, updatedTarget];
+
+    const placeholder: Message = makeRegenPlaceholder(chatId, updatedTarget.id);
+    const assistantMsgId = placeholder.id;
+
+    const optimistic = [...truncatedBase, placeholder];
+    setMessages(optimistic);
+    persistTruncationLocal(optimistic);
     setEditingMsgId(null);
     setEditingText('');
-    toast.success('Message updated');
+    setDeleteConfirmId(null);
+    if (downstreamCount > 0) {
+      toast.info(`Rewound ${downstreamCount} message${downstreamCount === 1 ? '' : 's'} — regenerating reply`);
+    }
+    setIsGenerating(true);
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    try {
+      // Remove the stale target + downstream rows from the cloud BEFORE
+      // generating, so /api/chat history cannot resurrect them. The edited
+      // user message is re-inserted by /api/chat as a fresh row.
+      const rangeOk = await deleteRangeFromCloud(idx, snapshot);
+      if (!rangeOk) {
+        toast.warning('Cloud cleanup failed — the new reply may still see removed context');
+      }
+
+      const parentForServer =
+        baseBefore.length > 0 && isUuid(baseBefore[baseBefore.length - 1].id)
+          ? baseBefore[baseBefore.length - 1].id
+          : null;
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          chatId,
+          characterId: character.id,
+          personaId: activePersona?.id,
+          persona: activePersona,
+          character,
+          userMessage: trimmed,
+          parentMessageId: parentForServer,
+          apiKey: settings.opencodeApiKey,
+          temperature: settings.defaultTemperature,
+          thinking: settings.thinkingEnabled,
+          authorsNote: authorsNote.trim() || undefined,
+          history: baseBefore,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorJson = await response.json().catch(() => ({}));
+        throw new Error(errorJson.error || 'Failed to regenerate response');
+      }
+
+      // Stream via the module helper; live bubbles update through callbacks
+      // while the deterministic result below drives both persistent stores.
+      const streamResult = await streamRegeneratedReply(response, {
+        charName,
+        userName,
+        onReasoning: (full) =>
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id !== assistantMsgId
+                ? m
+                : {
+                    ...m,
+                    reasoning: full,
+                    meta: { ...m.meta, reasoning_swipes: [full] },
+                  }
+            )
+          ),
+        onThinkingDone: (seconds) =>
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id !== assistantMsgId
+                ? m
+                : {
+                    ...m,
+                    meta: { ...m.meta, reasoning_duration_seconds: seconds },
+                  }
+            )
+          ),
+        onText: (formattedLive) =>
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id !== assistantMsgId
+                ? m
+                : {
+                    ...m,
+                    content: formattedLive,
+                    meta: {
+                      ...m.meta,
+                      swipes: [formattedLive],
+                      active_swipe_index: 0,
+                    },
+                  }
+            )
+          ),
+      });
+
+      if (streamResult.failed) {
+        // Stream died mid-way: keep the partial reply, mark it error, and
+        // persist the same timeline to both stores.
+        toast.error('Regeneration error');
+        const errVal = formatRoleplayText(streamResult.text, charName, userName);
+        const failedAssistant: Message = {
+          ...placeholder,
+          status: 'error',
+          content: errVal || '*[Connection interrupted. Tap retry to continue.]*',
+          reasoning: streamResult.reasoning || null,
+          updated_at: new Date().toISOString(),
+          meta: {
+            ...placeholder.meta,
+            swipes: [errVal || '*[Connection interrupted. Tap retry to continue.]*'],
+            reasoning_swipes: [streamResult.reasoning || null],
+            reasoning_duration_seconds: streamResult.reasoningDuration || undefined,
+          },
+        };
+        const errMessages: Message[] = [...truncatedBase, failedAssistant];
+        setMessages(errMessages);
+        persistTruncationLocal(errMessages);
+        const errMetaOk = await syncChatMetaToCloud(errMessages);
+        if (!errMetaOk) {
+          toast.warning('Cloud sync failed — error state kept locally only for now');
+        }
+        return;
+      }
+
+      if (streamResult.aborted) {
+        // Aborted mid-rewind: keep the truncated base plus any partial reply
+        // (marked stopped so no spinner sticks); drop the empty placeholder.
+        const abortVal = formatRoleplayText(streamResult.text, charName, userName);
+        const hasPartial =
+          abortVal.trim().length > 0 || (streamResult.reasoning?.trim()?.length ?? 0) > 0;
+        const abortMessages: Message[] = hasPartial
+          ? [
+              ...truncatedBase,
+              {
+                ...placeholder,
+                status: 'stopped',
+                content: abortVal,
+                reasoning: streamResult.reasoning || null,
+                updated_at: new Date().toISOString(),
+                meta: {
+                  ...placeholder.meta,
+                  swipes: [abortVal],
+                  reasoning_swipes: [streamResult.reasoning || null],
+                  reasoning_duration_seconds: streamResult.reasoningDuration || undefined,
+                },
+              },
+            ]
+          : truncatedBase;
+        setMessages(abortMessages);
+        persistTruncationLocal(abortMessages);
+        const abortMetaOk = await syncChatMetaToCloud(abortMessages);
+        if (!abortMetaOk) {
+          toast.warning('Cloud sync failed — rewound chat kept locally only for now');
+        }
+        return;
+      }
+
+      // Deterministic finalize: build from the helper result (never re-read
+      // React state for persistence — updater closures can be stale/batched).
+      const finalVal = formatRoleplayText(streamResult.text, charName, userName);
+      const finalAssistant: Message = {
+        ...placeholder,
+        status: 'done',
+        content: finalVal,
+        reasoning: streamResult.reasoning || null,
+        updated_at: new Date().toISOString(),
+        meta: {
+          ...placeholder.meta,
+          swipes: [finalVal],
+          active_swipe_index: 0,
+          reasoning_swipes: [streamResult.reasoning || null],
+          reasoning_duration_seconds: streamResult.reasoningDuration || undefined,
+          reasoning_durations: [streamResult.reasoningDuration || undefined],
+        },
+      };
+      const finalMessages: Message[] = [...truncatedBase, finalAssistant];
+      setMessages(finalMessages);
+      persistTruncationLocal(finalMessages);
+      const metaOk = await syncChatMetaToCloud(finalMessages);
+      if (metaOk) {
+        toast.success('Reply regenerated');
+      } else {
+        toast.warning('Reply generated, but cloud sync failed — kept locally only for now');
+      }
+    } catch (err) {
+      if (isAbortError(err)) {
+        // Aborted before streaming started: no partial reply exists, so keep
+        // the rewound base and never show a half-deleted timeline.
+        setMessages(truncatedBase);
+        persistTruncationLocal(truncatedBase);
+        const preStreamMetaOk = await syncChatMetaToCloud(truncatedBase);
+        if (!preStreamMetaOk) {
+          toast.warning('Cloud sync failed — rewound chat kept locally only for now');
+        }
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Regeneration error');
+        const failedAssistant: Message = {
+          ...placeholder,
+          status: 'error',
+          content: '*[Connection interrupted. Tap retry to continue.]*',
+          reasoning: null,
+          updated_at: new Date().toISOString(),
+          meta: {
+            ...placeholder.meta,
+            swipes: ['*[Connection interrupted. Tap retry to continue.]*'],
+            reasoning_swipes: [null],
+          },
+        };
+        const errMessages: Message[] = [...truncatedBase, failedAssistant];
+        setMessages(errMessages);
+        persistTruncationLocal(errMessages);
+        const preStreamErrMetaOk = await syncChatMetaToCloud(errMessages);
+        if (!preStreamErrMetaOk) {
+          toast.warning('Cloud sync failed — error state kept locally only for now');
+        }
+      }
+    } finally {
+      setIsGenerating(false);
+      setAbortController(null);
+    }
   };
 
-  // Delete message
-  const handleDeleteMessage = (msgId: string) => {
-    let updatedMsgs: Message[] = [];
-    setMessages((prev) => {
-      updatedMsgs = prev.filter((m) => m.id !== msgId);
-      return updatedMsgs;
-    });
-    saveLocalMessages(chatId, updatedMsgs);
-    saveLocalChat({
-      id: chatId,
-      message_count: updatedMsgs.length,
-      last_message_at: new Date().toISOString(),
-    });
-    toast.info('Message deleted');
+  // Feature 4 — Delete from here: first click arms an inline confirm, second
+  // click wipes the target plus every message after it from UI + local cache
+  // + Supabase, then refreshes count/timestamp/leaf.
+  const handleDeleteMessage = async (msgId: string) => {
+    if (isGenerating) {
+      toast.error('Stop generation before deleting');
+      return;
+    }
+    const idx = messages.findIndex((m) => m.id === msgId);
+    if (idx === -1) return;
+    if (deleteConfirmId !== msgId) {
+      setDeleteConfirmId(msgId);
+      return;
+    }
+
+    const snapshot = [...messages];
+    const kept = snapshot.slice(0, idx);
+    const removedCount = snapshot.length - idx;
+    setDeleteConfirmId(null);
+    if (editingMsgId && snapshot.slice(idx).some((m) => m.id === editingMsgId)) {
+      setEditingMsgId(null);
+      setEditingText('');
+    }
+    setMessages(kept);
+    persistTruncationLocal(kept);
+    const rangeOk = await deleteRangeFromCloud(idx, snapshot);
+    const metaOk = await syncChatMetaToCloud(kept);
+    if (rangeOk && metaOk) {
+      toast.success(
+        kept.length === 0
+          ? 'Conversation cleared — send a message to start again'
+          : `Deleted ${removedCount} message${removedCount === 1 ? '' : 's'} — chat rewound`
+      );
+    } else {
+      toast.warning('Deleted locally, but cloud sync failed — reload may restore messages');
+    }
   };
+
+  const handleCancelDelete = () => setDeleteConfirmId(null);
 
   // Copy message
   const handleCopyMessage = (text: string) => {
@@ -1327,7 +1851,7 @@ export default function ChatPage() {
 
                       {/* Narrative Bubble or Inline Editor */}
                       {editingMsgId === message.id ? (
-                        <div className="w-full space-y-2 p-3 sm:p-4 rounded-2xl glass-card border border-accent/40 shadow-xs">
+                        <div className="w-full space-y-2 p-3 sm:p-4 rounded-2xl glass-card border border-accent/40 shadow-xs animate-in fade-in zoom-in-[0.98] duration-150 ease-out">
                           <textarea
                             value={editingText}
                             onChange={(e) => setEditingText(e.target.value)}
@@ -1340,16 +1864,20 @@ export default function ChatPage() {
                             placeholder="Edit character response..."
                             autoFocus
                           />
+                          <p className="text-[11px] text-muted-foreground px-0.5">
+                            Edits only this response — messages after it stay untouched.
+                          </p>
                           <div className="flex items-center justify-end gap-2 text-xs">
                             <button
                               onClick={handleCancelEdit}
-                              className="px-3 py-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground transition-colors"
+                              className="px-3 py-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground transition-colors apple-button"
                             >
                               Cancel
                             </button>
                             <button
                               onClick={handleSaveEdit}
-                              className="px-3 py-1 rounded-xl bg-accent text-white font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                              disabled={isGenerating || !editingText.trim()}
+                              className="px-3 py-1 rounded-xl bg-accent text-white font-semibold flex items-center gap-1.5 hover:opacity-90 transition-[transform,opacity] duration-150 ease-out active:scale-[0.97] apple-button disabled:opacity-40"
                             >
                               <Check className="w-3.5 h-3.5" /> Save
                             </button>
@@ -1381,7 +1909,28 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Action Bar (Copy, Edit, Regenerate, Delete) */}
+                      {/* Action Bar (Copy, Edit, Regenerate, Delete from here) */}
+                      {deleteConfirmId === message.id ? (
+                        <div className="flex flex-wrap items-center gap-2 px-2.5 py-1.5 mt-1 rounded-xl bg-red-500/10 border border-red-500/25 text-[11px] text-red-600 dark:text-red-400 animate-in fade-in slide-in-from-top-1 duration-150 ease-out">
+                          <span className="font-medium">
+                            {messages.length - index - 1 > 0
+                              ? `Delete this and the ${messages.length - index - 1} after it?`
+                              : 'Delete this response?'}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteMessage(message.id)}
+                            className="px-2.5 py-1 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 transition-[transform,background-color] duration-150 ease-out active:scale-[0.97] apple-button"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            onClick={handleCancelDelete}
+                            className="px-2.5 py-1 rounded-lg hover:bg-red-500/10 transition-colors apple-button"
+                          >
+                            Keep
+                          </button>
+                        </div>
+                      ) : (
                       <div className="flex items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleCopyMessage(formattedContent)}
@@ -1392,7 +1941,8 @@ export default function ChatPage() {
                         </button>
                         <button
                           onClick={() => handleStartEdit(message)}
-                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] flex items-center gap-1 transition-colors"
+                          disabled={isGenerating}
+                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40"
                           title="Edit response"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -1405,16 +1955,16 @@ export default function ChatPage() {
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                         </button>
-                        {index > 0 && (
-                          <button
-                            onClick={() => handleDeleteMessage(message.id)}
-                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 text-[11px] flex items-center gap-1 transition-colors"
-                            title="Delete message"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleDeleteMessage(message.id)}
+                          disabled={isGenerating}
+                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40"
+                          title="Delete from here — removes this and everything after it"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
+                      )}
                     </div>
                   ) : (
                     /* User Response Bubble */
@@ -1435,7 +1985,15 @@ export default function ChatPage() {
 
                       {/* User Message Card or Inline Editor */}
                       {editingMsgId === message.id ? (
-                        <div className="w-full space-y-2 p-3 rounded-2xl bg-accent text-white shadow-sm">
+                        <div className="w-full space-y-2 p-3 rounded-2xl bg-accent text-white shadow-sm border border-white/20 animate-in fade-in zoom-in-[0.98] duration-150 ease-out">
+                          {messages.length - index - 1 > 0 && (
+                            <div className="flex items-start gap-1.5 px-1 pt-0.5 text-[11px] leading-snug text-white/90">
+                              <GitBranch className="w-3.5 h-3.5 mt-px shrink-0" />
+                              <span>
+                                Saving deletes the {messages.length - index - 1} message{messages.length - index - 1 === 1 ? '' : 's'} after this and generates a new reply.
+                              </span>
+                            </div>
+                          )}
                           <textarea
                             value={editingText}
                             onChange={(e) => setEditingText(e.target.value)}
@@ -1447,19 +2005,26 @@ export default function ChatPage() {
                             className="w-full p-2.5 rounded-xl bg-black/20 text-white placeholder-white/60 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-white/40 resize-y"
                             autoFocus
                           />
-                          <div className="flex items-center justify-end gap-2 text-xs">
-                            <button
-                              onClick={handleCancelEdit}
-                              className="px-2.5 py-1 rounded-lg text-white/80 hover:bg-white/10 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={handleSaveEdit}
-                              className="px-3 py-1 rounded-lg bg-white text-accent font-semibold flex items-center gap-1 shadow-xs"
-                            >
-                              <Check className="w-3.5 h-3.5" /> Save
-                            </button>
+                          <div className="flex items-center justify-between gap-2 text-xs px-0.5">
+                            <span className="text-[11px] text-white/60 hidden sm:inline">
+                              Ctrl + Enter to send
+                            </span>
+                            <div className="flex items-center gap-2 ml-auto">
+                              <button
+                                onClick={handleCancelEdit}
+                                className="px-2.5 py-1 rounded-lg text-white/80 hover:bg-white/10 transition-colors apple-button"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={handleSaveEdit}
+                                disabled={isGenerating || !editingText.trim()}
+                                className="px-3 py-1 rounded-lg bg-white text-accent font-semibold flex items-center gap-1 shadow-xs apple-button transition-[transform,background-color] duration-150 ease-out active:scale-[0.97] disabled:opacity-50"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                {messages.length - index - 1 > 0 ? 'Save & Regenerate' : 'Save & Send'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ) : (
@@ -1468,6 +2033,27 @@ export default function ChatPage() {
                         </div>
                       )}
 
+                      {deleteConfirmId === message.id ? (
+                        <div className="flex flex-wrap justify-end items-center gap-2 px-2.5 py-1.5 mt-1 rounded-xl bg-red-500/10 border border-red-500/25 text-[11px] text-red-600 dark:text-red-400 animate-in fade-in slide-in-from-top-1 duration-150 ease-out">
+                          <span className="font-medium">
+                            {messages.length - index - 1 > 0
+                              ? `Delete this and the ${messages.length - index - 1} after it?`
+                              : 'Delete this message?'}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteMessage(message.id)}
+                            className="px-2.5 py-1 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 transition-[transform,background-color] duration-150 ease-out active:scale-[0.97] apple-button"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            onClick={handleCancelDelete}
+                            className="px-2.5 py-1 rounded-lg hover:bg-red-500/10 text-muted-foreground transition-colors apple-button"
+                          >
+                            Keep
+                          </button>
+                        </div>
+                      ) : (
                       <div className="flex justify-end items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleCopyMessage(formattedContent)}
@@ -1478,19 +2064,22 @@ export default function ChatPage() {
                         </button>
                         <button
                           onClick={() => handleStartEdit(message)}
-                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
-                          title="Edit your message"
+                          disabled={isGenerating}
+                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors disabled:opacity-40"
+                          title="Edit and regenerate from here"
                         >
                           <Edit2 className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => handleDeleteMessage(message.id)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 text-[11px] transition-colors"
-                          title="Delete message"
+                          disabled={isGenerating}
+                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 text-[11px] transition-colors disabled:opacity-40"
+                          title="Delete from here — removes this and everything after it"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
+                      )}
                     </div>
                   )}
                 </div>
