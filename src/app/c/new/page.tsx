@@ -120,7 +120,7 @@ export default function CreateCharacterPage() {
     reader.onload = (event) => {
       try {
         const text = event.target?.result as string;
-        const parsed = parseCharacterCardJson(text);
+        const { character: parsed } = parseCharacterCardJson(text);
 
         if (parsed.name) setName(parsed.name);
         if (parsed.tagline) setTagline(parsed.tagline);

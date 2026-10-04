@@ -289,14 +289,7 @@ export async function POST(req: NextRequest) {
       history = clientHistory;
     }
 
-    // 5. Retrieve Context (memories, summary, state, lore).
-    // Lore/memory matching scans the latest message plus the last few turns so that
-    // keywords mentioned a moment ago keep their lore active.
-    const scanText = [
-      ...history.slice(-4).map((m) => m.content || ''),
-      userMessage,
-    ].join('\n');
-
+    // 5. Retrieve Context (memories, summary, state, lore via SillyTavern World Info and Vectors).
     let retrieved: RetrievedContext = {
       pinnedMemories: [],
       relevantMemories: [],
@@ -307,22 +300,30 @@ export async function POST(req: NextRequest) {
 
     if (userId) {
       try {
-        retrieved = await retrieveContextForChat(chatId, character.id, scanText);
+        retrieved = await retrieveContextForChat({
+          chatId: resolvedChatId,
+          character,
+          persona,
+          history,
+          latestUserMessage: userMessage,
+        });
       } catch (e) {
         console.warn('Memory retrieval skipped:', e);
       }
     }
 
-    // 6. Assemble Cache-Optimized Prompt
+    // 6. Assemble SillyTavern PromptManager Messages & In-Chat Injections
     const assembledMessages = assemblePrompt({
       character,
       persona,
       history,
       retrievedMemories: retrieved.relevantMemories,
       pinnedMemories: retrieved.pinnedMemories,
+      vectorMemories: retrieved.vectorMemories,
       summary: retrieved.summary,
       chatState: retrieved.chatState,
       triggeredLore: retrieved.triggeredLore,
+      activatedLore: retrieved.activatedLore,
       authorsNote: authorsNote || '',
       latestUserMessage: userMessage,
     });
@@ -678,25 +679,47 @@ export async function POST(req: NextRequest) {
                 .update({ leaf_id: assistantMsgRow.id, last_message_at: new Date().toISOString() })
                 .eq('id', resolvedChatId);
 
-              // Background non-blocking extraction of facts & state update
-              const extractionTask = () => {
-                extractMemoriesAndState({
-                  chatId: resolvedChatId,
-                  userId,
-                  charName: character.name,
-                  userName: persona?.name || 'User',
-                  userMessage,
-                  assistantMessage: cleanedAssistant,
-                  existingMemories: retrieved.relevantMemories,
-                  currentState: retrieved.chatState?.state || {},
-                  apiKey: clientApiKey,
-                }).catch((err) => console.error('Background memory extractor error:', err));
+              // Background non-blocking extraction of facts, state update, and periodic summarization
+              const backgroundTask = async () => {
+                try {
+                  await extractMemoriesAndState({
+                    chatId: resolvedChatId,
+                    userId,
+                    charName: character.name,
+                    userName: persona?.name || 'User',
+                    userMessage,
+                    assistantMessage: cleanedAssistant,
+                    existingMemories: retrieved.relevantMemories,
+                    currentState: retrieved.chatState?.state || {},
+                    apiKey: clientApiKey,
+                  });
+                } catch (err) {
+                  console.error('Background memory extractor error:', err);
+                }
+
+                try {
+                  const { summarizeChatIfNeeded } = await import('@/lib/memory/summarizer');
+                  await summarizeChatIfNeeded({
+                    chatId: resolvedChatId,
+                    userId,
+                    charName: character.name,
+                    userName: persona?.name || 'User',
+                    history: [
+                      ...history,
+                      { id: savedUserMsgId || 'user-now', role: 'user', content: userMessage } as any,
+                      { id: assistantMsgRow?.id || 'assistant-now', role: 'assistant', content: cleanedAssistant } as any,
+                    ],
+                    apiKey: clientApiKey,
+                  });
+                } catch (err) {
+                  console.error('Background summarizer error:', err);
+                }
               };
 
               try {
-                after(extractionTask);
+                after(backgroundTask);
               } catch {
-                extractionTask();
+                backgroundTask();
               }
             }
           }

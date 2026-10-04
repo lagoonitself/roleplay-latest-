@@ -209,15 +209,19 @@ function HomePageContent() {
     try {
       let parsedChar: Partial<Character> = {};
       let avatarUrl = '';
+      let embeddedBook: any = null;
 
       if (file.name.toLowerCase().endsWith('.png') || file.type === 'image/png') {
         const buffer = await file.arrayBuffer();
         const res = parseCharacterFromPng(buffer);
         parsedChar = res.character;
         avatarUrl = res.avatarDataUrl || '';
+        embeddedBook = res.characterBook || null;
       } else {
         const text = await file.text();
-        parsedChar = parseCharacterCardJson(text);
+        const res = parseCharacterCardJson(text);
+        parsedChar = res.character;
+        embeddedBook = res.characterBook || null;
       }
 
       if (!parsedChar.name && !parsedChar.first_message) {
@@ -261,6 +265,13 @@ function HomePageContent() {
           .single();
 
         if (error) throw error;
+
+        // Auto-save embedded lorebook if card contains one
+        if (embeddedBook && savedDbChar?.id) {
+          const { saveEmbeddedCharacterBook } = await import('@/lib/cards/card-parser');
+          await saveEmbeddedCharacterBook(supabase, savedDbChar.id, userId, embeddedBook);
+        }
+
         toast.success(`Successfully imported "${newCharPayload.name}"!`);
         await loadData();
         return;

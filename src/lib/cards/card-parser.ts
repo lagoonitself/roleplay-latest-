@@ -1,6 +1,33 @@
 import type { Character } from '@/lib/supabase/types';
 import { repairMojibake } from '@/lib/prompt/macros';
 
+export interface CharacterBookEntry {
+  keys: string[];
+  content: string;
+  enabled?: boolean;
+  insertion_order?: number;
+  case_sensitive?: boolean;
+  name?: string;
+  priority?: number;
+  id?: number | string;
+  comment?: string;
+  selective?: boolean;
+  secondary_keys?: string[];
+  constant?: boolean;
+  position?: 'before_char' | 'after_char' | 'at_depth';
+  extensions?: Record<string, any>;
+}
+
+export interface CharacterBook {
+  name?: string;
+  description?: string;
+  scan_depth?: number;
+  token_budget?: number;
+  recursive_scanning?: boolean;
+  extensions?: Record<string, any>;
+  entries: CharacterBookEntry[];
+}
+
 export interface CharacterCardV2 {
   spec: 'chara_card_v2';
   spec_version: '2.0';
@@ -15,6 +42,7 @@ export interface CharacterCardV2 {
     system_prompt?: string;
     post_history_instructions?: string;
     alternate_greetings?: string[];
+    character_book?: CharacterBook;
     tags?: string[];
     creator?: string;
     character_version?: string;
@@ -25,6 +53,7 @@ export interface CharacterCardV2 {
 export interface ParsedCardResult {
   character: Partial<Character>;
   avatarDataUrl?: string;
+  characterBook?: CharacterBook | null;
 }
 
 export function makeCharacter(overrides: Partial<Character>): Character {
@@ -66,10 +95,60 @@ export function makeCharacter(overrides: Partial<Character>): Character {
 const clean = (val: unknown): string => (typeof val === 'string' ? repairMojibake(val).trim() : '');
 
 /**
+ * Normalizes an embedded CharacterBook from SillyTavern or Chub card
+ */
+export function normalizeCharacterBook(rawBook: any): CharacterBook | null {
+  if (!rawBook || typeof rawBook !== 'object') return null;
+
+  const entries: CharacterBookEntry[] = (Array.isArray(rawBook.entries) ? rawBook.entries : [])
+    .map((e: any) => {
+      const keys = Array.isArray(e.keys)
+        ? e.keys.map(clean).filter(Boolean)
+        : typeof e.key === 'string'
+        ? e.key.split(',').map(clean).filter(Boolean)
+        : [];
+
+      const secondaryKeys = Array.isArray(e.secondary_keys)
+        ? e.secondary_keys.map(clean).filter(Boolean)
+        : typeof e.secondary_keys === 'string'
+        ? e.secondary_keys.split(',').map(clean).filter(Boolean)
+        : [];
+
+      return {
+        keys,
+        secondary_keys: secondaryKeys,
+        content: clean(e.content),
+        name: clean(e.name || e.comment || e.title),
+        comment: clean(e.comment),
+        enabled: e.enabled !== false,
+        constant: Boolean(e.constant),
+        selective: Boolean(e.selective),
+        case_sensitive: Boolean(e.case_sensitive),
+        priority: typeof e.priority === 'number' ? e.priority : (typeof e.insertion_order === 'number' ? e.insertion_order : 100),
+        insertion_order: typeof e.insertion_order === 'number' ? e.insertion_order : 100,
+        position: e.position === 'after_char' ? 'after_char' : (e.position === 'at_depth' ? 'at_depth' : 'before_char'),
+        extensions: e.extensions || {},
+      };
+    })
+    .filter((e: CharacterBookEntry) => e.content.length > 0 && (e.keys.length > 0 || e.constant));
+
+  return {
+    name: clean(rawBook.name) || 'Embedded Lorebook',
+    description: clean(rawBook.description) || '',
+    scan_depth: typeof rawBook.scan_depth === 'number' ? rawBook.scan_depth : 4,
+    token_budget: typeof rawBook.token_budget === 'number' ? rawBook.token_budget : 1200,
+    recursive_scanning: rawBook.recursive_scanning !== false,
+    extensions: rawBook.extensions || {},
+    entries,
+  };
+}
+
+/**
  * Parses raw JSON string (or parsed object) of Character Card V2, V1, Tavern, or Janitor AI format.
  */
-export function parseCharacterCardJson(raw: string | object): Partial<Character> {
+export function parseCharacterCardJson(raw: string | object): ParsedCardResult {
   const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  let characterBook: CharacterBook | null = null;
 
   // Character Card V2 spec format (Janitor AI, Chub AI, SillyTavern standard)
   if (obj.spec === 'chara_card_v2' && obj.data) {
@@ -82,20 +161,27 @@ export function parseCharacterCardJson(raw: string | object): Partial<Character>
     const notes = clean(d.creator_notes);
     const tagline = notes ? (notes.length > 120 ? notes.slice(0, 117) + '...' : notes) : (personality.slice(0, 80) ? personality.slice(0, 80) + '...' : '');
 
+    if (d.character_book) {
+      characterBook = normalizeCharacterBook(d.character_book);
+    }
+
     return {
-      name,
-      tagline,
-      description: desc,
-      personality,
-      scenario,
-      first_message: firstMes,
-      alternate_greetings: Array.isArray(d.alternate_greetings) ? d.alternate_greetings.map(clean).filter(Boolean) : [],
-      example_dialogue: clean(d.mes_example),
-      creator_notes: notes,
-      system_prompt: clean(d.system_prompt),
-      post_history_instructions: clean(d.post_history_instructions),
-      speech_style: clean(d.extensions?.speech_style || d.extensions?.talkativeness || ''),
-      tags: Array.isArray(d.tags) ? d.tags.map(clean).filter(Boolean) : [],
+      character: {
+        name,
+        tagline,
+        description: desc,
+        personality,
+        scenario,
+        first_message: firstMes,
+        alternate_greetings: Array.isArray(d.alternate_greetings) ? d.alternate_greetings.map(clean).filter(Boolean) : [],
+        example_dialogue: clean(d.mes_example),
+        creator_notes: notes,
+        system_prompt: clean(d.system_prompt),
+        post_history_instructions: clean(d.post_history_instructions),
+        speech_style: clean(d.extensions?.speech_style || d.extensions?.talkativeness || ''),
+        tags: Array.isArray(d.tags) ? d.tags.map(clean).filter(Boolean) : [],
+      },
+      characterBook,
     };
   }
 
@@ -109,20 +195,27 @@ export function parseCharacterCardJson(raw: string | object): Partial<Character>
   const notes = clean(obj.creator_notes);
   const tagline = notes ? (notes.length > 120 ? notes.slice(0, 117) + '...' : notes) : (desc.slice(0, 80) ? desc.slice(0, 80) + '...' : '');
 
+  if (obj.character_book) {
+    characterBook = normalizeCharacterBook(obj.character_book);
+  }
+
   return {
-    name,
-    tagline,
-    description: desc,
-    personality,
-    scenario,
-    first_message: firstMes,
-    alternate_greetings: Array.isArray(obj.alternate_greetings) ? obj.alternate_greetings.map(clean).filter(Boolean) : [],
-    example_dialogue: dialogue,
-    creator_notes: notes,
-    system_prompt: clean(obj.system_prompt),
-    post_history_instructions: clean(obj.post_history_instructions),
-    speech_style: clean(obj.speech_style || ''),
-    tags: Array.isArray(obj.tags) ? obj.tags.map(clean).filter(Boolean) : [],
+    character: {
+      name,
+      tagline,
+      description: desc,
+      personality,
+      scenario,
+      first_message: firstMes,
+      alternate_greetings: Array.isArray(obj.alternate_greetings) ? obj.alternate_greetings.map(clean).filter(Boolean) : [],
+      example_dialogue: dialogue,
+      creator_notes: notes,
+      system_prompt: clean(obj.system_prompt),
+      post_history_instructions: clean(obj.post_history_instructions),
+      speech_style: clean(obj.speech_style || ''),
+      tags: Array.isArray(obj.tags) ? obj.tags.map(clean).filter(Boolean) : [],
+    },
+    characterBook,
   };
 }
 
@@ -161,7 +254,6 @@ export function parseCharacterFromPng(buffer: ArrayBuffer): ParsedCardResult {
 
     if (typeChars === 'tEXt' && length > 0) {
       const chunkData = bytes.slice(offset, offset + length);
-      // tEXt format: keyword (null-terminated) + text
       let nullIndex = -1;
       for (let i = 0; i < chunkData.length; i++) {
         if (chunkData[i] === 0) {
@@ -177,11 +269,8 @@ export function parseCharacterFromPng(buffer: ArrayBuffer): ParsedCardResult {
         if (keyword.toLowerCase() === 'chara' || keyword.toLowerCase() === 'ccv3') {
           const rawText = new TextDecoder('utf-8').decode(textBytes);
           try {
-            // Usually base64 encoded UTF-8 JSON
-            const decodedJson = atob(rawText);
-            cardJsonStr = decodedJson;
+            cardJsonStr = atob(rawText);
           } catch {
-            // Sometimes stored directly as JSON text
             cardJsonStr = rawText;
           }
           break;
@@ -189,7 +278,6 @@ export function parseCharacterFromPng(buffer: ArrayBuffer): ParsedCardResult {
       }
     }
 
-    // Skip chunk data and 4-byte CRC
     offset += length + 4;
   }
 
@@ -201,24 +289,91 @@ export function parseCharacterFromPng(buffer: ArrayBuffer): ParsedCardResult {
   const avatarDataUrl = `data:image/png;base64,${btoa(binary)}`;
 
   if (!cardJsonStr) {
-    // If not embedded, return just the avatar so user can create character with this picture!
     return {
       character: {},
       avatarDataUrl,
+      characterBook: null,
     };
   }
 
-  const parsed = parseCharacterCardJson(cardJsonStr);
+  const parsedResult = parseCharacterCardJson(cardJsonStr);
   return {
-    character: parsed,
+    ...parsedResult,
     avatarDataUrl,
   };
 }
 
 /**
+ * Saves an embedded CharacterBook into Supabase lorebooks, entries, and character_lorebooks association.
+ */
+export async function saveEmbeddedCharacterBook(
+  supabase: any,
+  characterId: string,
+  userId: string,
+  book: CharacterBook
+): Promise<string | null> {
+  if (!book || !book.entries?.length || !userId) return null;
+
+  try {
+    // 1. Create Lorebook
+    const { data: bookRow, error: bookErr } = await supabase
+      .from('lorebooks')
+      .insert({
+        user_id: userId,
+        name: book.name || 'Character Lore',
+        description: book.description || '',
+        scan_depth: book.scan_depth || 4,
+        token_budget: book.token_budget || 1200,
+      })
+      .select('id')
+      .single();
+
+    if (bookErr || !bookRow) {
+      console.warn('Failed to insert lorebook:', bookErr?.message);
+      return null;
+    }
+
+    const lorebookId = bookRow.id;
+
+    // 2. Insert Entries
+    const entryRows = book.entries.map((e) => ({
+      lorebook_id: lorebookId,
+      user_id: userId,
+      title: e.name || e.comment || 'Entry',
+      keys: e.keys,
+      secondary_keys: e.secondary_keys || [],
+      content: e.content,
+      constant: Boolean(e.constant),
+      enabled: e.enabled !== false,
+      priority: e.priority ?? e.insertion_order ?? 100,
+      case_sensitive: Boolean(e.case_sensitive),
+    }));
+
+    if (entryRows.length > 0) {
+      await supabase.from('lorebook_entries').insert(entryRows);
+    }
+
+    // 3. Link to Character
+    await supabase.from('character_lorebooks').upsert({
+      character_id: characterId,
+      lorebook_id: lorebookId,
+      user_id: userId,
+    });
+
+    return lorebookId;
+  } catch (err) {
+    console.error('Error saving embedded character book:', err);
+    return null;
+  }
+}
+
+/**
  * Serializes a Character entity into Character Card V2 JSON format.
  */
-export function exportCharacterToCardV2(character: Character): CharacterCardV2 {
+export function exportCharacterToCardV2(
+  character: Character,
+  characterBook?: CharacterBook | null
+): CharacterCardV2 {
   return {
     spec: 'chara_card_v2',
     spec_version: '2.0',
@@ -233,6 +388,7 @@ export function exportCharacterToCardV2(character: Character): CharacterCardV2 {
       system_prompt: character.system_prompt,
       post_history_instructions: character.post_history_instructions,
       alternate_greetings: character.alternate_greetings || [],
+      character_book: characterBook || undefined,
       tags: character.tags || [],
     },
   };
