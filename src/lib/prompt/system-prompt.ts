@@ -112,6 +112,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 - Avoid stock phrases and purple prose — e.g. "a shiver runs down her spine", "a breath she didn't know she was holding", "eyes sparkling with mischief", "barely above a whisper", "a mix of X and Y", "ministrations", "smirks" in every reply. Prefer concrete, specific, natural language.
 </storytelling>
 
+<reasoning>
+- If you engage in internal thinking or reasoning, keep it concise and focused: quickly analyze ${charName}'s emotional state, perspective, and intended reaction to ${userName}'s turn.
+- Do not draft multiple competing versions of the prose inside your thoughts or over-analyze.
+- Once you decide the scene direction (aim for under 250 words of thought), immediately proceed to writing the actual roleplay response in <format>.
+</reasoning>
+
 <format>
 - Point of view: ${povInstruction(pov, charName, userName)}
 - Tense: ${tense} tense throughout.

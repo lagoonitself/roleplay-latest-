@@ -18,6 +18,7 @@ function cleanReply(text: string, charName: string): string {
 }
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
@@ -240,28 +241,7 @@ export async function POST(req: NextRequest) {
               if (!trimmed || trimmed.startsWith(':')) continue;
 
               if (trimmed === 'data: [DONE]') {
-                const flushed = parser.flush();
-                for (const chunk of flushed) {
-                  if (chunk.reasoning) {
-                    fullReasoningContent += chunk.reasoning;
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`)
-                    );
-                  }
-                  if (chunk.reasoningDone) {
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
-                    );
-                  }
-                  if (chunk.text) {
-                    fullAssistantContent += chunk.text;
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ text: chunk.text })}\n\n`)
-                    );
-                  }
-                }
-                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-                continue;
+                break;
               }
 
               if (trimmed.startsWith('data: ')) {
@@ -346,6 +326,66 @@ export async function POST(req: NextRequest) {
             }
           }
 
+          // SAFETY RECOVERY: If the model generated reasoning but was cut off (e.g. hit token limit)
+          // or stopped before outputting the reply, run an immediate continuation to generate the prose.
+          if (fullAssistantContent.trim().length === 0 && fullReasoningContent.trim().length > 0) {
+            try {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
+              );
+
+              const continuationMessages = [
+                ...assembledMessages,
+                {
+                  role: 'system' as const,
+                  content: `You completed your internal thinking: [${fullReasoningContent.slice(0, 1500)}]. Now immediately write your in-character roleplay response. Output only the story prose in character without repeating the reasoning.`
+                }
+              ];
+
+              const contStream = await streamChatCompletions(continuationMessages, {
+                apiKey: clientApiKey,
+                sessionId: `${chatId}-continue`,
+                temperature: effectiveTemp,
+                thinking: false,
+                max_tokens: (VERBOSITY_GUIDE[verbosity] ?? VERBOSITY_GUIDE.medium).maxTokens,
+                presence_penalty: character.behavior?.presence_penalty,
+                frequency_penalty: character.behavior?.frequency_penalty,
+                stop: [`\n${userDisplayName}:`, `\n${userDisplayName.toUpperCase()}:`],
+                signal: req.signal,
+              });
+
+              if (contStream.body) {
+                const contReader = contStream.body.getReader();
+                let contBuf = '';
+                while (true) {
+                  const { done: cDone, value: cVal } = await contReader.read();
+                  if (cDone) break;
+                  contBuf += decoder.decode(cVal, { stream: true });
+                  const cLines = contBuf.split('\n');
+                  contBuf = cLines.pop() || '';
+                  for (const cLine of cLines) {
+                    const cTrim = cLine.trim();
+                    if (!cTrim || cTrim.startsWith(':') || cTrim === 'data: [DONE]') continue;
+                    if (cTrim.startsWith('data: ')) {
+                      try {
+                        const cData = JSON.parse(cTrim.slice(6));
+                        const cText = cData.choices?.[0]?.delta?.content;
+                        if (cText) {
+                          fullAssistantContent += cText;
+                          controller.enqueue(
+                            encoder.encode(`data: ${JSON.stringify({ text: cText })}\n\n`)
+                          );
+                        }
+                      } catch {}
+                    }
+                  }
+                }
+              }
+            } catch (recoveryErr) {
+              console.warn('Reasoning continuation recovery failed:', recoveryErr);
+            }
+          }
+
           // Feature 2 (additive): finalize exact token counts.
           // Provider usage wins; otherwise estimate so guests still accumulate.
           // Output already includes thinking/reasoning tokens server-side.
@@ -371,6 +411,7 @@ export async function POST(req: NextRequest) {
             } catch {}
           }
 
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
 
           // Feature 2 (additive): persist one ledger row per turn + token meta.

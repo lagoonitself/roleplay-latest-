@@ -96,11 +96,13 @@ async function streamRegeneratedReply(
 
   try {
     if (reader) {
+      let buffer = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
         for (const line of lines) {
           const lineTrimmed = line.trim();
           if (lineTrimmed.startsWith('data: ') && lineTrimmed !== 'data: [DONE]') {
@@ -649,12 +651,14 @@ export default function ChatPage() {
       const genStartTime = Date.now();
 
       if (reader) {
+        let buffer = '';
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             const trimmed = line.trim();
@@ -1006,12 +1010,14 @@ export default function ChatPage() {
       const genStartTime = Date.now();
 
       if (reader) {
+        let buffer = '';
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             const trimmed = line.trim();
@@ -1895,7 +1901,7 @@ export default function ChatPage() {
                           />
 
                           {/* Roleplay Prose Bubble */}
-                          {(message.content || (!message.reasoning && message.status !== 'streaming')) && (
+                          {(message.content || (!message.reasoning && message.status !== 'streaming')) ? (
                             <div className="p-4 sm:p-5 rounded-2xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs border border-black/[0.05] dark:border-white/[0.07] select-text">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                 {formattedContent}
@@ -1905,6 +1911,24 @@ export default function ChatPage() {
                                 <span className="inline-block w-1.5 h-4 ml-1 bg-accent animate-pulse align-middle" />
                               )}
                             </div>
+                          ) : (
+                            /* Fallback if a previous response ended with reasoning but empty text */
+                            !message.content && message.reasoning && message.status !== 'streaming' && (
+                              <div className="p-3.5 sm:p-4 rounded-2xl rounded-tl-sm bg-amber-500/[0.06] dark:bg-amber-500/[0.09] border border-amber-500/25 text-xs text-foreground/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                <div>
+                                  <p className="font-semibold text-amber-600 dark:text-amber-400">Response stopped after reasoning</p>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">The model finished its thoughts without outputting prose.</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRegenerate(index)}
+                                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 dark:text-amber-300 font-medium text-xs transition-colors self-start sm:self-auto flex items-center gap-1.5 apple-button"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  <span>Regenerate Response</span>
+                                </button>
+                              </div>
+                            )
                           )}
                         </div>
                       )}

@@ -22,7 +22,7 @@ export const DEFAULT_OPENCODE_ENDPOINT = 'https://opencode.ai/zen/go/v1/chat/com
 export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4.1-flash';
 
 /** Extra completion budget granted when reasoning ("thinking") is enabled, since reasoning tokens count toward max_tokens. */
-export const THINKING_TOKEN_ALLOWANCE = 4096;
+export const THINKING_TOKEN_ALLOWANCE = 8192;
 
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
@@ -123,8 +123,10 @@ export async function streamChatCompletions(
     top_p: options.top_p ?? 0.95,
     presence_penalty: options.presence_penalty ?? 0.2,
     frequency_penalty: options.frequency_penalty ?? 0.3,
-    // Reasoning tokens are billed against max_tokens — give thinking mode headroom so replies aren't truncated.
-    max_tokens: options.thinking ? baseMaxTokens + THINKING_TOKEN_ALLOWANCE : baseMaxTokens,
+    // Reasoning tokens are billed against max_tokens — give thinking mode headroom (min 8192) so replies aren't truncated.
+    max_tokens: options.thinking
+      ? Math.min(16384, Math.max(8192, baseMaxTokens + THINKING_TOKEN_ALLOWANCE))
+      : baseMaxTokens,
   };
 
   if (options.stop && options.stop.length > 0) {
