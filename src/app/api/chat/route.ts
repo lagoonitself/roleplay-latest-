@@ -9,12 +9,12 @@ import { makeCharacter } from '@/lib/cards/card-parser';
 import { formatRoleplayText } from '@/lib/prompt/macros';
 import { estimateTokens } from '@/lib/prompt/tokens';
 import { ThinkingStreamParser } from '@/lib/llm/stream-parser';
+import { sanitizeModelOutput } from '@/lib/formatter/regex-engine';
 import type { Character, Persona, Message } from '@/lib/supabase/types';
 
-/** Removes a leading "Name:" speaker tag the model sometimes adds, and trailing whitespace. */
+/** Sanitizes model reply: strips speaker tags, lingering thinking tags, tokens, and canned preambles. */
 function cleanReply(text: string, charName: string): string {
-  const escaped = charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return text.replace(new RegExp(`^\\s*(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*:\\s*`, 'i'), '').trim();
+  return sanitizeModelOutput(text, charName);
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

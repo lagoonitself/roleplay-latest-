@@ -28,6 +28,8 @@ export interface SillyTavernQuickActionsProps {
   onToggleThinking: () => void;
   currentPresetId?: string;
   onSelectPreset: (preset: SystemPromptPreset) => void;
+  onOpenRegexManager?: () => void;
+  regexActiveCount?: number;
 }
 
 export function SillyTavernQuickActions({
@@ -40,6 +42,8 @@ export function SillyTavernQuickActions({
   onToggleThinking,
   currentPresetId = 'roleplay-detailed',
   onSelectPreset,
+  onOpenRegexManager,
+  regexActiveCount,
 }: SillyTavernQuickActionsProps) {
   const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
 
@@ -151,6 +155,18 @@ export function SillyTavernQuickActions({
         <Brain className="w-3 h-3 text-purple-500" />
         {thinkingEnabled ? 'Thinking: ON' : 'Thinking: OFF'}
       </button>
+
+      {/* 6. Regex & Output Formatters */}
+      {onOpenRegexManager && (
+        <button
+          onClick={onOpenRegexManager}
+          className="px-3 py-1 rounded-full bg-accent/10 hover:bg-accent/20 text-accent font-medium whitespace-nowrap transition-colors touch-manipulation flex items-center gap-1.5 apple-button border border-accent/20"
+          title="Open Regex Scripts & Output Formatters Studio"
+        >
+          <Sparkles className="w-3 h-3 text-accent" />
+          <span>Regex & Formatters{typeof regexActiveCount === 'number' ? ` (${regexActiveCount})` : ''}</span>
+        </button>
+      )}
     </div>
   );
 }

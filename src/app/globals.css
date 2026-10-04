@@ -115,19 +115,49 @@ body {
 }
 
 /* Roleplay message typography: italicized actions, highlighted dialogue */
-.roleplay-prose em {
+:root {
+  --rp-dialogue: #4338ca;
+  --rp-action-italic: #374151;
+}
+
+.dark {
+  --rp-dialogue: #a5b4fc;
+  --rp-action-italic: #d1d5db;
+}
+
+.roleplay-prose {
+  word-break: break-word;
+  line-height: 1.68;
+}
+
+.roleplay-prose em, .rp-action {
   font-style: italic;
-  opacity: 0.88;
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  color: var(--rp-action-italic);
+  opacity: 0.92;
+  letter-spacing: 0.01em;
+}
+
+.rp-dialogue {
+  color: var(--rp-dialogue-color, var(--rp-dialogue));
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: color 150ms ease, text-shadow 150ms ease;
+}
+
+.dark .rp-dialogue {
+  text-shadow: 0 0 12px rgba(165, 180, 252, 0.12);
 }
 
 .roleplay-prose p {
-  margin-bottom: 0.75rem;
-  line-height: 1.625;
+  margin-bottom: 0.85rem;
+  line-height: 1.68;
 }
 
 .roleplay-prose p:last-child {
   margin-bottom: 0;
 }
+
 
 /* Custom minimal scrollbar */
 ::-webkit-scrollbar {

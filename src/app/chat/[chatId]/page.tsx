@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
@@ -35,6 +35,10 @@ import { makeCharacter } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
 import { ThinkingProcess } from '@/components/thinking-process';
+import { RoleplayMessageContent } from '@/components/chat/roleplay-message-content';
+import { RegexManagerModal } from '@/components/chat/regex-manager-modal';
+import { useRegexScripts } from '@/lib/store/regex-store';
+import { processPromptTime } from '@/lib/formatter/regex-engine';
 import { formatRoleplayText } from '@/lib/prompt/macros';
 import { extractThinking } from '@/lib/llm/stream-parser';
 import { recordLocalUsage } from '@/lib/usage/tokens';
@@ -294,6 +298,11 @@ export default function ChatPage() {
   });
   const [showAuthorsNote, setShowAuthorsNote] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+
+  // Regex Scripts & Output Formatters
+  const { scripts: regexScripts } = useRegexScripts();
+  const [regexModalOpen, setRegexModalOpen] = useState(false);
+  const regexActiveCount = useMemo(() => regexScripts.filter((s) => s.enabled).length, [regexScripts]);
 
   const handleDeleteCurrentChat = async () => {
     if (confirm('Delete this entire chat session? This cannot be undone.')) {
@@ -812,8 +821,8 @@ export default function ChatPage() {
 
   // 2. Send Message Handler
   const handleSendMessage = async (customPrompt?: string) => {
-    const textToSend = (customPrompt ?? inputText).trim();
-    if (!textToSend || isGenerating || !character) return;
+    const rawToSend = (customPrompt ?? inputText).trim();
+    if (!rawToSend || isGenerating || !character) return;
 
     if (!settings.opencodeApiKey && !process.env.NEXT_PUBLIC_HAS_SERVER_KEY) {
       toast.error('Please configure your OpenCode Go API key in Settings first.');
@@ -823,6 +832,12 @@ export default function ChatPage() {
     const charName = character.name || 'Character';
     const userName = activePersona?.name || 'User';
 
+    // Apply prompt-time transformations (macros like {{roll::2d6}}, prompt regexes)
+    const textToSend = processPromptTime(rawToSend, regexScripts, {
+      charName,
+      userName,
+    });
+
     const userMsgId = 'usr-' + Date.now();
     const newUserMsg: Message = {
       id: userMsgId,
@@ -830,7 +845,7 @@ export default function ChatPage() {
       user_id: 'user',
       parent_id: messages.length > 0 ? messages[messages.length - 1].id : null,
       role: 'user',
-      content: formatRoleplayText(textToSend, charName, userName),
+      content: textToSend,
       reasoning: null,
       status: 'done',
       meta: {
@@ -2051,6 +2066,19 @@ export default function ChatPage() {
             </span>
           </button>
 
+          {/* Regex Scripts & Output Formatters Studio Button */}
+          <button
+            onClick={() => setRegexModalOpen(true)}
+            className={`p-2 rounded-full apple-button flex items-center justify-center border transition-all ${
+              regexModalOpen
+                ? 'bg-accent/15 border-accent text-accent'
+                : 'border-black/[0.06] dark:border-white/[0.08] hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground'
+            }`}
+            title={`Regex Scripts & Output Formatters (${regexActiveCount} Active)`}
+          >
+            <Sparkles className="w-4 h-4 text-accent" />
+          </button>
+
           {/* Memory Inspector Button */}
           <button
             onClick={() => setInspectorOpen(!inspectorOpen)}
@@ -2216,13 +2244,15 @@ export default function ChatPage() {
                           {/* Roleplay Prose Bubble */}
                           {(message.content || (!message.reasoning && message.status !== 'streaming')) ? (
                             <div className="p-4 sm:p-5 rounded-2xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs border border-black/[0.05] dark:border-white/[0.07] select-text">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {formattedContent}
-                              </ReactMarkdown>
-
-                              {message.status === 'streaming' && (
-                                <span className="inline-block w-1.5 h-4 ml-1 bg-accent animate-pulse align-middle" />
-                              )}
+                              <RoleplayMessageContent
+                                content={message.content}
+                                characterName={character?.name || 'Character'}
+                                userName={activePersona?.name || 'User'}
+                                accentColor={character?.accent_color}
+                                role="assistant"
+                                isStreaming={message.status === 'streaming'}
+                                scripts={regexScripts}
+                              />
                             </div>
                           ) : (
                             /* Fallback if a previous response ended with reasoning but empty text */
@@ -2366,7 +2396,13 @@ export default function ChatPage() {
                         </div>
                       ) : (
                         <div className="p-3.5 sm:p-4 rounded-2xl rounded-tr-sm bg-accent text-white text-xs sm:text-sm leading-relaxed shadow-sm select-text">
-                          <p className="whitespace-pre-wrap">{formattedContent}</p>
+                          <RoleplayMessageContent
+                            content={message.content}
+                            characterName={character?.name || 'Character'}
+                            userName={activePersona?.name || 'User'}
+                            role="user"
+                            scripts={regexScripts}
+                          />
                         </div>
                       )}
 
@@ -2490,6 +2526,8 @@ export default function ChatPage() {
               toast.info(nextVal ? 'Deep Thinking Mode: ON' : 'Deep Thinking Mode: OFF');
             }}
             currentPresetId={currentPresetId}
+            onOpenRegexManager={() => setRegexModalOpen(true)}
+            regexActiveCount={regexActiveCount}
             onSelectPreset={async (preset) => {
               setCurrentPresetId(preset.id);
               if (typeof window !== 'undefined') {
@@ -2594,6 +2632,15 @@ export default function ChatPage() {
           updateSettings({ activePersonaId: newPersona.id });
           toast.success(`Roleplaying as "${newPersona.name}"`);
         }}
+      />
+
+      {/* SillyTavern-Compatible Regex Scripts & Output Formatters Studio */}
+      <RegexManagerModal
+        open={regexModalOpen}
+        onClose={() => setRegexModalOpen(false)}
+        characterName={character?.name}
+        userName={activePersona?.name}
+        accentColor={character?.accent_color}
       />
     </div>
   );
