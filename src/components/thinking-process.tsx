@@ -53,7 +53,7 @@ export function ThinkingProcess({
   // Auto-scroll thought content as new tokens stream in
   useEffect(() => {
     if (isActivelyThinking && reasoning) {
-      contentEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      contentEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
     }
   }, [isActivelyThinking, reasoning]);
 

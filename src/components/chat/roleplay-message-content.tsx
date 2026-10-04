@@ -39,8 +39,75 @@ interface RoleplayMessageContentProps {
 }
 
 /**
+ * Synthesizes a physical dice rolling clatter using the Web Audio API.
+ * 100% native, zero dependencies, zero network requests, instant and tactile.
+ */
+function playDiceSound() {
+  if (typeof window === 'undefined') return;
+  try {
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+
+    const bounces = [0, 0.045 + Math.random() * 0.02, 0.095 + Math.random() * 0.03];
+    bounces.forEach((delay, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1600 + Math.random() * 800, ctx.currentTime + delay);
+      filter.Q.setValueAtTime(3.5, ctx.currentTime + delay);
+
+      osc.type = 'triangle';
+      const baseFreq = 340 + Math.random() * 100 - idx * 40;
+      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime + delay);
+      osc.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + delay + 0.035);
+
+      const vol = 0.2 / (idx + 1);
+      gain.gain.setValueAtTime(vol, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.04);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.045);
+    });
+
+    setTimeout(() => {
+      try { ctx.close(); } catch {}
+    }, 350);
+  } catch {}
+}
+
+/**
+ * Interactive Spoiler Tag component with frosted blur reveal.
+ */
+function SpoilerSpan({ children }: { children: React.ReactNode }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <span
+      onClick={(e) => {
+        e.stopPropagation();
+        setRevealed(!revealed);
+      }}
+      title={revealed ? 'Click to hide spoiler' : 'Click to reveal secret'}
+      className={`inline-block px-1.5 py-0.5 my-0.5 rounded cursor-pointer transition-all duration-200 select-none ${
+        revealed
+          ? 'bg-black/10 dark:bg-white/10 text-foreground'
+          : 'bg-black/40 dark:bg-white/30 text-transparent blur-[5px] hover:blur-[2px]'
+      }`}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
  * Interactive Dice Roll Chip Component
- * Supports clicking to reroll with haptic toast and animation!
+ * Supports clicking to reroll with tactile Web Audio sound, haptic toast, and animation!
  */
 function DiceRollChip({ formula }: { formula: string }) {
   const [currentRoll, setCurrentRoll] = useState(() => rollDice(formula));
@@ -49,12 +116,13 @@ function DiceRollChip({ formula }: { formula: string }) {
   const handleReroll = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsRolling(true);
+    playDiceSound();
     const next = rollDice(formula);
     setTimeout(() => {
       setCurrentRoll(next);
       setIsRolling(false);
       toast.success(`Rolled ${formula}: ${next.total} (${next.rolls.join(' + ')}${next.modifier ? (next.modifier > 0 ? ` + ${next.modifier}` : ` - ${Math.abs(next.modifier)}`) : ''})`);
-    }, 200);
+    }, 180);
   };
 
   const modStr = currentRoll.modifier !== 0
@@ -429,7 +497,7 @@ export function RoleplayMessageContent({
       return text;
     }
 
-    const inlineRegex = /\[\[rp-dialogue\]\]([\s\S]*?)\[\[\/rp-dialogue\]\]|\[\[rp-action\]\]([\s\S]*?)\[\[\/rp-action\]\]|\[\[rp-roll\s+formula="([^"]+)"\]\]/gi;
+    const inlineRegex = /\[\[rp-dialogue\]\]([\s\S]*?)\[\[\/rp-dialogue\]\]|\[\[rp-action\]\]([\s\S]*?)\[\[\/rp-action\]\]|\[\[rp-roll\s+formula="([^"]+)"\]\]|\[\[rp-spoiler\]\]([\s\S]*?)\[\[\/rp-spoiler\]\]/gi;
 
     const elements: React.ReactNode[] = [];
     let last = 0;
@@ -460,6 +528,9 @@ export function RoleplayMessageContent({
       } else if (inlineMatch[3] !== undefined) {
         // Interactive Dice Roll
         elements.push(<DiceRollChip key={keyIdx++} formula={inlineMatch[3]} />);
+      } else if (inlineMatch[4] !== undefined) {
+        // Spoiler Blur Tag
+        elements.push(<SpoilerSpan key={keyIdx++}>{inlineMatch[4]}</SpoilerSpan>);
       }
 
       last = inlineRegex.lastIndex;

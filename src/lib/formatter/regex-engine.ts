@@ -218,6 +218,18 @@ export const DEFAULT_REGEX_SCRIPTS: RegexScript[] = [
     isPreset: true,
     category: 'visual',
   },
+  {
+    id: 'visual-spoiler-tag',
+    name: 'Spoiler Blur Tag (||secret||)',
+    description: 'Blurs secret or spoiler text until clicked with frosted reveal.',
+    findRegex: '/\\|\\|([^|\\n]+)\\|\\|/g',
+    replaceString: '[[rp-spoiler]]$1[[/rp-spoiler]]',
+    scope: 'display',
+    target: 'all',
+    enabled: true,
+    isPreset: true,
+    category: 'visual',
+  },
 ];
 
 /**

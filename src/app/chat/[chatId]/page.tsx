@@ -12,6 +12,7 @@ import {
   Square,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   RotateCcw,
   Copy,
   Edit2,
@@ -313,7 +314,29 @@ export default function ChatPage() {
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+
+  const scrollToBottom = (smooth = true) => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'instant',
+      });
+      setIsAtBottom(true);
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
+      setIsAtBottom(true);
+    }
+  };
+
+  const handleChatScroll = () => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setIsAtBottom(distanceFromBottom < 120);
+  };
 
   // 1. Load Persona, Character, Messages, State
   useEffect(() => {
@@ -805,10 +828,19 @@ export default function ChatPage() {
     };
   }, [chatId, supabase]);
 
-  // Auto-scroll to bottom on new message
+  // Intelligent auto-scroll: locks to bottom only when user is near bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isGenerating]);
+    if (!chatContainerRef.current) return;
+    if (isAtBottom) {
+      if (isGenerating) {
+        // Fast hardware-accelerated follow during streaming (zero smooth-scroll lockouts)
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      } else {
+        // Smooth scroll for completed turns
+        scrollToBottom(true);
+      }
+    }
+  }, [messages, isGenerating, isAtBottom]);
 
   // Auto-resize textarea
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -2136,7 +2168,11 @@ export default function ChatPage() {
 
       {/* Main Chat Canvas with Messages Timeline */}
       <div className="flex-1 flex overflow-hidden relative">
-        <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5">
+        <main
+          ref={chatContainerRef}
+          onScroll={handleChatScroll}
+          className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5 scroll-smooth"
+        >
           <div className="max-w-3xl mx-auto space-y-5 pb-6">
             {messages.map((message, index) => {
               const isAssistant = message.role === 'assistant';
@@ -2395,7 +2431,7 @@ export default function ChatPage() {
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3.5 sm:p-4 rounded-2xl rounded-tr-sm bg-accent text-white text-xs sm:text-sm leading-relaxed shadow-sm select-text">
+                        <div className="p-3.5 sm:p-4 rounded-2xl rounded-tr-sm rp-user-bubble text-white text-xs sm:text-sm leading-relaxed select-text">
                           <RoleplayMessageContent
                             content={message.content}
                             characterName={character?.name || 'Character'}
@@ -2461,6 +2497,24 @@ export default function ChatPage() {
             <div ref={messagesEndRef} />
           </div>
         </main>
+
+        {/* Floating Jump to Bottom Button */}
+        {!isAtBottom && messages.length > 2 && (
+          <button
+            onClick={() => scrollToBottom(true)}
+            className="absolute bottom-4 right-4 sm:right-8 z-30 px-3.5 py-1.5 rounded-full glass-panel border border-black/10 dark:border-white/15 shadow-xl flex items-center gap-2 text-xs font-semibold text-foreground hover:scale-105 active:scale-95 transition-all apple-button animate-in fade-in zoom-in-95 duration-200"
+            title="Jump to latest message"
+          >
+            {isGenerating && (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
+              </span>
+            )}
+            <span>Jump to latest</span>
+            <ChevronDown className="w-3.5 h-3.5 text-accent" />
+          </button>
+        )}
 
         {/* SillyTavern Context & Memory Inspector */}
         {character && (
