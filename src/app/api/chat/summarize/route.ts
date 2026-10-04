@@ -18,47 +18,73 @@ export async function POST(req: NextRequest) {
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData?.user?.id || 'guest';
 
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isChatUuid = UUID_REGEX.test(chatId);
+    const isUserUuid = UUID_REGEX.test(userId);
+
     // 1. If content is supplied directly, this is a manual user edit/update of the summary
     if (body.action === 'save_edit' && typeof body.content === 'string') {
-      const { data: activeSummary } = await supabase
-        .from('summaries')
-        .select('*')
-        .eq('chat_id', chatId)
-        .eq('superseded', false)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const cleanContent = body.content.trim();
+      let summaryRow: Summary = {
+        id: 'sum-' + Date.now(),
+        chat_id: chatId,
+        user_id: userId,
+        level: 'chunk',
+        content: cleanContent,
+        message_ids: [],
+        last_message_id: null,
+        token_estimate: Math.ceil(cleanContent.length / 4),
+        user_edited: true,
+        superseded: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-      if (activeSummary?.id) {
-        await supabase
-          .from('summaries')
-          .update({ superseded: true })
-          .eq('id', activeSummary.id);
+      if (isChatUuid && isUserUuid) {
+        try {
+          const { data: activeSummary } = await supabase
+            .from('summaries')
+            .select('*')
+            .eq('chat_id', chatId)
+            .eq('superseded', false)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (activeSummary?.id) {
+            await supabase
+              .from('summaries')
+              .update({ superseded: true })
+              .eq('id', activeSummary.id);
+          }
+
+          const { data: newRow, error } = await supabase
+            .from('summaries')
+            .insert({
+              chat_id: chatId,
+              user_id: userId,
+              level: 'chunk',
+              content: cleanContent,
+              user_edited: true,
+              superseded: false,
+            })
+            .select()
+            .single();
+
+          if (!error && newRow) {
+            summaryRow = newRow as Summary;
+          }
+        } catch (dbErr) {
+          console.warn('Supabase summary insert error, falling back to local object:', dbErr);
+        }
       }
 
-      const { data: newRow, error } = await supabase
-        .from('summaries')
-        .insert({
-          chat_id: chatId,
-          user_id: userId,
-          level: 'chunk',
-          content: body.content.trim(),
-          user_edited: true,
-          superseded: false,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
-      return NextResponse.json({ summary: newRow });
+      return NextResponse.json({ summary: summaryRow });
     }
 
     // 2. Fetch history if not provided in payload
     let chatHistory: Message[] = history || [];
-    if (!chatHistory.length) {
+    if (!chatHistory.length && isChatUuid) {
       const { data: dbMessages } = await supabase
         .from('messages')
         .select('*')

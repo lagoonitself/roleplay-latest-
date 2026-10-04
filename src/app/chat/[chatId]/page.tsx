@@ -683,13 +683,21 @@ export default function ChatPage() {
       if (localNote) {
         setAuthorsNote(localNote);
       } else if (existingChat?.authors_note) {
+        const noteSettings = (existingChat.settings as any) || {};
         setAuthorsNote({
           prompt: existingChat.authors_note,
-          depth: 4,
-          interval: 1,
-          role: 'system',
-          position: 'in_chat',
+          depth: typeof noteSettings.authors_note_depth === 'number' ? noteSettings.authors_note_depth : 4,
+          interval: typeof noteSettings.authors_note_interval === 'number' ? noteSettings.authors_note_interval : 1,
+          role: noteSettings.authors_note_role || 'system',
+          position: noteSettings.authors_note_position || 'in_chat',
         });
+      }
+
+      const localPreset = typeof window !== 'undefined' ? localStorage.getItem(`cadenza_preset_${chatId}`) : null;
+      if (localPreset) {
+        setCurrentPresetId(localPreset);
+      } else if (existingChat && (existingChat.settings as any)?.system_prompt_preset) {
+        setCurrentPresetId((existingChat.settings as any).system_prompt_preset);
       }
 
       const localMems = getLocalMemories(chatId);
@@ -2433,9 +2441,33 @@ export default function ChatPage() {
               saveLocalSummary(chatId, newSummary);
             }}
             authorsNote={authorsNote}
-            onAuthorsNoteUpdated={(newNote) => {
+            onAuthorsNoteUpdated={async (newNote) => {
               setAuthorsNote(newNote);
               saveLocalAuthorsNote(chatId, newNote);
+              if (isUuid(chatId)) {
+                try {
+                  const { data: authData } = await supabase.auth.getUser();
+                  if (authData?.user) {
+                    const { data: cRow } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
+                    const existingSettings = (cRow?.settings as any) || {};
+                    await supabase
+                      .from('chats')
+                      .update({
+                        authors_note: newNote.prompt || '',
+                        settings: {
+                          ...existingSettings,
+                          authors_note_depth: newNote.depth,
+                          authors_note_interval: newNote.interval,
+                          authors_note_role: newNote.role,
+                          authors_note_position: newNote.position,
+                        },
+                      })
+                      .eq('id', chatId);
+                  }
+                } catch (e) {
+                  console.warn('Failed to sync authors note to Supabase:', e);
+                }
+              }
             }}
           />
         )}
@@ -2458,7 +2490,32 @@ export default function ChatPage() {
               toast.info(nextVal ? 'Deep Thinking Mode: ON' : 'Deep Thinking Mode: OFF');
             }}
             currentPresetId={currentPresetId}
-            onSelectPreset={(preset) => setCurrentPresetId(preset.id)}
+            onSelectPreset={async (preset) => {
+              setCurrentPresetId(preset.id);
+              if (typeof window !== 'undefined') {
+                localStorage.setItem(`cadenza_preset_${chatId}`, preset.id);
+              }
+              if (isUuid(chatId)) {
+                try {
+                  const { data: authData } = await supabase.auth.getUser();
+                  if (authData?.user) {
+                    const { data: cRow } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
+                    const existingSettings = (cRow?.settings as any) || {};
+                    await supabase
+                      .from('chats')
+                      .update({
+                        settings: {
+                          ...existingSettings,
+                          system_prompt_preset: preset.id,
+                        },
+                      })
+                      .eq('id', chatId);
+                  }
+                } catch (e) {
+                  console.warn('Failed to sync preset to Supabase:', e);
+                }
+              }
+            }}
           />
 
           {/* Author's Note Quick Drawer */}

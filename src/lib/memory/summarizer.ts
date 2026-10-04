@@ -73,19 +73,29 @@ export async function summarizeChatIfNeeded(params: SummarizeParams): Promise<Su
     return null;
   }
 
-  const supabase = await createClient();
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isChatUuid = UUID_REGEX.test(chatId);
+  const isUserUuid = UUID_REGEX.test(userId);
 
-  // 1. Fetch latest active summary
-  const { data: latestSummaryData } = await supabase
-    .from('summaries')
-    .select('*')
-    .eq('chat_id', chatId)
-    .eq('superseded', false)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  let latestSummary: Summary | null = null;
 
-  const latestSummary: Summary | null = latestSummaryData || null;
+  if (isChatUuid && isUserUuid) {
+    try {
+      const supabase = await createClient();
+      const { data: latestSummaryData } = await supabase
+        .from('summaries')
+        .select('*')
+        .eq('chat_id', chatId)
+        .eq('superseded', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      latestSummary = (latestSummaryData as Summary) || null;
+    } catch (e) {
+      console.warn('Could not fetch existing summary from Supabase:', e);
+    }
+  }
 
   // If summary is frozen by the user and one already exists, do not auto-overwrite
   if (frozen && latestSummary) {
@@ -185,39 +195,60 @@ export async function summarizeChatIfNeeded(params: SummarizeParams): Promise<Su
       return latestSummary;
     }
 
-    // 5. Supersede previous summary and insert new active summary in Supabase
-    if (latestSummary?.id) {
-      await supabase
-        .from('summaries')
-        .update({ superseded: true })
-        .eq('id', latestSummary.id);
-    }
-
     const lastMsgId = turnsToSummarize[turnsToSummarize.length - 1]?.id || null;
     const msgIds = turnsToSummarize.map((m) => m.id).filter(Boolean);
 
-    const { data: newSummaryRow, error } = await supabase
-      .from('summaries')
-      .insert({
-        chat_id: chatId,
-        user_id: userId,
-        level: 'chunk',
-        content: cleanSummary,
-        message_ids: msgIds,
-        last_message_id: lastMsgId,
-        token_estimate: estimateTokens(cleanSummary),
-        user_edited: false,
-        superseded: false,
-      })
-      .select()
-      .single();
+    let summaryRow: Summary = {
+      id: 'sum-' + Date.now(),
+      chat_id: chatId,
+      user_id: userId,
+      level: 'chunk',
+      content: cleanSummary,
+      message_ids: msgIds,
+      last_message_id: lastMsgId,
+      token_estimate: estimateTokens(cleanSummary),
+      user_edited: false,
+      superseded: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
 
-    if (error) {
-      console.warn('Failed to insert new summary:', error.message);
-      return latestSummary;
+    // 5. Supersede previous summary and insert new active summary in Supabase
+    if (isChatUuid && isUserUuid) {
+      try {
+        const supabase = await createClient();
+        if (latestSummary?.id && UUID_REGEX.test(latestSummary.id)) {
+          await supabase
+            .from('summaries')
+            .update({ superseded: true })
+            .eq('id', latestSummary.id);
+        }
+
+        const { data: newSummaryRow, error } = await supabase
+          .from('summaries')
+          .insert({
+            chat_id: chatId,
+            user_id: userId,
+            level: 'chunk',
+            content: cleanSummary,
+            message_ids: msgIds,
+            last_message_id: lastMsgId,
+            token_estimate: estimateTokens(cleanSummary),
+            user_edited: false,
+            superseded: false,
+          })
+          .select()
+          .single();
+
+        if (!error && newSummaryRow) {
+          summaryRow = newSummaryRow as Summary;
+        }
+      } catch (dbErr) {
+        console.warn('Failed to insert new summary to Supabase:', dbErr);
+      }
     }
 
-    return (newSummaryRow as Summary) || null;
+    return summaryRow;
   } catch (err) {
     console.error('Error generating chat summary:', err);
     return latestSummary;
