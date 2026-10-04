@@ -49,9 +49,21 @@ import {
   saveLocalMemories,
   getLocalChatState,
   saveLocalChatState,
+  getLocalSummary,
+  saveLocalSummary,
+  getLocalAuthorsNote,
+  saveLocalAuthorsNote,
+  type LocalAuthorsNote,
 } from '@/lib/chats/chat-manager';
+import { SillyTavernContextInspector } from '@/components/chat/sillytavern-context-inspector';
+import { SillyTavernQuickActions } from '@/components/chat/sillytavern-quick-actions';
+import {
+  SILLY_TAVERN_SPECIAL_PROMPTS,
+  SILLY_TAVERN_SYSTEM_PROMPT_PRESETS,
+  type SystemPromptPreset,
+} from '@/lib/prompt/presets';
 import { toast } from 'sonner';
-import type { Chat, Character, Persona, Message, Memory, ChatState } from '@/lib/supabase/types';
+import type { Chat, Character, Persona, Message, Memory, Summary, ChatState } from '@/lib/supabase/types';
 
 // Local temp ids (usr-/ast-/msg-) are never valid Supabase UUIDs.
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -262,8 +274,9 @@ export default function ChatPage() {
   // Memory & Inspector Panel
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [currentSummary, setCurrentSummary] = useState<Summary | null>(null);
   const [chatState, setChatState] = useState<ChatState['state']>({});
-  const [newMemoryText, setNewMemoryText] = useState('');
+  const [currentPresetId, setCurrentPresetId] = useState<string>('roleplay-detailed');
 
   // Editing in-place
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -271,8 +284,14 @@ export default function ChatPage() {
   // Two-step confirm for destructive "delete from here" truncation
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // Author's note
-  const [authorsNote, setAuthorsNote] = useState('');
+  // Author's note (SillyTavern Floating Prompt)
+  const [authorsNote, setAuthorsNote] = useState<LocalAuthorsNote>({
+    prompt: '',
+    depth: 4,
+    interval: 1,
+    role: 'system',
+    position: 'in_chat',
+  });
   const [showAuthorsNote, setShowAuthorsNote] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
@@ -621,7 +640,7 @@ export default function ChatPage() {
         }
       }
 
-      // D. Load Memories & State
+      // D. Load Memories, Summary & State
       if (!chatId.startsWith('local-')) {
         try {
           const { data: memData } = await supabase
@@ -633,6 +652,17 @@ export default function ChatPage() {
 
           if (memData) setMemories(memData as Memory[]);
 
+          const { data: sumData } = await supabase
+            .from('summaries')
+            .select('*')
+            .eq('chat_id', chatId)
+            .eq('superseded', false)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (sumData) setCurrentSummary(sumData as Summary);
+
           const { data: stateData } = await supabase
             .from('chat_state')
             .select('*')
@@ -643,7 +673,25 @@ export default function ChatPage() {
         } catch {}
       }
 
-      // Also load local memories and state
+      // Also load local summary, memories, authors note, and state
+      const localSum = getLocalSummary(chatId);
+      if (localSum) {
+        setCurrentSummary((prev) => prev || localSum);
+      }
+
+      const localNote = getLocalAuthorsNote(chatId);
+      if (localNote) {
+        setAuthorsNote(localNote);
+      } else if (existingChat?.authors_note) {
+        setAuthorsNote({
+          prompt: existingChat.authors_note,
+          depth: 4,
+          interval: 1,
+          role: 'system',
+          position: 'in_chat',
+        });
+      }
+
       const localMems = getLocalMemories(chatId);
       if (localMems.length > 0) {
         setMemories((prev) => (prev.length > 0 ? prev : localMems));
@@ -831,7 +879,9 @@ export default function ChatPage() {
           apiKey: settings.opencodeApiKey,
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
-          authorsNote: authorsNote.trim() || undefined,
+          authorsNote: authorsNote.prompt?.trim() || undefined,
+          authorsNoteDepth: authorsNote.depth,
+          presetContent: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content,
           history: messages,
         }),
       });
@@ -1019,7 +1069,7 @@ export default function ChatPage() {
             title: `Chat with ${character.name}`,
             leaf_id: null,
             memory_cursor_id: null,
-            authors_note: authorsNote.trim(),
+            authors_note: authorsNote.prompt.trim(),
             settings: {},
             pinned: false,
             archived: false,
@@ -1231,7 +1281,9 @@ export default function ChatPage() {
           apiKey: settings.opencodeApiKey,
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
-          authorsNote: authorsNote.trim() || undefined,
+          authorsNote: authorsNote.prompt?.trim() || undefined,
+          authorsNoteDepth: authorsNote.depth,
+          presetContent: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content,
           history: historyBeforeAssistant.filter((m) => m.content !== triggerUserMessage),
         }),
       });
@@ -1678,7 +1730,9 @@ export default function ChatPage() {
           apiKey: settings.opencodeApiKey,
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
-          authorsNote: authorsNote.trim() || undefined,
+          authorsNote: authorsNote.prompt?.trim() || undefined,
+          authorsNoteDepth: authorsNote.depth,
+          presetContent: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content,
           history: baseBefore,
         }),
       });
@@ -1913,42 +1967,23 @@ export default function ChatPage() {
     toast.success('Copied message to clipboard');
   };
 
-  // Pin memory manually
-  const handleAddMemory = async () => {
-    if (!newMemoryText.trim()) return;
-    const newMem: Memory = {
-      id: 'mem-' + Date.now(),
-      chat_id: chatId,
-      user_id: 'user',
-      content: newMemoryText.trim(),
-      kind: 'fact',
-      entities: [],
-      importance: 8,
-      pinned: true,
-      source_message_ids: [],
-      superseded_by: null,
-      access_count: 0,
-      last_accessed_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+  // SillyTavern Continue: Continue generating character's last message
+  const handleContinue = () => {
+    if (isGenerating) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg) return;
 
-    const nextMemories = [newMem, ...memories];
-    setMemories(nextMemories);
-    saveLocalMemories(chatId, nextMemories);
-    setNewMemoryText('');
-
-    if (!chatId.startsWith('local-')) {
-      await supabase.from('memories').insert({
-        chat_id: chatId,
-        content: newMem.content,
-        kind: 'fact',
-        importance: 8,
-        pinned: true,
-      });
+    if (lastMsg.role === 'assistant') {
+      handleSendMessage(SILLY_TAVERN_SPECIAL_PROMPTS.continueNudgePrompt);
+    } else {
+      handleSendMessage();
     }
+  };
 
-    toast.success('Pinned to roleplay memory');
+  // SillyTavern Impersonate: Draft next reply from user's perspective
+  const handleImpersonate = () => {
+    if (isGenerating) return;
+    handleSendMessage(SILLY_TAVERN_SPECIAL_PROMPTS.impersonationPrompt);
   };
 
   return (
@@ -2383,181 +2418,71 @@ export default function ChatPage() {
           </div>
         </main>
 
-        {/* Slide-over Memory & Lore Inspector */}
-        {inspectorOpen && (
-          <aside className="w-full sm:w-80 border-l border-black/[0.06] dark:border-white/[0.08] glass-panel p-5 space-y-5 overflow-y-auto shrink-0 z-30 absolute sm:relative inset-0 sm:inset-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-black/[0.06] dark:border-white/[0.08]">
-              <div className="flex items-center gap-2">
-                <Brain className="w-4 h-4 text-accent" />
-                <h3 className="text-sm font-bold tracking-tight">Story Memory & Facts</h3>
-              </div>
-              <button
-                onClick={() => setInspectorOpen(false)}
-                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Persona playing info in inspector */}
-            <div className="p-3.5 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.06] space-y-1.5">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-                Current Persona
-              </span>
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-white/10">
-                  <CharacterAvatar
-                    name={activePersona?.name || 'User'}
-                    avatarUrl={activePersona?.avatar_url}
-                    className="w-full h-full"
-                  />
-                </div>
-                <div>
-                  <h4 className="text-xs font-semibold">{activePersona?.name}</h4>
-                  <p className="text-[11px] text-muted-foreground line-clamp-1">
-                    {activePersona?.description || 'Standard companion'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Extracted Facts & Long-term Memories */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Pinned Facts ({memories.length})
-                </h4>
-              </div>
-
-              {/* Add Custom Fact */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Pin a memory..."
-                  value={newMemoryText}
-                  onChange={(e) => setNewMemoryText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddMemory()}
-                  className="flex-1 px-3 py-1.5 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-                <button
-                  onClick={handleAddMemory}
-                  className="px-2.5 py-1.5 rounded-xl bg-accent text-white text-xs font-semibold apple-button"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                {memories.map((m) => (
-                  <div
-                    key={m.id}
-                    className="p-2.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.04] dark:border-white/[0.06] text-xs space-y-1"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-accent/10 text-accent font-semibold uppercase">
-                        {m.kind}
-                      </span>
-                    </div>
-                    <p className="text-muted-foreground text-[11px] leading-relaxed">{m.content}</p>
-                  </div>
-                ))}
-
-                {memories.length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-4">
-                    No memories recorded yet. Important facts and lore will be recorded here automatically as the roleplay progresses.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Author's Note Toggle */}
-            <div className="space-y-2 pt-2 border-t border-black/[0.06] dark:border-white/[0.08]">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Author's Steering Note
-                </h4>
-                <button
-                  onClick={() => setShowAuthorsNote(!showAuthorsNote)}
-                  className="text-xs text-accent hover:underline"
-                >
-                  {showAuthorsNote ? 'Hide' : 'Configure'}
-                </button>
-              </div>
-              {showAuthorsNote && (
-                <textarea
-                  value={authorsNote}
-                  onChange={(e) => setAuthorsNote(e.target.value)}
-                  placeholder="Direct the scene (e.g. Focus on intimate tension, rain against the window)..."
-                  className="w-full p-2.5 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs resize-none h-20 focus:outline-none focus:ring-1 focus:ring-accent leading-relaxed"
-                />
-              )}
-            </div>
-          </aside>
+        {/* SillyTavern Context & Memory Inspector */}
+        {character && (
+          <SillyTavernContextInspector
+            open={inspectorOpen}
+            onClose={() => setInspectorOpen(false)}
+            chatId={chatId}
+            character={character}
+            activePersona={activePersona}
+            history={messages}
+            summary={currentSummary}
+            onSummaryUpdated={(newSummary) => {
+              setCurrentSummary(newSummary);
+              saveLocalSummary(chatId, newSummary);
+            }}
+            authorsNote={authorsNote}
+            onAuthorsNoteUpdated={(newNote) => {
+              setAuthorsNote(newNote);
+              saveLocalAuthorsNote(chatId, newNote);
+            }}
+          />
         )}
       </div>
 
       {/* Mobile-First Reachable Bottom Input Composer */}
       <footer className="p-2 sm:p-4 border-t border-black/[0.06] dark:border-white/[0.08] glass-panel shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
         <div className="max-w-3xl mx-auto space-y-2">
-          {/* Quick Action Chips (Horizontally Scrollable) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px] px-0.5">
-            <button
-              onClick={() => handleSendMessage('*Continues the scene*')}
-              disabled={isGenerating}
-              className="px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors touch-manipulation"
-            >
-              Continue Scene
-            </button>
-            <button
-              onClick={() => handleSendMessage('*Waits in silence, observing your expression*')}
-              disabled={isGenerating}
-              className="px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors touch-manipulation"
-            >
-              Wait in silence
-            </button>
-            <button
-              onClick={() => {
-                const nextVal = !settings.thinkingEnabled;
-                updateSettings({ thinkingEnabled: nextVal });
-                toast.info(nextVal ? 'Deep Thinking Mode: ON' : 'Deep Thinking Mode: OFF');
-              }}
-              className={`px-3 py-1 rounded-full font-medium whitespace-nowrap transition-colors touch-manipulation flex items-center gap-1.5 ${
-                settings.thinkingEnabled
-                  ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 font-semibold border border-purple-500/30'
-                  : 'bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground hover:text-foreground'
-              }`}
-              title="Toggle Deep Thinking (live reasoning process)"
-            >
-              <Brain className="w-3.5 h-3.5 text-purple-500" />
-              {settings.thinkingEnabled ? 'Thinking: ON' : 'Thinking: OFF'}
-            </button>
-            <button
-              onClick={() => setShowAuthorsNote(!showAuthorsNote)}
-              className={`px-3 py-1 rounded-full font-medium whitespace-nowrap transition-colors touch-manipulation ${
-                authorsNote
-                  ? 'bg-accent/15 text-accent font-semibold'
-                  : 'bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {authorsNote ? "Author's Note Active" : "+ Author's Note"}
-            </button>
-          </div>
+          {/* SillyTavern Quick Action Chips */}
+          <SillyTavernQuickActions
+            onContinue={handleContinue}
+            onImpersonate={handleImpersonate}
+            isGenerating={isGenerating}
+            authorsNoteActive={Boolean(authorsNote.prompt?.trim())}
+            onToggleAuthorsNote={() => setShowAuthorsNote(!showAuthorsNote)}
+            thinkingEnabled={settings.thinkingEnabled}
+            onToggleThinking={() => {
+              const nextVal = !settings.thinkingEnabled;
+              updateSettings({ thinkingEnabled: nextVal });
+              toast.info(nextVal ? 'Deep Thinking Mode: ON' : 'Deep Thinking Mode: OFF');
+            }}
+            currentPresetId={currentPresetId}
+            onSelectPreset={(preset) => setCurrentPresetId(preset.id)}
+          />
 
           {/* Author's Note Quick Drawer */}
           {showAuthorsNote && (
-            <div className="p-2 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.06] dark:border-white/[0.08] space-y-1">
+            <div className="p-3 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.06] dark:border-white/[0.08] space-y-2">
               <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                <span>Steering directive injected at end of prompt:</span>
+                <span className="font-semibold text-accent flex items-center gap-1.5">
+                  <Bookmark className="w-3.5 h-3.5" />
+                  Author's Note (Injected at Depth {authorsNote.depth})
+                </span>
                 <button onClick={() => setShowAuthorsNote(false)} className="hover:text-foreground">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <input
-                type="text"
-                value={authorsNote}
-                onChange={(e) => setAuthorsNote(e.target.value)}
-                placeholder="e.g. Focus on dramatic conflict, sensory descriptions..."
-                className="w-full px-3 py-1.5 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs focus:outline-none focus:ring-1 focus:ring-accent"
+              <textarea
+                value={authorsNote.prompt}
+                onChange={(e) => {
+                  const updated = { ...authorsNote, prompt: e.target.value };
+                  setAuthorsNote(updated);
+                  saveLocalAuthorsNote(chatId, updated);
+                }}
+                rows={2}
+                placeholder="Direct the scene (e.g. Focus on intimate tension, pouring rain, slow pacing)..."
+                className="w-full px-3 py-2 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs focus:outline-none focus:ring-1 focus:ring-accent resize-none leading-relaxed"
               />
             </div>
           )}

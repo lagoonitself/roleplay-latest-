@@ -29,6 +29,8 @@ export interface SummarizeParams {
   apiKey?: string;
   promptWords?: number;
   interval?: number;
+  force?: boolean;
+  frozen?: boolean;
 }
 
 /**
@@ -59,9 +61,15 @@ export async function summarizeChatIfNeeded(params: SummarizeParams): Promise<Su
     apiKey,
     promptWords = DEFAULT_SUMMARY_WORDS,
     interval = DEFAULT_SUMMARY_INTERVAL,
+    force = false,
+    frozen = false,
   } = params;
 
-  if (!chatId || !userId || history.length < interval) {
+  if (!chatId || !userId) {
+    return null;
+  }
+
+  if (!force && history.length < interval) {
     return null;
   }
 
@@ -78,6 +86,11 @@ export async function summarizeChatIfNeeded(params: SummarizeParams): Promise<Su
     .maybeSingle();
 
   const latestSummary: Summary | null = latestSummaryData || null;
+
+  // If summary is frozen by the user and one already exists, do not auto-overwrite
+  if (frozen && latestSummary) {
+    return latestSummary;
+  }
 
   // 2. Count messages since last summary
   let messagesSinceLastSummary = 0;
@@ -99,7 +112,7 @@ export async function summarizeChatIfNeeded(params: SummarizeParams): Promise<Su
     messagesSinceLastSummary = history.length;
   }
 
-  if (messagesSinceLastSummary < interval) {
+  if (!force && messagesSinceLastSummary < interval) {
     return latestSummary;
   }
 

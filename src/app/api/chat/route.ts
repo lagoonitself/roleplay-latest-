@@ -36,6 +36,8 @@ export async function POST(req: NextRequest) {
       temperature,
       thinking,
       authorsNote,
+      authorsNoteDepth,
+      presetContent,
       character: clientCharacter,
       history: clientHistory,
       isSwipe,
@@ -312,9 +314,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Apply SillyTavern system preset override if provided
+    const effectiveCharacter = presetContent?.trim()
+      ? { ...character, system_prompt: presetContent.trim() }
+      : character;
+
     // 6. Assemble SillyTavern PromptManager Messages & In-Chat Injections
     const assembledMessages = assemblePrompt({
-      character,
+      character: effectiveCharacter,
       persona,
       history,
       retrievedMemories: retrieved.relevantMemories,
@@ -325,6 +332,7 @@ export async function POST(req: NextRequest) {
       triggeredLore: retrieved.triggeredLore,
       activatedLore: retrieved.activatedLore,
       authorsNote: authorsNote || '',
+      authorsNoteDepth: typeof authorsNoteDepth === 'number' ? authorsNoteDepth : 4,
       latestUserMessage: userMessage,
     });
 

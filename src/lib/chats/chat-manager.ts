@@ -1,10 +1,12 @@
 import { createClient } from '@/lib/supabase/client';
-import type { Chat, Character, Message, Memory } from '@/lib/supabase/types';
+import type { Chat, Character, Message, Memory, Summary } from '@/lib/supabase/types';
 
 export const LOCAL_CHATS_KEY = 'cadenza_local_chats';
 export const LOCAL_MESSAGES_PREFIX = 'cadenza_local_messages_';
 export const LOCAL_STATE_PREFIX = 'cadenza_local_state_';
 export const LOCAL_MEMORIES_PREFIX = 'cadenza_local_memories_';
+export const LOCAL_SUMMARY_PREFIX = 'cadenza_local_summary_';
+export const LOCAL_AUTHORS_NOTE_PREFIX = 'cadenza_local_authors_note_';
 export const CHATS_CHANGED_EVENT = 'cadenza-chats-changed';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -257,6 +259,68 @@ export function saveLocalChatState(chatId: string, state: Record<string, any>): 
     localStorage.setItem(`${LOCAL_STATE_PREFIX}${chatId}`, JSON.stringify(state));
   } catch (err) {
     console.error('Failed to save local chat state:', err);
+  }
+}
+
+/**
+ * Get active summary for a specific chat from localStorage
+ */
+export function getLocalSummary(chatId: string): Summary | null {
+  if (typeof window === 'undefined' || !chatId) return null;
+  try {
+    const raw = localStorage.getItem(`${LOCAL_SUMMARY_PREFIX}${chatId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save active summary for a specific chat to localStorage
+ */
+export function saveLocalSummary(chatId: string, summary: Summary | null): void {
+  if (typeof window === 'undefined' || !chatId) return;
+  try {
+    if (summary) {
+      localStorage.setItem(`${LOCAL_SUMMARY_PREFIX}${chatId}`, JSON.stringify(summary));
+    } else {
+      localStorage.removeItem(`${LOCAL_SUMMARY_PREFIX}${chatId}`);
+    }
+  } catch (err) {
+    console.error('Failed to save local summary:', err);
+  }
+}
+
+export interface LocalAuthorsNote {
+  prompt: string;
+  depth: number;
+  interval: number;
+  role: 'system' | 'user' | 'assistant';
+  position: 'in_chat' | 'before_scenario' | 'after_scenario';
+}
+
+/**
+ * Get Author's Note configuration for a specific chat
+ */
+export function getLocalAuthorsNote(chatId: string): LocalAuthorsNote | null {
+  if (typeof window === 'undefined' || !chatId) return null;
+  try {
+    const raw = localStorage.getItem(`${LOCAL_AUTHORS_NOTE_PREFIX}${chatId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save Author's Note configuration for a specific chat
+ */
+export function saveLocalAuthorsNote(chatId: string, note: LocalAuthorsNote): void {
+  if (typeof window === 'undefined' || !chatId) return;
+  try {
+    localStorage.setItem(`${LOCAL_AUTHORS_NOTE_PREFIX}${chatId}`, JSON.stringify(note));
+  } catch (err) {
+    console.error('Failed to save local author note:', err);
   }
 }
 
