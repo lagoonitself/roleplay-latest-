@@ -49,17 +49,19 @@ export function saveSettings(settings: Partial<UserAppSettings>): UserAppSetting
 }
 
 export function useSettings(): [UserAppSettings, (newSettings: Partial<UserAppSettings>) => void] {
-  const [settings, setSettings] = useState<UserAppSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<UserAppSettings>(() => getSavedSettings());
 
   useEffect(() => {
-    setSettings(getSavedSettings());
-
     const handler = () => {
       setSettings(getSavedSettings());
     };
 
     window.addEventListener('cadenza-settings-changed', handler);
-    return () => window.removeEventListener('cadenza-settings-changed', handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('cadenza-settings-changed', handler);
+      window.removeEventListener('storage', handler);
+    };
   }, []);
 
   const update = (newSettings: Partial<UserAppSettings>) => {

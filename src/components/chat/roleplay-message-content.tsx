@@ -27,6 +27,7 @@ import {
   processDisplayTime,
   type MacroContext,
 } from '@/lib/formatter/regex-engine';
+import { playDiceSound } from '@/lib/audio/sound-effects';
 
 interface RoleplayMessageContentProps {
   content: string;
@@ -36,50 +37,6 @@ interface RoleplayMessageContentProps {
   role: 'assistant' | 'user' | 'system';
   isStreaming?: boolean;
   scripts?: RegexScript[];
-}
-
-/**
- * Synthesizes a physical dice rolling clatter using the Web Audio API.
- * 100% native, zero dependencies, zero network requests, instant and tactile.
- */
-function playDiceSound() {
-  if (typeof window === 'undefined') return;
-  try {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
-
-    const bounces = [0, 0.045 + Math.random() * 0.02, 0.095 + Math.random() * 0.03];
-    bounces.forEach((delay, idx) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
-
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(1600 + Math.random() * 800, ctx.currentTime + delay);
-      filter.Q.setValueAtTime(3.5, ctx.currentTime + delay);
-
-      osc.type = 'triangle';
-      const baseFreq = 340 + Math.random() * 100 - idx * 40;
-      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime + delay);
-      osc.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + delay + 0.035);
-
-      const vol = 0.2 / (idx + 1);
-      gain.gain.setValueAtTime(vol, ctx.currentTime + delay);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.04);
-
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(ctx.currentTime + delay);
-      osc.stop(ctx.currentTime + delay + 0.045);
-    });
-
-    setTimeout(() => {
-      try { ctx.close(); } catch {}
-    }, 350);
-  } catch {}
 }
 
 /**

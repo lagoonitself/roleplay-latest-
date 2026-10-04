@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useSettings } from '@/lib/store/settings';
 import { useTheme } from 'next-themes';
 import { createClient } from '@/lib/supabase/client';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 import {
   X,
   Key,
@@ -17,8 +18,11 @@ import {
   LogOut,
   User,
   Check,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useSoundEffects, playReceiveSound } from '@/lib/audio/sound-effects';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -29,7 +33,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [settings, updateSettings] = useSettings();
   const { theme, setTheme } = useTheme();
   const supabase = createClient();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [soundEnabled, toggleSound] = useSoundEffects();
 
   const [apiKey, setApiKey] = useState(settings.opencodeApiKey);
   const [model, setModel] = useState(settings.opencodeModel);
@@ -262,6 +267,53 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               onChange={(e) => setTemperature(parseFloat(e.target.value))}
               className="w-full accent-accent cursor-pointer"
             />
+          </div>
+
+          {/* Soundscape & Audio Effects Toggle */}
+          <div className="p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.06] flex items-center justify-between">
+            <div className="space-y-0.5 pr-4">
+              <div className="text-sm font-medium flex items-center gap-1.5">
+                {soundEnabled ? (
+                  <Volume2 className="w-4 h-4 text-accent" />
+                ) : (
+                  <VolumeX className="w-4 h-4 text-muted-foreground" />
+                )}
+                Roleplay Audio Feedback
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Synthesized Web Audio for dice clatter, turn transmission, and response arrival chimes.
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {soundEnabled && (
+                <button
+                  type="button"
+                  onClick={() => playReceiveSound()}
+                  className="px-2.5 py-1 text-[11px] rounded-lg bg-black/[0.05] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] text-muted-foreground hover:text-foreground transition-colors apple-button"
+                  title="Play preview chime"
+                >
+                  Test
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !soundEnabled;
+                  toggleSound(next);
+                  if (next) playReceiveSound();
+                  toast.info(next ? 'Sound effects enabled' : 'Sound effects muted');
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  soundEnabled ? 'bg-accent' : 'bg-black/20 dark:bg-white/20'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    soundEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           {/* Appearance Theme Switcher */}

@@ -62,6 +62,8 @@ import {
 } from '@/lib/chats/chat-manager';
 import { SillyTavernContextInspector } from '@/components/chat/sillytavern-context-inspector';
 import { SillyTavernQuickActions } from '@/components/chat/sillytavern-quick-actions';
+import { ComposerFormatToolbar } from '@/components/chat/composer-format-toolbar';
+import { useSoundEffects, playSendSound, playReceiveSound } from '@/lib/audio/sound-effects';
 import {
   SILLY_TAVERN_SPECIAL_PROMPTS,
   SILLY_TAVERN_SYSTEM_PROMPT_PRESETS,
@@ -317,6 +319,32 @@ export default function ChatPage() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+
+  // Web Audio sound effects
+  const [soundEnabled, toggleSound] = useSoundEffects();
+
+  // Quick insertion & formatting for roleplay composer
+  const handleFormatInput = (prefix: string, suffix: string = prefix, defaultPlaceholder: string = '') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const current = inputText;
+    const selected = current.substring(start, end) || defaultPlaceholder;
+    const replacement = `${prefix}${selected}${suffix}`;
+    const updated = current.substring(0, start) + replacement + current.substring(end);
+    setInputText(updated);
+    setTimeout(() => {
+      textarea.focus();
+      if (start === end && !defaultPlaceholder) {
+        const newPos = start + prefix.length;
+        textarea.setSelectionRange(newPos, newPos);
+      } else {
+        const newPos = start + replacement.length;
+        textarea.setSelectionRange(newPos, newPos);
+      }
+    }, 10);
+  };
 
   const scrollToBottom = (smooth = true) => {
     if (chatContainerRef.current) {
@@ -911,6 +939,7 @@ export default function ChatPage() {
     setMessages(initialUpdatedMsgs);
     saveLocalMessages(chatId, initialUpdatedMsgs);
     setInputText('');
+    playSendSound();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsGenerating(true);
 
@@ -1110,6 +1139,7 @@ export default function ChatPage() {
         return finalMessages;
       });
       saveLocalMessages(chatId, finalMessages);
+      playReceiveSound();
 
       // Update chat message count & timestamp for "My Chats"
       if (character) {
@@ -1508,6 +1538,7 @@ export default function ChatPage() {
       }
 
       toast.success(`Generated variation ${newSwipeIndex + 1}/${updatedSwipes.length}`);
+      playReceiveSound();
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         toast.error(err.message || 'Regeneration error');
@@ -1935,6 +1966,7 @@ export default function ChatPage() {
       const metaOk = await syncChatMetaToCloud(finalMessages);
       if (metaOk) {
         toast.success('Reply regenerated');
+        playReceiveSound();
       } else {
         toast.warning('Reply generated, but cloud sync failed — kept locally only for now');
       }
@@ -2335,6 +2367,11 @@ export default function ChatPage() {
                         </div>
                       ) : (
                       <div className="flex items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                        {message.content && (
+                          <span className="text-[10px] text-muted-foreground/60 mr-auto select-none pl-1 font-mono">
+                            {message.content.trim().split(/\s+/).filter(Boolean).length} words
+                          </span>
+                        )}
                         <button
                           onClick={() => handleCopyMessage(formattedContent)}
                           className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] flex items-center gap-1 transition-colors"
@@ -2464,6 +2501,11 @@ export default function ChatPage() {
                         </div>
                       ) : (
                       <div className="flex justify-end items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                        {message.content && (
+                          <span className="text-[10px] text-muted-foreground/60 mr-auto select-none pl-1 font-mono">
+                            {message.content.trim().split(/\s+/).filter(Boolean).length} words
+                          </span>
+                        )}
                         <button
                           onClick={() => handleCopyMessage(formattedContent)}
                           className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
@@ -2635,6 +2677,19 @@ export default function ChatPage() {
               />
             </div>
           )}
+
+          {/* Quick Formatting & Dice Macro Toolbar */}
+          <ComposerFormatToolbar
+            onFormat={handleFormatInput}
+            disabled={isGenerating}
+            soundEnabled={soundEnabled}
+            onToggleSound={() => {
+              const next = !soundEnabled;
+              toggleSound(next);
+              if (next) playReceiveSound();
+              toast.info(next ? 'Sound effects enabled' : 'Sound effects muted');
+            }}
+          />
 
           {/* Input Box with Big Thumb Send Button */}
           <div className="relative flex items-end gap-2 p-1.5 sm:p-2 rounded-3xl glass-card border border-black/[0.08] dark:border-white/[0.1] focus-within:ring-2 focus-within:ring-accent/40 shadow-xs">

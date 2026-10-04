@@ -23,7 +23,7 @@ const EMPTY: TokenUsage = { input: 0, output: 0, total: 0 };
  *   local cache is reconciled upward so the HUD never goes backwards.
  */
 export function useTokenUsage(): UseTokenUsageResult {
-  const [usage, setUsage] = useState<TokenUsage>({ ...EMPTY });
+  const [usage, setUsage] = useState<TokenUsage>(() => getLocalUsage());
   const [loading, setLoading] = useState(true);
   const [syncedWithAccount, setSyncedWithAccount] = useState(false);
 
@@ -70,7 +70,6 @@ export function useTokenUsage(): UseTokenUsageResult {
   }, []);
 
   useEffect(() => {
-    setUsage(getLocalUsage());
     refresh();
     const onLocal = () => {
       // Optimistic instant update; server re-sync follows.
