@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { streamChatCompletions } from '@/lib/llm/client';
+import { streamChatCompletions, getLlmModel } from '@/lib/llm/client';
 import { assemblePrompt } from '@/lib/prompt/assembler';
 import { VERBOSITY_GUIDE } from '@/lib/prompt/system-prompt';
 import { retrieveContextForChat, type RetrievedContext } from '@/lib/memory/retriever';
@@ -222,17 +222,21 @@ export async function POST(req: NextRequest) {
     const effectiveTemp = temperature ?? character.behavior?.temperature ?? 1.0;
     const effectiveThinking = thinking ?? character.behavior?.thinking_enabled ?? false;
     const userDisplayName = persona.name || 'User';
+    const effectiveModel = getLlmModel();
+    const effectiveMaxTokens = (VERBOSITY_GUIDE[verbosity] ?? VERBOSITY_GUIDE.medium).maxTokens;
+    const effectiveStop = [`\n${userDisplayName}:`, `\n${userDisplayName.toUpperCase()}:`];
+    const logKind = isSwipe ? 'swipe' : 'chat';
 
     const llmStreamResponse = await streamChatCompletions(assembledMessages, {
       apiKey: clientApiKey,
       sessionId: chatId, // routes to cached prefix on OpenCode Go
       temperature: effectiveTemp,
       thinking: effectiveThinking,
-      max_tokens: (VERBOSITY_GUIDE[verbosity] ?? VERBOSITY_GUIDE.medium).maxTokens,
+      max_tokens: effectiveMaxTokens,
       presence_penalty: character.behavior?.presence_penalty,
       frequency_penalty: character.behavior?.frequency_penalty,
       // Hard backstop: if the model starts writing the user's next turn, cut it off.
-      stop: [`\n${userDisplayName}:`, `\n${userDisplayName.toUpperCase()}:`],
+      stop: effectiveStop,
       signal: req.signal,
     });
 
@@ -450,6 +454,74 @@ export async function POST(req: NextRequest) {
               );
             } catch {}
           }
+
+          // Developer LLM log (additive): ship the COMPLETE assembled prompt
+          // (system + history + turn_context) and the raw output to the client
+          // so it can be stored in localStorage, plus persist a server row.
+          // Never touches text/reasoning/usage flow above.
+          let llmLogServerId: string | number | null = null;
+          const llmLogPayload = {
+            chatId,
+            characterId: character.id,
+            characterName: character.name,
+            kind: logKind,
+            model: effectiveModel,
+            params: {
+              temperature: effectiveTemp,
+              max_tokens: effectiveMaxTokens,
+              thinking: effectiveThinking,
+              top_p: 0.95,
+              presence_penalty: character.behavior?.presence_penalty,
+              frequency_penalty: character.behavior?.frequency_penalty,
+              stop: effectiveStop,
+            },
+            requestMessages: assembledMessages,
+            userMessage,
+            output: fullAssistantContent,
+            reasoning: fullReasoningContent || null,
+            usage: {
+              input: finalInput,
+              output: finalOutput,
+              total: finalInput + finalOutput,
+              cached: providerCachedTokens,
+            },
+            latencyMs: Date.now() - streamStartTime,
+          };
+          if (userId) {
+            try {
+              const { data: logRow } = await supabase
+                .from('llm_logs')
+                .insert({
+                  user_id: userId,
+                  chat_id: UUID_REGEX.test(chatId) ? chatId : null,
+                  character_id: UUID_REGEX.test(character.id) ? character.id : null,
+                  kind: logKind,
+                  model: effectiveModel,
+                  params: llmLogPayload.params,
+                  request_messages: assembledMessages,
+                  user_message: userMessage,
+                  output: fullAssistantContent,
+                  reasoning: fullReasoningContent || null,
+                  prompt_tokens: finalInput,
+                  completion_tokens: finalOutput,
+                  cached_tokens: providerCachedTokens,
+                  latency_ms: llmLogPayload.latencyMs,
+                })
+                .select('id')
+                .single();
+              if (logRow?.id != null) llmLogServerId = logRow.id;
+            } catch (e) {
+              // Table may not exist yet (migration not applied) — localStorage still logs.
+              console.warn('llm_logs insert skipped:', e);
+            }
+          }
+          try {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ llmLog: { ...llmLogPayload, serverId: llmLogServerId } })}\n\n`
+              )
+            );
+          } catch {}
 
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();

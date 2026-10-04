@@ -38,6 +38,7 @@ import { ThinkingProcess } from '@/components/thinking-process';
 import { formatRoleplayText } from '@/lib/prompt/macros';
 import { extractThinking } from '@/lib/llm/stream-parser';
 import { recordLocalUsage } from '@/lib/usage/tokens';
+import { saveLocalLog, makeLogId, type LlmLogEntry } from '@/lib/logs/llm-log-store';
 import {
   saveLocalChat,
   getLocalChat,
@@ -60,6 +61,36 @@ function isAbortError(err: unknown): boolean {
     'name' in err &&
     (err as { name?: unknown }).name === 'AbortError'
   );
+}
+
+// ── Developer LLM log persistence (module scope, not a hook) ──
+// The server ships the COMPLETE assembled prompt per turn as an `llmLog`
+// SSE event (system + history + turn_context + params + raw output).
+// Stored in localStorage from now on; server also keeps a Supabase row.
+function persistLlmLog(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return;
+  const p = payload as Record<string, unknown>;
+  if (!Array.isArray(p.requestMessages)) return;
+  try {
+    const entry: LlmLogEntry = {
+      id: makeLogId(),
+      createdAt: new Date().toISOString(),
+      chatId: String(p.chatId || ''),
+      characterId: String(p.characterId || ''),
+      characterName: String(p.characterName || ''),
+      kind: p.kind === 'swipe' ? 'swipe' : p.kind === 'regen' ? 'regen' : 'chat',
+      model: String(p.model || ''),
+      params: (p.params || { temperature: 0, max_tokens: 0, thinking: false, top_p: 0 }) as LlmLogEntry['params'],
+      requestMessages: p.requestMessages as LlmLogEntry['requestMessages'],
+      userMessage: String(p.userMessage || ''),
+      output: String(p.output || ''),
+      reasoning: (p.reasoning as string | null) ?? null,
+      usage: (p.usage || { input: 0, output: 0, total: 0 }) as LlmLogEntry['usage'],
+      latencyMs: Number(p.latencyMs) || 0,
+      serverId: (p.serverId as string | number | null) ?? null,
+    };
+    saveLocalLog(entry);
+  } catch {}
 }
 
 // ── Edit-rewind SSE consumer (module scope, not a hook) ──
@@ -114,6 +145,7 @@ async function streamRegeneratedReply(
                 const uOut = Math.max(0, Math.floor(Number(parsed.usage.output) || 0));
                 if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
               }
+              if (parsed.llmLog) persistLlmLog(parsed.llmLog);
               if (parsed.reasoning) {
                 streamedReasoning += parsed.reasoning;
                 onReasoning(streamedReasoning);
@@ -713,6 +745,7 @@ export default function ChatPage() {
                   const uOut = Math.max(0, Math.floor(Number(parsed.usage.output) || 0));
                   if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
                 }
+                if (parsed.llmLog) persistLlmLog(parsed.llmLog);
 
                 if (parsed.metaSync) {
                   if (parsed.metaSync.userMsgId) resolvedUserMsgId = parsed.metaSync.userMsgId;
@@ -1104,6 +1137,7 @@ export default function ChatPage() {
                   const uOut = Math.max(0, Math.floor(Number(parsed.usage.output) || 0));
                   if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
                 }
+                if (parsed.llmLog) persistLlmLog(parsed.llmLog);
 
                 if (parsed.reasoning) {
                   streamedReasoning += parsed.reasoning;
