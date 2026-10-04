@@ -329,13 +329,23 @@ export default function ChatPage() {
       // 4. Search Supabase characters
       if (!charObj && targetCharIdentifier) {
         try {
-          const { data: dbC } = await supabase
-            .from('characters')
-            .select('*')
-            .or(`id.eq.${targetCharIdentifier},name.eq.${targetCharIdentifier}`)
-            .maybeSingle();
+          if (isUuid(targetCharIdentifier)) {
+            const { data: dbC } = await supabase
+              .from('characters')
+              .select('*')
+              .eq('id', targetCharIdentifier)
+              .maybeSingle();
 
-          if (dbC) charObj = dbC as Character;
+            if (dbC) charObj = dbC as Character;
+          } else {
+            const { data: dbC } = await supabase
+              .from('characters')
+              .select('*')
+              .ilike('name', targetCharIdentifier)
+              .maybeSingle();
+
+            if (dbC) charObj = dbC as Character;
+          }
         } catch {}
       }
 
@@ -412,6 +422,7 @@ export default function ChatPage() {
       const userName = resolvedPersona.name || 'User';
 
       let loadedMessages: Message[] = [];
+      const localMsgs = getLocalMessages(chatId);
 
       // 1. Fetch from Supabase if not a local chat
       if (!chatId.startsWith('local-')) {
@@ -430,11 +441,37 @@ export default function ChatPage() {
         }
       }
 
-      // 2. Fetch from LocalStorage (always check as primary for local chats, or fallback for offline)
+      // 2. Reconcile with LocalStorage so unpersisted user messages or accurate live timers are never wiped
       if (loadedMessages.length === 0) {
-        const localMsgs = getLocalMessages(chatId);
         if (localMsgs.length > 0) {
           loadedMessages = localMsgs;
+        }
+      } else if (localMsgs.length > 0) {
+        // A. Heal inflated reasoning timers: if local recorded e.g. 8s and DB has 140s, use the accurate live duration
+        const localById = new Map(localMsgs.map((m) => [m.id, m]));
+        loadedMessages = loadedMessages.map((dbMsg) => {
+          const localMatch = localById.get(dbMsg.id) || localMsgs.find((lm) => lm.role === dbMsg.role && lm.content === dbMsg.content);
+          if (localMatch?.meta?.reasoning_duration_seconds) {
+            const localDur = localMatch.meta.reasoning_duration_seconds;
+            const dbDur = dbMsg.meta?.reasoning_duration_seconds;
+            if (!dbDur || (localDur < dbDur && dbDur > 30)) {
+              return {
+                ...dbMsg,
+                meta: {
+                  ...dbMsg.meta,
+                  reasoning_duration_seconds: localDur,
+                },
+              };
+            }
+          }
+          return dbMsg;
+        });
+
+        // B. Preserve any trailing or pending local user/assistant messages that haven't synced to DB
+        const dbIds = new Set(loadedMessages.map((m) => m.id));
+        const unsavedLocal = localMsgs.filter((lm) => !dbIds.has(lm.id));
+        if (unsavedLocal.length > 0) {
+          loadedMessages = [...loadedMessages, ...unsavedLocal];
         }
       }
 
@@ -454,6 +491,7 @@ export default function ChatPage() {
           };
         });
         setMessages(cleanedMsgs);
+        saveLocalMessages(chatId, cleanedMsgs);
       } else {
         // ONLY if no messages exist anywhere, seed the character's initial greeting
         const rawFirst = charObj.first_message || '*I look at you with quiet attention.*';
@@ -480,7 +518,9 @@ export default function ChatPage() {
         };
 
         setMessages([initialMsg]);
-        saveLocalMessages(chatId, [initialMsg]);
+        if (localMsgs.length === 0) {
+          saveLocalMessages(chatId, [initialMsg]);
+        }
       }
 
       // D. Load Memories & State
@@ -628,7 +668,7 @@ export default function ChatPage() {
           persona: activePersona,
           character,
           userMessage: textToSend,
-          parentMessageId: newUserMsg.parent_id,
+          parentMessageId: (newUserMsg.parent_id && isUuid(newUserMsg.parent_id)) ? newUserMsg.parent_id : null,
           apiKey: settings.opencodeApiKey,
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
@@ -648,6 +688,8 @@ export default function ChatPage() {
       let streamedReasoning = '';
       let thinkingEnded = false;
       let reasoningDuration = 0;
+      let resolvedUserMsgId = userMsgId;
+      let resolvedAssistantMsgId = assistantMsgId;
       const genStartTime = Date.now();
 
       if (reader) {
@@ -670,6 +712,14 @@ export default function ChatPage() {
                   const uIn = Math.max(0, Math.floor(Number(parsed.usage.input) || 0));
                   const uOut = Math.max(0, Math.floor(Number(parsed.usage.output) || 0));
                   if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
+                }
+
+                if (parsed.metaSync) {
+                  if (parsed.metaSync.userMsgId) resolvedUserMsgId = parsed.metaSync.userMsgId;
+                  if (parsed.metaSync.assistantMsgId) resolvedAssistantMsgId = parsed.metaSync.assistantMsgId;
+                  if (parsed.metaSync.reasoning_duration_seconds && !reasoningDuration) {
+                    reasoningDuration = parsed.metaSync.reasoning_duration_seconds;
+                  }
                 }
 
                 if (parsed.reasoning) {
@@ -755,7 +805,10 @@ export default function ChatPage() {
       let finalMessages: Message[] = [];
       setMessages((prev) => {
         finalMessages = prev.map((m) => {
-          if (m.id !== assistantMsgId) return m;
+          if (m.id === userMsgId && resolvedUserMsgId !== userMsgId) {
+            return { ...m, id: resolvedUserMsgId };
+          }
+          if (m.id !== assistantMsgId && m.id !== resolvedAssistantMsgId) return m;
           const sList = m.meta?.swipes ? [...m.meta.swipes] : [m.content];
           const sIdx = m.meta?.active_swipe_index ?? 0;
           const finalVal = formatRoleplayText(m.content, charName, userName);
@@ -769,6 +822,8 @@ export default function ChatPage() {
 
           return {
             ...m,
+            id: resolvedAssistantMsgId,
+            parent_id: resolvedUserMsgId,
             status: 'done',
             content: finalVal,
             reasoning: streamedReasoning || m.reasoning || null,
@@ -916,6 +971,22 @@ export default function ChatPage() {
       return updatedMsgs;
     });
     saveLocalMessages(chatId, updatedMsgs);
+
+    if (!chatId.startsWith('local-') && isUuid(msg.id)) {
+      supabase
+        .from('messages')
+        .update({
+          content: swipes[currentIndex],
+          reasoning: currentReasoning || null,
+          meta: {
+            ...msg.meta,
+            active_swipe_index: currentIndex,
+            reasoning_duration_seconds: currentDuration,
+          },
+        })
+        .eq('id', msg.id)
+        .then();
+    }
   };
 
   // Regenerate alternate response (Multi-swipe generation)
@@ -988,6 +1059,9 @@ export default function ChatPage() {
           persona: activePersona,
           character,
           userMessage: triggerUserMessage,
+          isSwipe: true,
+          existingAssistantMessageId: isUuid(targetMsg.id) ? targetMsg.id : undefined,
+          swipeIndex: newSwipeIndex,
           apiKey: settings.opencodeApiKey,
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
@@ -1138,6 +1212,22 @@ export default function ChatPage() {
         return finalMessages;
       });
       saveLocalMessages(chatId, finalMessages);
+
+      if (!chatId.startsWith('local-') && isUuid(targetMsg.id)) {
+        const updatedTarget = finalMessages[assistantMsgIndex];
+        if (updatedTarget) {
+          supabase
+            .from('messages')
+            .update({
+              content: updatedTarget.content,
+              reasoning: updatedTarget.reasoning,
+              meta: updatedTarget.meta,
+            })
+            .eq('id', targetMsg.id)
+            .then();
+        }
+      }
+
       toast.success(`Generated variation ${newSwipeIndex + 1}/${updatedSwipes.length}`);
     } catch (err: any) {
       if (err.name !== 'AbortError') {

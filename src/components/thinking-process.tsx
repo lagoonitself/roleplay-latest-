@@ -33,9 +33,9 @@ export function ThinkingProcess({
   // Active thinking phase: currently streaming and content has not started yet
   const isActivelyThinking = isStreaming && !hasContent;
 
-  // Live timer while streaming
+  // Live timer while actively thinking (stops immediately when content starts)
   useEffect(() => {
-    if (isStreaming) {
+    if (isActivelyThinking) {
       if (!startTimestampRef.current) {
         startTimestampRef.current = Date.now();
       }
@@ -47,10 +47,8 @@ export function ThinkingProcess({
       }, 500);
 
       return () => clearInterval(interval);
-    } else {
-      startTimestampRef.current = null;
     }
-  }, [isStreaming]);
+  }, [isActivelyThinking]);
 
   // Auto-scroll thought content as new tokens stream in
   useEffect(() => {

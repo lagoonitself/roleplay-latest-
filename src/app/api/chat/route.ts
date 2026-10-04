@@ -17,6 +17,8 @@ function cleanReply(text: string, charName: string): string {
   return text.replace(new RegExp(`^\\s*(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*:\\s*`, 'i'), '').trim();
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
@@ -36,6 +38,9 @@ export async function POST(req: NextRequest) {
       authorsNote,
       character: clientCharacter,
       history: clientHistory,
+      isSwipe,
+      existingAssistantMessageId,
+      swipeIndex,
     } = body;
 
     if (!chatId || !characterId || !userMessage) {
@@ -107,23 +112,50 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // 3. Save User Message to Database (if authenticated)
+    // 3. Save User Message to Database (if authenticated and NOT a swipe variation)
     let savedUserMsgId: string | null = null;
-    if (userId) {
-      const { data: userMsgRow } = await supabase
-        .from('messages')
-        .insert({
-          chat_id: chatId,
-          user_id: userId,
-          parent_id: parentMessageId || null,
-          role: 'user',
-          content: userMessage,
-          status: 'done',
-        })
-        .select('id')
-        .single();
+    if (userId && !isSwipe) {
+      const safeParentId = (parentMessageId && UUID_REGEX.test(parentMessageId)) ? parentMessageId : null;
+      try {
+        let { data: userMsgRow, error: userMsgErr } = await supabase
+          .from('messages')
+          .insert({
+            chat_id: chatId,
+            user_id: userId,
+            parent_id: safeParentId,
+            role: 'user',
+            content: userMessage,
+            status: 'done',
+          })
+          .select('id')
+          .single();
 
-      savedUserMsgId = userMsgRow?.id || null;
+        if (userMsgErr && safeParentId) {
+          console.warn('User message insert failed with parent_id, falling back to parent_id: null', userMsgErr);
+          const fallbackRes = await supabase
+            .from('messages')
+            .insert({
+              chat_id: chatId,
+              user_id: userId,
+              parent_id: null,
+              role: 'user',
+              content: userMessage,
+              status: 'done',
+            })
+            .select('id')
+            .single();
+          userMsgRow = fallbackRes.data;
+          userMsgErr = fallbackRes.error;
+        }
+
+        if (userMsgErr) {
+          console.error('Failed to insert user message in DB:', userMsgErr);
+        } else {
+          savedUserMsgId = userMsgRow?.id || null;
+        }
+      } catch (e) {
+        console.error('Exception inserting user message:', e);
+      }
     }
 
     // 4. Fetch Recent History (newest N turns, returned chronologically)
@@ -214,6 +246,7 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
 
     const streamStartTime = Date.now();
+    let reasoningEndTime: number | null = null;
     let fullAssistantContent = '';
     let fullReasoningContent = '';
     const parser = new ThinkingStreamParser();
@@ -287,11 +320,13 @@ export async function POST(req: NextRequest) {
                       );
                     }
                     if (chunk.reasoningDone) {
+                      if (!reasoningEndTime) reasoningEndTime = Date.now();
                       controller.enqueue(
                         encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
                       );
                     }
                     if (chunk.text) {
+                      if (!reasoningEndTime) reasoningEndTime = Date.now();
                       fullAssistantContent += chunk.text;
                       controller.enqueue(
                         encoder.encode(`data: ${JSON.stringify({ text: chunk.text })}\n\n`)
@@ -314,16 +349,21 @@ export async function POST(req: NextRequest) {
               );
             }
             if (chunk.reasoningDone) {
+              if (!reasoningEndTime) reasoningEndTime = Date.now();
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
               );
             }
             if (chunk.text) {
+              if (!reasoningEndTime) reasoningEndTime = Date.now();
               fullAssistantContent += chunk.text;
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify({ text: chunk.text })}\n\n`)
               );
             }
+          }
+          if (fullReasoningContent && !reasoningEndTime) {
+            reasoningEndTime = Date.now();
           }
 
           // SAFETY RECOVERY: If the model generated reasoning but was cut off (e.g. hit token limit)
@@ -435,29 +475,107 @@ export async function POST(req: NextRequest) {
           if (userId && (fullAssistantContent || fullReasoningContent)) {
             const cleanedAssistant = cleanReply(fullAssistantContent, character.name);
             const reasoningDurationSeconds = fullReasoningContent
-              ? Math.max(1, Math.round((Date.now() - streamStartTime) / 1000))
+              ? Math.max(1, Math.round(((reasoningEndTime || Date.now()) - streamStartTime) / 1000))
               : undefined;
 
-            const { data: assistantMsgRow } = await supabase
-              .from('messages')
-              .insert({
-                chat_id: chatId,
-                user_id: userId,
-                parent_id: savedUserMsgId,
-                role: 'assistant',
-                content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
-                reasoning: fullReasoningContent || null,
-                status: 'done',
-                meta: {
-                  model: 'deepseek-v4.1-flash',
-                  reasoning_duration_seconds: reasoningDurationSeconds,
-                  tokens_in: finalInput > 0 ? finalInput : undefined,
-                  tokens_out: finalOutput > 0 ? finalOutput : undefined,
-                  cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : undefined,
-                },
-              })
-              .select('id')
-              .single();
+            const safeAssistantParentId = (savedUserMsgId && UUID_REGEX.test(savedUserMsgId)) ? savedUserMsgId : null;
+            let assistantMsgRow: { id: string } | null = null;
+            try {
+              if (isSwipe && existingAssistantMessageId && UUID_REGEX.test(existingAssistantMessageId)) {
+                // Update existing assistant message row's swipes array instead of inserting duplicate turn
+                const { data: existingRow } = await supabase
+                  .from('messages')
+                  .select('meta, content, reasoning')
+                  .eq('id', existingAssistantMessageId)
+                  .single();
+
+                const currentMeta = ((existingRow?.meta || {}) as Record<string, any>);
+                const currentSwipes = Array.isArray(currentMeta.swipes) ? [...currentMeta.swipes] : [existingRow?.content || ''];
+                const currentReasoningSwipes = Array.isArray(currentMeta.reasoning_swipes) ? [...currentMeta.reasoning_swipes] : [existingRow?.reasoning || ''];
+                const currentDurations = Array.isArray(currentMeta.reasoning_durations) ? [...currentMeta.reasoning_durations] : [];
+
+                const targetSwipeIdx = typeof swipeIndex === 'number' ? swipeIndex : currentSwipes.length;
+                const formattedNewSwipe = formatRoleplayText(cleanedAssistant, character.name, persona.name);
+                currentSwipes[targetSwipeIdx] = formattedNewSwipe;
+                currentReasoningSwipes[targetSwipeIdx] = fullReasoningContent || null;
+                currentDurations[targetSwipeIdx] = reasoningDurationSeconds;
+
+                await supabase
+                  .from('messages')
+                  .update({
+                    content: formattedNewSwipe,
+                    reasoning: fullReasoningContent || null,
+                    meta: {
+                      ...currentMeta,
+                      model: 'deepseek-v4.1-flash',
+                      swipes: currentSwipes,
+                      active_swipe_index: targetSwipeIdx,
+                      reasoning_swipes: currentReasoningSwipes,
+                      reasoning_durations: currentDurations,
+                      reasoning_duration_seconds: reasoningDurationSeconds,
+                      tokens_in: finalInput > 0 ? finalInput : currentMeta.tokens_in,
+                      tokens_out: finalOutput > 0 ? finalOutput : currentMeta.tokens_out,
+                      cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : currentMeta.cached_tokens,
+                    },
+                  })
+                  .eq('id', existingAssistantMessageId);
+
+                assistantMsgRow = { id: existingAssistantMessageId };
+              } else {
+                let assistantInsertRes = await supabase
+                  .from('messages')
+                  .insert({
+                    chat_id: chatId,
+                    user_id: userId,
+                    parent_id: safeAssistantParentId,
+                    role: 'assistant',
+                    content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
+                    reasoning: fullReasoningContent || null,
+                    status: 'done',
+                    meta: {
+                      model: 'deepseek-v4.1-flash',
+                      reasoning_duration_seconds: reasoningDurationSeconds,
+                      tokens_in: finalInput > 0 ? finalInput : undefined,
+                      tokens_out: finalOutput > 0 ? finalOutput : undefined,
+                      cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : undefined,
+                    },
+                  })
+                  .select('id')
+                  .single();
+
+                if (assistantInsertRes.error && safeAssistantParentId) {
+                  console.warn('Assistant insert with parent_id failed, falling back to parent_id: null', assistantInsertRes.error);
+                  assistantInsertRes = await supabase
+                    .from('messages')
+                    .insert({
+                      chat_id: chatId,
+                      user_id: userId,
+                      parent_id: null,
+                      role: 'assistant',
+                      content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
+                      reasoning: fullReasoningContent || null,
+                      status: 'done',
+                      meta: {
+                        model: 'deepseek-v4.1-flash',
+                        reasoning_duration_seconds: reasoningDurationSeconds,
+                        tokens_in: finalInput > 0 ? finalInput : undefined,
+                        tokens_out: finalOutput > 0 ? finalOutput : undefined,
+                        cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : undefined,
+                      },
+                    })
+                    .select('id')
+                    .single();
+                }
+
+                if (assistantInsertRes.error) {
+                  console.error('Failed to insert assistant message in DB:', assistantInsertRes.error);
+                } else {
+                  assistantMsgRow = assistantInsertRes.data;
+                }
+              }
+            } catch (e) {
+              console.error('Exception saving assistant message:', e);
+            }
 
             if (assistantMsgRow?.id) {
               await supabase
@@ -477,6 +595,21 @@ export async function POST(req: NextRequest) {
                 currentState: retrieved.chatState?.state || {},
                 apiKey: clientApiKey,
               }).catch((err) => console.error('Background memory extractor error:', err));
+            }
+
+            // Sync generated database IDs to the client SSE stream so client state uses real UUIDs
+            if (savedUserMsgId || assistantMsgRow?.id) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    metaSync: {
+                      userMsgId: savedUserMsgId,
+                      assistantMsgId: assistantMsgRow?.id,
+                      reasoning_duration_seconds: reasoningDurationSeconds,
+                    },
+                  })}\n\n`
+                )
+              );
             }
           }
         } catch (err: any) {
