@@ -53,6 +53,22 @@ import {
 import { toast } from 'sonner';
 import type { Chat, Character, Persona, Message, Memory, ChatState } from '@/lib/supabase/types';
 
+// Local temp ids (usr-/ast-/msg-) are never valid Supabase UUIDs.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (id?: string | null): boolean => Boolean(id && UUID_REGEX.test(id));
+
+async function getAuthHeaders(supabaseClient: ReturnType<typeof createClient>): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  } catch {}
+  return headers;
+}
+
 // Unknown-safe AbortError check for stream/fetch failure branches.
 function isAbortError(err: unknown): boolean {
   return (
@@ -98,6 +114,20 @@ function persistLlmLog(payload: unknown) {
 // deterministic result. Callers persist from the returned value instead of
 // re-reading React state (updater closures can be stale/batched, which would
 // risk saving the wrong timeline to localStorage/Supabase).
+interface StreamRegenResult {
+  text: string;
+  reasoning: string;
+  reasoningDuration: number;
+  aborted: boolean;
+  failed: boolean;
+  metaSync?: {
+    chatId?: string;
+    userMsgId?: string;
+    assistantMsgId?: string;
+    reasoning_duration_seconds?: number;
+  };
+}
+
 async function streamRegeneratedReply(
   response: Response,
   opts: {
@@ -106,15 +136,17 @@ async function streamRegeneratedReply(
     onReasoning: (fullReasoning: string) => void;
     onThinkingDone: (seconds: number) => void;
     onText: (formattedLive: string) => void;
+    onMetaSync?: (metaSync: any) => void;
   }
-): Promise<{ text: string; reasoning: string; reasoningDuration: number; aborted: boolean; failed: boolean }> {
-  const { charName, userName, onReasoning, onThinkingDone, onText } = opts;
+): Promise<StreamRegenResult> {
+  const { charName, userName, onReasoning, onThinkingDone, onText, onMetaSync } = opts;
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
   let streamedContent = '';
   let streamedReasoning = '';
   let thinkingEnded = false;
   let reasoningDuration = 0;
+  let receivedMetaSync: StreamRegenResult['metaSync'] = undefined;
   const genStartTime = Date.now();
 
   const finishThinking = () => {
@@ -146,6 +178,13 @@ async function streamRegeneratedReply(
                 if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
               }
               if (parsed.llmLog) persistLlmLog(parsed.llmLog);
+              if (parsed.metaSync) {
+                receivedMetaSync = parsed.metaSync;
+                if (parsed.metaSync.reasoning_duration_seconds && !reasoningDuration) {
+                  reasoningDuration = parsed.metaSync.reasoning_duration_seconds;
+                }
+                onMetaSync?.(parsed.metaSync);
+              }
               if (parsed.reasoning) {
                 streamedReasoning += parsed.reasoning;
                 onReasoning(streamedReasoning);
@@ -165,17 +204,17 @@ async function streamRegeneratedReply(
     }
   } catch (err) {
     if (isAbortError(err)) {
-      return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: true, failed: false };
+      return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: true, failed: false, metaSync: receivedMetaSync };
     }
     // Non-abort read failure: hand the partial transcript back so the caller
     // can persist it as an error bubble instead of dropping it.
-    return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: false, failed: true };
+    return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: false, failed: true, metaSync: receivedMetaSync };
   }
 
   if (!reasoningDuration && streamedReasoning) {
     finishThinking();
   }
-  return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: false, failed: false };
+  return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: false, failed: false, metaSync: receivedMetaSync };
 }
 
 // Builds the streaming assistant placeholder for edit-rewind regeneration.
@@ -232,10 +271,6 @@ export default function ChatPage() {
   // Two-step confirm for destructive "delete from here" truncation
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // Local temp ids (usr-/ast-/msg-) are never valid Supabase UUIDs.
-  const isUuid = (id: string) =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-
   // Author's note
   const [authorsNote, setAuthorsNote] = useState('');
   const [showAuthorsNote, setShowAuthorsNote] = useState(false);
@@ -258,7 +293,7 @@ export default function ChatPage() {
       // 0. Load any existing local or Supabase chat metadata
       let existingChat: Chat | null = getLocalChat(chatId);
 
-      if (!existingChat && !chatId.startsWith('local-')) {
+      if (!chatId.startsWith('local-')) {
         try {
           const { data: dbChat } = await supabase
             .from('chats')
@@ -553,6 +588,37 @@ export default function ChatPage() {
         if (localMsgs.length === 0) {
           saveLocalMessages(chatId, [initialMsg]);
         }
+
+        // Persist opening greeting to Supabase on turn 0 so history is never empty in cloud
+        if (userId && isUuid(chatId)) {
+          Promise.resolve(
+            supabase
+              .from('messages')
+              .insert({
+                chat_id: chatId,
+                user_id: userId,
+                parent_id: null,
+                role: 'assistant',
+                content: formattedFirst,
+                status: 'done',
+                meta: {
+                  swipes: formattedSwipes,
+                  active_swipe_index: 0,
+                },
+              })
+              .select('id')
+              .single()
+          )
+            .then(({ data: dbGreeting }) => {
+              if (dbGreeting?.id) {
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === 'msg-greeting' ? { ...m, id: dbGreeting.id } : m))
+                );
+                saveLocalMessages(chatId, [{ ...initialMsg, id: dbGreeting.id }]);
+              }
+            })
+            .catch(() => {});
+        }
       }
 
       // D. Load Memories & State
@@ -613,6 +679,66 @@ export default function ChatPage() {
 
     initChat();
   }, [chatId, charIdParam, supabase]);
+
+  // Real-time synchronization: subscribe to message inserts/updates across devices
+  useEffect(() => {
+    if (!chatId || !isUuid(chatId)) return;
+
+    const channel = supabase
+      .channel(`chat-messages-${chatId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatId}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newMsg = payload.new as Message;
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              const tempMatch = prev.find(
+                (m) =>
+                  (m.id.startsWith('usr-') || m.id.startsWith('ast-')) &&
+                  m.role === newMsg.role &&
+                  (m.content === newMsg.content || !m.content)
+              );
+              let updated: Message[];
+              if (tempMatch) {
+                updated = prev.map((m) => (m.id === tempMatch.id ? newMsg : m));
+              } else {
+                updated = [...prev, newMsg];
+              }
+              saveLocalMessages(chatId, updated);
+              return updated;
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedMsg = payload.new as Message;
+            setMessages((prev) => {
+              const updated = prev.map((m) => (m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m));
+              saveLocalMessages(chatId, updated);
+              return updated;
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = (payload.old as Message)?.id;
+            if (oldId) {
+              setMessages((prev) => {
+                const updated = prev.filter((m) => m.id !== oldId);
+                saveLocalMessages(chatId, updated);
+                return updated;
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [chatId, supabase]);
 
   // Auto-scroll to bottom on new message
   useEffect(() => {
@@ -689,9 +815,10 @@ export default function ChatPage() {
     setAbortController(controller);
 
     try {
+      const reqHeaders = await getAuthHeaders(supabase);
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: reqHeaders,
         signal: controller.signal,
         body: JSON.stringify({
           chatId,
@@ -722,6 +849,7 @@ export default function ChatPage() {
       let reasoningDuration = 0;
       let resolvedUserMsgId = userMsgId;
       let resolvedAssistantMsgId = assistantMsgId;
+      let resolvedChatId = chatId;
       const genStartTime = Date.now();
 
       if (reader) {
@@ -748,6 +876,10 @@ export default function ChatPage() {
                 if (parsed.llmLog) persistLlmLog(parsed.llmLog);
 
                 if (parsed.metaSync) {
+                  if (parsed.metaSync.chatId && parsed.metaSync.chatId !== chatId) {
+                    resolvedChatId = parsed.metaSync.chatId;
+                    window.history.replaceState(null, '', `/chat/${resolvedChatId}`);
+                  }
                   if (parsed.metaSync.userMsgId) resolvedUserMsgId = parsed.metaSync.userMsgId;
                   if (parsed.metaSync.assistantMsgId) resolvedAssistantMsgId = parsed.metaSync.assistantMsgId;
                   if (parsed.metaSync.reasoning_duration_seconds && !reasoningDuration) {
@@ -1081,9 +1213,10 @@ export default function ChatPage() {
     setAbortController(controller);
 
     try {
+      const reqHeaders = await getAuthHeaders(supabase);
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: reqHeaders,
         signal: controller.signal,
         body: JSON.stringify({
           chatId,
@@ -1138,6 +1271,11 @@ export default function ChatPage() {
                   if (uIn > 0 || uOut > 0) recordLocalUsage(uIn, uOut);
                 }
                 if (parsed.llmLog) persistLlmLog(parsed.llmLog);
+                if (parsed.metaSync) {
+                  if (parsed.metaSync.reasoning_duration_seconds && !reasoningDuration) {
+                    reasoningDuration = parsed.metaSync.reasoning_duration_seconds;
+                  }
+                }
 
                 if (parsed.reasoning) {
                   streamedReasoning += parsed.reasoning;
@@ -1524,9 +1662,10 @@ export default function ChatPage() {
           ? baseBefore[baseBefore.length - 1].id
           : null;
 
+      const reqHeaders = await getAuthHeaders(supabase);
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: reqHeaders,
         signal: controller.signal,
         body: JSON.stringify({
           chatId,
@@ -1659,8 +1798,15 @@ export default function ChatPage() {
       // Deterministic finalize: build from the helper result (never re-read
       // React state for persistence — updater closures can be stale/batched).
       const finalVal = formatRoleplayText(streamResult.text, charName, userName);
+      let resolvedBase = truncatedBase;
+      if (streamResult.metaSync?.userMsgId) {
+        resolvedBase = truncatedBase.map((m) =>
+          m.id === updatedTarget.id ? { ...m, id: streamResult.metaSync!.userMsgId! } : m
+        );
+      }
       const finalAssistant: Message = {
         ...placeholder,
+        id: streamResult.metaSync?.assistantMsgId || placeholder.id,
         status: 'done',
         content: finalVal,
         reasoning: streamResult.reasoning || null,
@@ -1674,7 +1820,7 @@ export default function ChatPage() {
           reasoning_durations: [streamResult.reasoningDuration || undefined],
         },
       };
-      const finalMessages: Message[] = [...truncatedBase, finalAssistant];
+      const finalMessages: Message[] = [...resolvedBase, finalAssistant];
       setMessages(finalMessages);
       persistTruncationLocal(finalMessages);
       const metaOk = await syncChatMetaToCloud(finalMessages);

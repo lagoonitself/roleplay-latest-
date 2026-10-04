@@ -19,7 +19,8 @@ import { createClient } from '@/lib/supabase/client';
 import { exportCharacterToCardV2 } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
-import { deleteCharacter, saveLocalChat } from '@/lib/chats/chat-manager';
+import { deleteCharacter, saveLocalChat, saveLocalMessages, ensureCharacterInCloud, isUuid } from '@/lib/chats/chat-manager';
+import { formatRoleplayText } from '@/lib/prompt/macros';
 import { useSettings } from '@/lib/store/settings';
 import { toast } from 'sonner';
 import type { Character, Persona } from '@/lib/supabase/types';
@@ -100,20 +101,75 @@ export default function CharacterProfilePage() {
     const userId = authData.user?.id;
 
     if (userId) {
-      const { data: newChat, error } = await supabase
-        .from('chats')
-        .insert({
-          user_id: userId,
-          character_id: character.id,
-          title: `Chat with ${character.name}`,
-          persona_id: persona.id,
-        })
-        .select()
-        .single();
+      try {
+        const cloudChar = await ensureCharacterInCloud(character, userId, supabase);
+        const safePersonaId = persona?.id && isUuid(persona.id) ? persona.id : null;
 
-      if (!error && newChat) {
-        router.push(`/chat/${newChat.id}`);
-        return;
+        const { data: newChat, error } = await supabase
+          .from('chats')
+          .insert({
+            user_id: userId,
+            character_id: cloudChar.id,
+            title: `Chat with ${cloudChar.name}`,
+            persona_id: safePersonaId,
+            last_message_at: new Date().toISOString(),
+            message_count: 1,
+          })
+          .select('*, character:characters(*)')
+          .single();
+
+        if (error) {
+          console.error('Failed to create cloud chat:', error);
+          toast.error('Failed to create chat in database: ' + error.message);
+        } else if (newChat) {
+          // Seed the opening greeting in DB so cloud history is never empty from turn 0
+          const firstMsg = cloudChar.first_message || '*I look at you with quiet attention.*';
+          const formattedGreeting = formatRoleplayText(firstMsg, cloudChar.name, persona.name);
+          const rawSwipes = [firstMsg, ...(cloudChar.alternate_greetings || [])];
+          const formattedSwipes = rawSwipes.map((s) => formatRoleplayText(s, cloudChar.name, persona.name));
+
+          const { data: greetingRow } = await supabase
+            .from('messages')
+            .insert({
+              chat_id: newChat.id,
+              user_id: userId,
+              parent_id: null,
+              role: 'assistant',
+              content: formattedGreeting,
+              status: 'done',
+              meta: {
+                swipes: formattedSwipes,
+                active_swipe_index: 0,
+              },
+            })
+            .select('id')
+            .single();
+
+          saveLocalMessages(newChat.id, [
+            {
+              id: greetingRow?.id || 'msg-greeting',
+              chat_id: newChat.id,
+              user_id: userId,
+              parent_id: null,
+              role: 'assistant',
+              content: formattedGreeting,
+              reasoning: null,
+              status: 'done',
+              meta: {
+                swipes: formattedSwipes,
+                active_swipe_index: 0,
+              },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ]);
+
+          router.push(`/chat/${newChat.id}`);
+          return;
+        }
+      } catch (err: any) {
+        console.error('Error starting cloud chat:', err);
+        toast.error('Error starting cloud chat: ' + err.message);
       }
     }
 

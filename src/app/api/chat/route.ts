@@ -50,17 +50,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
-    const { data: authData } = await supabase.auth.getUser();
-    const userId = authData.user?.id;
+    const authHeader = req.headers.get('authorization');
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://sgnieclbmerpxlbadymm.supabase.co';
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+    let supabase: any;
+    let userId: string | undefined;
+
+    if (bearerToken) {
+      const { createClient: createSupabaseJsClient } = await import('@supabase/supabase-js');
+      supabase = createSupabaseJsClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: `Bearer ${bearerToken}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data: authData } = await supabase.auth.getUser(bearerToken);
+      userId = authData?.user?.id;
+    } else {
+      supabase = await createClient();
+      const { data: authData } = await supabase.auth.getUser();
+      userId = authData?.user?.id;
+    }
 
     // 1. Fetch Character (from database, client payload, or dynamic fallback)
     let character: Character;
-    const { data: dbChar } = await supabase
-      .from('characters')
-      .select('*')
-      .eq('id', characterId)
-      .maybeSingle();
+    let dbChar: Character | null = null;
+    if (UUID_REGEX.test(characterId)) {
+      const { data } = await supabase
+        .from('characters')
+        .select('*')
+        .eq('id', characterId)
+        .maybeSingle();
+      if (data) dbChar = data as Character;
+    }
 
     if (dbChar) {
       character = dbChar as Character;
@@ -86,11 +108,47 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // If user is authenticated and character is not yet in Supabase, sync it now so foreign keys succeed
+    if (userId && !dbChar) {
+      try {
+        const { data: savedChar, error: charSaveErr } = await supabase
+          .from('characters')
+          .insert({
+            user_id: userId,
+            name: character.name || 'Character',
+            avatar_url: character.avatar_url || null,
+            tagline: character.tagline || '',
+            description: character.description || '',
+            personality: character.personality || '',
+            scenario: character.scenario || '',
+            first_message: character.first_message || '',
+            alternate_greetings: character.alternate_greetings || [],
+            example_dialogue: character.example_dialogue || '',
+            speech_style: character.speech_style || '',
+            system_prompt: character.system_prompt || '',
+            post_history_instructions: character.post_history_instructions || '',
+            tags: character.tags || ['Custom'],
+            content_rating: character.content_rating || 'mature',
+            behavior: character.behavior || {},
+            generation: character.generation || {},
+            accent_color: character.accent_color || null,
+          })
+          .select()
+          .single();
+
+        if (!charSaveErr && savedChar) {
+          character = savedChar as Character;
+        }
+      } catch (e) {
+        console.warn('Failed to auto-sync character to Supabase:', e);
+      }
+    }
+
     // 2. Fetch Persona
     let persona: Persona | null = null;
     if (clientPersona && clientPersona.name) {
       persona = clientPersona as Persona;
-    } else if (personaId && userId) {
+    } else if (personaId && userId && UUID_REGEX.test(personaId)) {
       const { data: dbPersona } = await supabase
         .from('personas')
         .select('*')
@@ -112,6 +170,58 @@ export async function POST(req: NextRequest) {
       };
     }
 
+    // 2.5 Ensure Chat exists in Supabase for authenticated users
+    let resolvedChatId = chatId;
+    if (userId) {
+      const isChatUuid = UUID_REGEX.test(chatId);
+      let existingChatRow = null;
+      if (isChatUuid) {
+        const { data: cRow } = await supabase
+          .from('chats')
+          .select('id')
+          .eq('id', chatId)
+          .maybeSingle();
+        existingChatRow = cRow;
+      }
+
+      if (!existingChatRow) {
+        try {
+          const { data: newChatRow, error: newChatErr } = await supabase
+            .from('chats')
+            .insert({
+              user_id: userId,
+              character_id: character.id,
+              title: `Chat with ${character.name}`,
+              persona_id: persona?.id && UUID_REGEX.test(persona.id) ? persona.id : null,
+              last_message_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single();
+
+          if (!newChatErr && newChatRow) {
+            resolvedChatId = newChatRow.id;
+            // Also seed character opening greeting in DB so the transcript starts from turn 0
+            const firstMsg = character.first_message || '*I look at you quietly.*';
+            const formattedGreeting = formatRoleplayText(firstMsg, character.name, persona.name);
+            await supabase.from('messages').insert({
+              chat_id: resolvedChatId,
+              user_id: userId,
+              parent_id: null,
+              role: 'assistant',
+              content: formattedGreeting,
+              status: 'done',
+              meta: {
+                swipes: [formattedGreeting, ...(character.alternate_greetings || []).map((g) => formatRoleplayText(g, character.name, persona.name))],
+                active_swipe_index: 0,
+              },
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to auto-create chat in Supabase:', e);
+        }
+      }
+    }
+
     // 3. Save User Message to Database (if authenticated and NOT a swipe variation)
     let savedUserMsgId: string | null = null;
     if (userId && !isSwipe) {
@@ -120,7 +230,7 @@ export async function POST(req: NextRequest) {
         let { data: userMsgRow, error: userMsgErr } = await supabase
           .from('messages')
           .insert({
-            chat_id: chatId,
+            chat_id: resolvedChatId,
             user_id: userId,
             parent_id: safeParentId,
             role: 'user',
@@ -135,7 +245,7 @@ export async function POST(req: NextRequest) {
           const fallbackRes = await supabase
             .from('messages')
             .insert({
-              chat_id: chatId,
+              chat_id: resolvedChatId,
               user_id: userId,
               parent_id: null,
               role: 'user',
@@ -165,7 +275,7 @@ export async function POST(req: NextRequest) {
         const { data: historyData } = await supabase
           .from('messages')
           .select('*')
-          .eq('chat_id', chatId)
+          .eq('chat_id', resolvedChatId)
           .order('created_at', { ascending: false })
           .limit(80);
 
@@ -455,13 +565,163 @@ export async function POST(req: NextRequest) {
             } catch {}
           }
 
-          // Developer LLM log (additive): ship the COMPLETE assembled prompt
-          // (system + history + turn_context) and the raw output to the client
-          // so it can be stored in localStorage, plus persist a server row.
-          // Never touches text/reasoning/usage flow above.
+          // 9. Persist Assistant Message in Supabase (BEFORE closing the stream)
+          const reasoningDurationSeconds = fullReasoningContent
+            ? Math.max(1, Math.round(((reasoningEndTime || Date.now()) - streamStartTime) / 1000))
+            : undefined;
+          let assistantMsgRow: { id: string } | null = null;
+
+          if (userId && (fullAssistantContent || fullReasoningContent)) {
+            const cleanedAssistant = cleanReply(fullAssistantContent, character.name);
+            const safeAssistantParentId = (savedUserMsgId && UUID_REGEX.test(savedUserMsgId)) ? savedUserMsgId : null;
+
+            try {
+              if (isSwipe && existingAssistantMessageId && UUID_REGEX.test(existingAssistantMessageId)) {
+                // Update existing assistant message row's swipes array instead of inserting duplicate turn
+                const { data: existingRow } = await supabase
+                  .from('messages')
+                  .select('meta, content, reasoning')
+                  .eq('id', existingAssistantMessageId)
+                  .single();
+
+                const currentMeta = ((existingRow?.meta || {}) as Record<string, any>);
+                const currentSwipes = Array.isArray(currentMeta.swipes) ? [...currentMeta.swipes] : [existingRow?.content || ''];
+                const currentReasoningSwipes = Array.isArray(currentMeta.reasoning_swipes) ? [...currentMeta.reasoning_swipes] : [existingRow?.reasoning || ''];
+                const currentDurations = Array.isArray(currentMeta.reasoning_durations) ? [...currentMeta.reasoning_durations] : [];
+
+                const targetSwipeIdx = typeof swipeIndex === 'number' ? swipeIndex : currentSwipes.length;
+                const formattedNewSwipe = formatRoleplayText(cleanedAssistant, character.name, persona.name);
+                currentSwipes[targetSwipeIdx] = formattedNewSwipe;
+                currentReasoningSwipes[targetSwipeIdx] = fullReasoningContent || null;
+                currentDurations[targetSwipeIdx] = reasoningDurationSeconds;
+
+                await supabase
+                  .from('messages')
+                  .update({
+                    content: formattedNewSwipe,
+                    reasoning: fullReasoningContent || null,
+                    meta: {
+                      ...currentMeta,
+                      model: effectiveModel,
+                      swipes: currentSwipes,
+                      active_swipe_index: targetSwipeIdx,
+                      reasoning_swipes: currentReasoningSwipes,
+                      reasoning_durations: currentDurations,
+                      reasoning_duration_seconds: reasoningDurationSeconds,
+                      tokens_in: finalInput > 0 ? finalInput : currentMeta.tokens_in,
+                      tokens_out: finalOutput > 0 ? finalOutput : currentMeta.tokens_out,
+                      cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : currentMeta.cached_tokens,
+                    },
+                  })
+                  .eq('id', existingAssistantMessageId);
+
+                assistantMsgRow = { id: existingAssistantMessageId };
+              } else {
+                let assistantInsertRes = await supabase
+                  .from('messages')
+                  .insert({
+                    chat_id: resolvedChatId,
+                    user_id: userId,
+                    parent_id: safeAssistantParentId,
+                    role: 'assistant',
+                    content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
+                    reasoning: fullReasoningContent || null,
+                    status: 'done',
+                    meta: {
+                      model: effectiveModel,
+                      reasoning_duration_seconds: reasoningDurationSeconds,
+                      tokens_in: finalInput > 0 ? finalInput : undefined,
+                      tokens_out: finalOutput > 0 ? finalOutput : undefined,
+                      cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : undefined,
+                    },
+                  })
+                  .select('id')
+                  .single();
+
+                if (assistantInsertRes.error && safeAssistantParentId) {
+                  console.warn('Assistant insert with parent_id failed, falling back to parent_id: null', assistantInsertRes.error);
+                  assistantInsertRes = await supabase
+                    .from('messages')
+                    .insert({
+                      chat_id: resolvedChatId,
+                      user_id: userId,
+                      parent_id: null,
+                      role: 'assistant',
+                      content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
+                      reasoning: fullReasoningContent || null,
+                      status: 'done',
+                      meta: {
+                        model: effectiveModel,
+                        reasoning_duration_seconds: reasoningDurationSeconds,
+                        tokens_in: finalInput > 0 ? finalInput : undefined,
+                        tokens_out: finalOutput > 0 ? finalOutput : undefined,
+                        cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : undefined,
+                      },
+                    })
+                    .select('id')
+                    .single();
+                }
+
+                if (assistantInsertRes.error) {
+                  console.error('Failed to insert assistant message in DB:', assistantInsertRes.error);
+                } else {
+                  assistantMsgRow = assistantInsertRes.data;
+                }
+              }
+            } catch (e) {
+              console.error('Exception saving assistant message:', e);
+            }
+
+            if (assistantMsgRow?.id) {
+              await supabase
+                .from('chats')
+                .update({ leaf_id: assistantMsgRow.id, last_message_at: new Date().toISOString() })
+                .eq('id', resolvedChatId);
+
+              // Background non-blocking extraction of facts & state update
+              const extractionTask = () => {
+                extractMemoriesAndState({
+                  chatId: resolvedChatId,
+                  userId,
+                  charName: character.name,
+                  userName: persona?.name || 'User',
+                  userMessage,
+                  assistantMessage: cleanedAssistant,
+                  existingMemories: retrieved.relevantMemories,
+                  currentState: retrieved.chatState?.state || {},
+                  apiKey: clientApiKey,
+                }).catch((err) => console.error('Background memory extractor error:', err));
+              };
+
+              try {
+                after(extractionTask);
+              } catch {
+                extractionTask();
+              }
+            }
+          }
+
+          // Feature 2 (additive): persist one ledger row per turn + token meta.
+          if ((finalInput > 0 || finalOutput > 0) && userId) {
+            try {
+              await supabase.from('usage_events').insert({
+                user_id: userId,
+                chat_id: UUID_REGEX.test(resolvedChatId) ? resolvedChatId : null,
+                kind: 'chat',
+                model: 'chat-completion',
+                prompt_tokens: finalInput,
+                completion_tokens: finalOutput,
+                cached_tokens: providerCachedTokens,
+              });
+            } catch (e) {
+              console.warn('usage_events insert skipped:', e);
+            }
+          }
+
+          // Developer LLM log (additive): ship complete assembled prompt and persist a server row.
           let llmLogServerId: string | number | null = null;
           const llmLogPayload = {
-            chatId,
+            chatId: resolvedChatId,
             characterId: character.id,
             characterName: character.name,
             kind: logKind,
@@ -493,7 +753,7 @@ export async function POST(req: NextRequest) {
                 .from('llm_logs')
                 .insert({
                   user_id: userId,
-                  chat_id: UUID_REGEX.test(chatId) ? chatId : null,
+                  chat_id: UUID_REGEX.test(resolvedChatId) ? resolvedChatId : null,
                   character_id: UUID_REGEX.test(character.id) ? character.id : null,
                   kind: logKind,
                   model: effectiveModel,
@@ -511,10 +771,10 @@ export async function POST(req: NextRequest) {
                 .single();
               if (logRow?.id != null) llmLogServerId = logRow.id;
             } catch (e) {
-              // Table may not exist yet (migration not applied) — localStorage still logs.
               console.warn('llm_logs insert skipped:', e);
             }
           }
+
           try {
             controller.enqueue(
               encoder.encode(
@@ -523,158 +783,14 @@ export async function POST(req: NextRequest) {
             );
           } catch {}
 
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
-
-          // Feature 2 (additive): persist one ledger row per turn + token meta.
-          if ((finalInput > 0 || finalOutput > 0) && userId) {
+          // Sync generated database IDs to the client SSE stream so client state uses real UUIDs
+          if (savedUserMsgId || assistantMsgRow?.id || resolvedChatId !== chatId) {
             try {
-              await supabase.from('usage_events').insert({
-                user_id: userId,
-                chat_id: chatId,
-                kind: 'chat',
-                model: 'chat-completion',
-                prompt_tokens: finalInput,
-                completion_tokens: finalOutput,
-                cached_tokens: providerCachedTokens,
-              });
-            } catch (e) {
-              console.warn('usage_events insert skipped:', e);
-            }
-          }
-
-          // 9. Persist Assistant Message & Trigger Background Memory Extraction
-          if (userId && (fullAssistantContent || fullReasoningContent)) {
-            const cleanedAssistant = cleanReply(fullAssistantContent, character.name);
-            const reasoningDurationSeconds = fullReasoningContent
-              ? Math.max(1, Math.round(((reasoningEndTime || Date.now()) - streamStartTime) / 1000))
-              : undefined;
-
-            const safeAssistantParentId = (savedUserMsgId && UUID_REGEX.test(savedUserMsgId)) ? savedUserMsgId : null;
-            let assistantMsgRow: { id: string } | null = null;
-            try {
-              if (isSwipe && existingAssistantMessageId && UUID_REGEX.test(existingAssistantMessageId)) {
-                // Update existing assistant message row's swipes array instead of inserting duplicate turn
-                const { data: existingRow } = await supabase
-                  .from('messages')
-                  .select('meta, content, reasoning')
-                  .eq('id', existingAssistantMessageId)
-                  .single();
-
-                const currentMeta = ((existingRow?.meta || {}) as Record<string, any>);
-                const currentSwipes = Array.isArray(currentMeta.swipes) ? [...currentMeta.swipes] : [existingRow?.content || ''];
-                const currentReasoningSwipes = Array.isArray(currentMeta.reasoning_swipes) ? [...currentMeta.reasoning_swipes] : [existingRow?.reasoning || ''];
-                const currentDurations = Array.isArray(currentMeta.reasoning_durations) ? [...currentMeta.reasoning_durations] : [];
-
-                const targetSwipeIdx = typeof swipeIndex === 'number' ? swipeIndex : currentSwipes.length;
-                const formattedNewSwipe = formatRoleplayText(cleanedAssistant, character.name, persona.name);
-                currentSwipes[targetSwipeIdx] = formattedNewSwipe;
-                currentReasoningSwipes[targetSwipeIdx] = fullReasoningContent || null;
-                currentDurations[targetSwipeIdx] = reasoningDurationSeconds;
-
-                await supabase
-                  .from('messages')
-                  .update({
-                    content: formattedNewSwipe,
-                    reasoning: fullReasoningContent || null,
-                    meta: {
-                      ...currentMeta,
-                      model: 'deepseek-v4.1-flash',
-                      swipes: currentSwipes,
-                      active_swipe_index: targetSwipeIdx,
-                      reasoning_swipes: currentReasoningSwipes,
-                      reasoning_durations: currentDurations,
-                      reasoning_duration_seconds: reasoningDurationSeconds,
-                      tokens_in: finalInput > 0 ? finalInput : currentMeta.tokens_in,
-                      tokens_out: finalOutput > 0 ? finalOutput : currentMeta.tokens_out,
-                      cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : currentMeta.cached_tokens,
-                    },
-                  })
-                  .eq('id', existingAssistantMessageId);
-
-                assistantMsgRow = { id: existingAssistantMessageId };
-              } else {
-                let assistantInsertRes = await supabase
-                  .from('messages')
-                  .insert({
-                    chat_id: chatId,
-                    user_id: userId,
-                    parent_id: safeAssistantParentId,
-                    role: 'assistant',
-                    content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
-                    reasoning: fullReasoningContent || null,
-                    status: 'done',
-                    meta: {
-                      model: 'deepseek-v4.1-flash',
-                      reasoning_duration_seconds: reasoningDurationSeconds,
-                      tokens_in: finalInput > 0 ? finalInput : undefined,
-                      tokens_out: finalOutput > 0 ? finalOutput : undefined,
-                      cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : undefined,
-                    },
-                  })
-                  .select('id')
-                  .single();
-
-                if (assistantInsertRes.error && safeAssistantParentId) {
-                  console.warn('Assistant insert with parent_id failed, falling back to parent_id: null', assistantInsertRes.error);
-                  assistantInsertRes = await supabase
-                    .from('messages')
-                    .insert({
-                      chat_id: chatId,
-                      user_id: userId,
-                      parent_id: null,
-                      role: 'assistant',
-                      content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
-                      reasoning: fullReasoningContent || null,
-                      status: 'done',
-                      meta: {
-                        model: 'deepseek-v4.1-flash',
-                        reasoning_duration_seconds: reasoningDurationSeconds,
-                        tokens_in: finalInput > 0 ? finalInput : undefined,
-                        tokens_out: finalOutput > 0 ? finalOutput : undefined,
-                        cached_tokens: providerCachedTokens > 0 ? providerCachedTokens : undefined,
-                      },
-                    })
-                    .select('id')
-                    .single();
-                }
-
-                if (assistantInsertRes.error) {
-                  console.error('Failed to insert assistant message in DB:', assistantInsertRes.error);
-                } else {
-                  assistantMsgRow = assistantInsertRes.data;
-                }
-              }
-            } catch (e) {
-              console.error('Exception saving assistant message:', e);
-            }
-
-            if (assistantMsgRow?.id) {
-              await supabase
-                .from('chats')
-                .update({ leaf_id: assistantMsgRow.id, last_message_at: new Date().toISOString() })
-                .eq('id', chatId);
-
-              // Background non-blocking extraction of facts & state update
-              extractMemoriesAndState({
-                chatId,
-                userId,
-                charName: character.name,
-                userName: persona?.name || 'User',
-                userMessage,
-                assistantMessage: cleanedAssistant,
-                existingMemories: retrieved.relevantMemories,
-                currentState: retrieved.chatState?.state || {},
-                apiKey: clientApiKey,
-              }).catch((err) => console.error('Background memory extractor error:', err));
-            }
-
-            // Sync generated database IDs to the client SSE stream so client state uses real UUIDs
-            if (savedUserMsgId || assistantMsgRow?.id) {
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
                     metaSync: {
+                      chatId: resolvedChatId,
                       userMsgId: savedUserMsgId,
                       assistantMsgId: assistantMsgRow?.id,
                       reasoning_duration_seconds: reasoningDurationSeconds,
@@ -682,8 +798,12 @@ export async function POST(req: NextRequest) {
                   })}\n\n`
                 )
               );
-            }
+            } catch {}
           }
+
+          // Signal stream completion AND close
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
         } catch (err: any) {
           controller.error(err);
         }

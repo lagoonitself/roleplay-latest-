@@ -7,6 +7,75 @@ export const LOCAL_STATE_PREFIX = 'cadenza_local_state_';
 export const LOCAL_MEMORIES_PREFIX = 'cadenza_local_memories_';
 export const CHATS_CHANGED_EVENT = 'cadenza-chats-changed';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuid(id: string | null | undefined): boolean {
+  return typeof id === 'string' && UUID_REGEX.test(id);
+}
+
+export async function ensureCharacterInCloud(
+  character: Character,
+  userId: string,
+  supabaseClient?: any
+): Promise<Character> {
+  const supabase = supabaseClient || createClient();
+
+  if (isUuid(character.id)) {
+    try {
+      const { data } = await supabase
+        .from('characters')
+        .select('*')
+        .eq('id', character.id)
+        .maybeSingle();
+      if (data) return data as Character;
+    } catch {}
+  }
+
+  try {
+    const { data: savedChar, error } = await supabase
+      .from('characters')
+      .insert({
+        user_id: userId,
+        name: character.name || 'Character',
+        avatar_url: character.avatar_url || null,
+        tagline: character.tagline || '',
+        description: character.description || '',
+        personality: character.personality || '',
+        scenario: character.scenario || '',
+        first_message: character.first_message || '*I look at you quietly.*',
+        alternate_greetings: character.alternate_greetings || [],
+        example_dialogue: character.example_dialogue || '',
+        speech_style: character.speech_style || '',
+        system_prompt: character.system_prompt || '',
+        post_history_instructions: character.post_history_instructions || '',
+        tags: character.tags && character.tags.length > 0 ? character.tags : ['Custom'],
+        content_rating: character.content_rating || 'mature',
+        behavior: character.behavior || {},
+        generation: character.generation || {},
+        accent_color: character.accent_color || null,
+      })
+      .select()
+      .single();
+
+    if (!error && savedChar) {
+      if (typeof window !== 'undefined') {
+        try {
+          const localChars: Character[] = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+          const idx = localChars.findIndex((c) => c.id === character.id || c.name === character.name);
+          if (idx >= 0) {
+            localChars[idx] = savedChar as Character;
+            localStorage.setItem('cadenza_local_characters', JSON.stringify(localChars));
+          }
+        } catch {}
+      }
+      return savedChar as Character;
+    }
+  } catch (e) {
+    console.warn('Failed to ensure character in cloud:', e);
+  }
+
+  return character;
+}
+
 export interface CharacterChatGroup {
   characterId: string;
   character: Character;
@@ -202,6 +271,7 @@ export async function getUnifiedChats(charactersList: Character[] = []): Promise
   try {
     const { data: authData } = await supabase.auth.getUser();
     if (authData.user) {
+      const userId = authData.user.id;
       const { data, error } = await supabase
         .from('chats')
         .select('*, character:characters(*)')
@@ -210,6 +280,53 @@ export async function getUnifiedChats(charactersList: Character[] = []): Promise
 
       if (!error && data) {
         dbChats = data as Chat[];
+      }
+
+      // Auto-migrate any local chats that have user messages
+      const localToMigrate = localList.filter((c) => c.id.startsWith('local-'));
+      for (const lc of localToMigrate) {
+        const msgs = getLocalMessages(lc.id);
+        const hasUserMsg = msgs.some((m) => m.role === 'user');
+        if (hasUserMsg) {
+          try {
+            const rawChar = lc.character || charactersList.find((ch) => ch.id === lc.character_id || ch.name === lc.character?.name);
+            if (rawChar) {
+              const cloudChar = await ensureCharacterInCloud(rawChar, userId, supabase);
+              const { data: newDbChat, error: chatErr } = await supabase
+                .from('chats')
+                .insert({
+                  user_id: userId,
+                  character_id: cloudChar.id,
+                  title: lc.title || `Chat with ${cloudChar.name}`,
+                  last_message_at: lc.last_message_at || new Date().toISOString(),
+                  message_count: msgs.length,
+                })
+                .select('*, character:characters(*)')
+                .single();
+
+              if (!chatErr && newDbChat) {
+                const msgPayloads = msgs.map((m) => ({
+                  chat_id: newDbChat.id,
+                  user_id: userId,
+                  role: m.role,
+                  content: m.content,
+                  reasoning: m.reasoning || null,
+                  status: 'done',
+                  meta: m.meta || {},
+                  created_at: m.created_at || new Date().toISOString(),
+                }));
+                if (msgPayloads.length > 0) {
+                  await supabase.from('messages').insert(msgPayloads);
+                }
+                saveLocalMessages(newDbChat.id, msgs);
+                deleteChat(lc.id);
+                dbChats.unshift({ ...(newDbChat as Chat), character: cloudChar });
+              }
+            }
+          } catch (e) {
+            console.warn('Error auto-migrating local chat:', e);
+          }
+        }
       }
     }
   } catch (err) {
