@@ -14,6 +14,7 @@ import {
   ExternalLink,
   LogOut,
   RefreshCw,
+  FlaskConical,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { createClient } from '@/lib/supabase/client';
@@ -397,6 +398,21 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
           <div className="flex items-center gap-2.5">
             <BookOpen className="h-4 w-4 text-blue-400" />
             <span>World lorebooks & knowledge</span>
+          </div>
+          <ExternalLink className="h-3.5 w-3.5 text-zinc-500" />
+        </Link>
+        <Link
+          href="/logs"
+          className="flex w-full items-center justify-between rounded-2xl border border-amber-400/15 bg-amber-500/[0.04] p-3 text-xs text-zinc-300 transition-colors hover:bg-amber-500/[0.08]"
+        >
+          <div className="flex items-center gap-2.5">
+            <FlaskConical className="h-4 w-4 text-amber-300" />
+            <span>
+              Model logs{' '}
+              <span className="ml-1 rounded-full border border-amber-400/25 bg-amber-500/10 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-amber-300">
+                Dev
+              </span>
+            </span>
           </div>
           <ExternalLink className="h-3.5 w-3.5 text-zinc-500" />
         </Link>
