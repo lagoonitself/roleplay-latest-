@@ -815,6 +815,15 @@ export default function ChatPage() {
             const newMsg = payload.new as Message;
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
+              // Ignore our own assistant echo while locally streaming:
+              // the active SSE loop owns the `ast-` placeholder and `metaSync`
+              // renames it to the real UUID. Appending here rendered the
+              // same AI reply twice.
+              if (
+                newMsg.role === 'assistant' &&
+                prev.some((m) => m.role === 'assistant' && m.status === 'streaming')
+              )
+                return prev;
               const tempMatch = prev.find(
                 (m) =>
                   (m.id.startsWith('usr-') || m.id.startsWith('ast-')) &&
@@ -833,6 +842,9 @@ export default function ChatPage() {
           } else if (payload.eventType === 'UPDATE') {
             const updatedMsg = payload.new as Message;
             setMessages((prev) => {
+              // Don't clobber an actively streaming bubble with stale DB content.
+              const local = prev.find((m) => m.id === updatedMsg.id);
+              if (local && local.status === 'streaming') return prev;
               const updated = prev.map((m) => (m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m));
               saveLocalMessages(chatId, updated);
               return updated;
@@ -1103,7 +1115,7 @@ export default function ChatPage() {
 
       let finalMessages: Message[] = [];
       setMessages((prev) => {
-        finalMessages = prev.map((m) => {
+        const mapped: Message[] = prev.map((m) => {
           if (m.id === userMsgId && resolvedUserMsgId !== userMsgId) {
             return { ...m, id: resolvedUserMsgId };
           }
@@ -1123,7 +1135,7 @@ export default function ChatPage() {
             ...m,
             id: resolvedAssistantMsgId,
             parent_id: resolvedUserMsgId,
-            status: 'done',
+            status: 'done' as const,
             content: finalVal,
             reasoning: streamedReasoning || m.reasoning || null,
             meta: {
@@ -1136,6 +1148,15 @@ export default function ChatPage() {
             },
           };
         });
+        // Dedupe by id (heals timelines corrupted by the pre-fix double-append).
+        const seen = new Map<string, Message>();
+        for (const m of mapped) {
+          const existing = seen.get(m.id);
+          if (!existing || (m.content?.length || 0) > (existing.content?.length || 0)) {
+            seen.set(m.id, m);
+          }
+        }
+        finalMessages = Array.from(seen.values());
         return finalMessages;
       });
       saveLocalMessages(chatId, finalMessages);
