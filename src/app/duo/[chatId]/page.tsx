@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Pause, Play, Square, Plus, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Pause, Play, Square, Plus, Loader2, AlertTriangle, Megaphone, ChevronDown } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
 import { CharacterAvatar } from '@/components/character-avatar';
@@ -34,6 +34,11 @@ export default function DuoWatchPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [busy, setBusy] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [directorOpen, setDirectorOpen] = useState(false);
+  const [draftScene, setDraftScene] = useState('');
+  const [draftSecretA, setDraftSecretA] = useState('');
+  const [draftSecretB, setDraftSecretB] = useState('');
+  const [directSaving, setDirectSaving] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const lastActivityRef = useRef<number>(0);
@@ -168,6 +173,41 @@ export default function DuoWatchPage() {
     }
   };
 
+  const openDirector = () => {
+    if (duo) {
+      setDraftScene(duo.seed || '');
+      setDraftSecretA(duo.secrets.a || '');
+      setDraftSecretB(duo.secrets.b || '');
+    }
+    setDirectorOpen(true);
+  };
+
+  const saveDirection = async () => {
+    setDirectSaving(true);
+    try {
+      const headers = await getAuthHeaders(supabase);
+      if (settings.opencodeApiKey) headers['x-llm-key'] = settings.opencodeApiKey;
+      const res = await fetch('/api/duo', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'direct',
+          chatId,
+          seed: draftScene,
+          secrets: { a: draftSecretA, b: draftSecretB },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Direction failed.');
+      if (json.duo) setDuo(json.duo as DuoSession);
+      toast.success('Direction set — applies from the next line.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Direction failed.');
+    } finally {
+      setDirectSaving(false);
+    }
+  };
+
   const tokens = useMemo(() => {
     let total = 0;
     for (const m of messages) total += (m.meta?.tokens_in || 0) + (m.meta?.tokens_out || 0);
@@ -264,6 +304,105 @@ export default function DuoWatchPage() {
           </div>
         )}
       </div>
+
+      {/* Director */}
+      {duo && (
+        <div className="px-4 sm:px-6 pt-3">
+          <div className="rounded-2xl border border-white/[0.06] bg-zinc-900/40 overflow-hidden">
+            <button
+              onClick={() => (directorOpen ? setDirectorOpen(false) : openDirector())}
+              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left apple-button"
+              aria-expanded={directorOpen}
+            >
+              <Megaphone className="w-4 h-4 text-amber-300 shrink-0" />
+              <span className="text-xs font-semibold flex-1">Direct this scene</span>
+              <span className="flex items-center gap-1">
+                {duo.seed.trim() && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.07] text-zinc-300 font-bold" title="Scene direction both hear">
+                    Both
+                  </span>
+                )}
+                {duo.secrets.a.trim() && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold" title={`${duo.faces.a.name} has a secret direction`}>
+                    {duo.faces.a.name.split(' ')[0]} ✦
+                  </span>
+                )}
+                {duo.secrets.b.trim() && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold" title={`${duo.faces.b.name} has a secret direction`}>
+                    {duo.faces.b.name.split(' ')[0]} ✦
+                  </span>
+                )}
+              </span>
+              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${directorOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {directorOpen && (
+              <div className="px-4 pb-4 pt-1 space-y-3 border-t border-white/[0.05]">
+                <label className="block pt-2">
+                  <span className="text-[11px] font-semibold text-zinc-300">
+                    Steer the story <span className="text-muted-foreground font-normal">— both hear this</span>
+                  </span>
+                  <textarea
+                    value={draftScene}
+                    onChange={(e) => setDraftScene(e.target.value)}
+                    rows={2}
+                    maxLength={2000}
+                    placeholder="A storm knocks out the lights. They have to trust each other…"
+                    className="mt-1 w-full rounded-xl bg-black/30 border border-white/[0.08] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/40 resize-none"
+                  />
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-[11px] font-semibold text-purple-300">
+                      Secret for {duo.faces.a.name} <span className="text-muted-foreground font-normal">— {duo.faces.b.name.split(' ')[0]} never hears this</span>
+                    </span>
+                    <textarea
+                      value={draftSecretA}
+                      onChange={(e) => setDraftSecretA(e.target.value)}
+                      rows={2}
+                      maxLength={2000}
+                      placeholder="You are hiding something. Deflect gently…"
+                      className="mt-1 w-full rounded-xl bg-black/30 border border-purple-500/25 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/40 resize-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-semibold text-sky-300">
+                      Secret for {duo.faces.b.name} <span className="text-muted-foreground font-normal">— {duo.faces.a.name.split(' ')[0]} never hears this</span>
+                    </span>
+                    <textarea
+                      value={draftSecretB}
+                      onChange={(e) => setDraftSecretB(e.target.value)}
+                      rows={2}
+                      maxLength={2000}
+                      placeholder="You suspect them. Probe without accusing…"
+                      className="mt-1 w-full rounded-xl bg-black/30 border border-sky-500/25 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/40 resize-none"
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={saveDirection}
+                    disabled={directSaving}
+                    className="flex-1 py-2 rounded-full bg-amber-500/90 hover:bg-amber-500 text-black text-xs font-bold apple-button flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {directSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {directSaving ? 'Directing…' : 'Set direction'}
+                  </button>
+                  <button
+                    onClick={() => setDirectorOpen(false)}
+                    className="px-4 py-2 rounded-full bg-white/[0.06] hover:bg-white/[0.1] text-xs font-semibold apple-button"
+                  >
+                    Done
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Applies from the next line — no restart needed. Secrets go only to that side&apos;s model;
+                  each side never sees the other&apos;s direction.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Transcript */}
       <div

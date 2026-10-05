@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
           b: { kind: agentB.kind, id: agentB.id, name: agentB.name, avatar_url: agentB.avatar_url },
         },
         seed,
+        secrets: { a: '', b: '' },
         status: 'running',
         turn: 0,
         maxTurns,
@@ -164,6 +165,33 @@ export async function POST(req: NextRequest) {
       }
       if (next.status === 'running') {
         after(() => kick(origin, chatId, next.runId, auth, key));
+      }
+      return NextResponse.json({ duo: next });
+    }
+
+    if (action === 'direct') {
+      const clean = (v: unknown) =>
+        typeof v === 'string' ? v.trim().slice(0, 2000) : undefined;
+      const seed = clean(body?.seed);
+      const secretA = clean(body?.secrets?.a);
+      const secretB = clean(body?.secrets?.b);
+      if (seed === undefined && secretA === undefined && secretB === undefined) {
+        return NextResponse.json({ error: 'Nothing to direct.' }, { status: 400 });
+      }
+
+      const next = await mergeDuo(supabase, chatId, userId, (current) => ({
+        ...current,
+        ...(seed !== undefined ? { seed } : {}),
+        secrets: {
+          a: secretA !== undefined ? secretA : current.secrets.a,
+          b: secretB !== undefined ? secretB : current.secrets.b,
+        },
+      }));
+      if (!next) {
+        return NextResponse.json({ error: 'Scene not found.' }, { status: 404 });
+      }
+      if (seed !== undefined) {
+        await supabase.from('chats').update({ authors_note: seed }).eq('id', chatId).eq('user_id', userId);
       }
       return NextResponse.json({ duo: next });
     }

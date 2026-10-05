@@ -18,6 +18,8 @@ export interface DuoSession {
   agents: { a: DuoAgentRef; b: DuoAgentRef };
   faces: { a: DuoFace; b: DuoFace };
   seed: string;
+  /** Private per-side direction. secrets.a is only ever sent to A's model, never B's. */
+  secrets: { a: string; b: string };
   status: DuoStatus;
   turn: number;
   maxTurns: number;
@@ -46,7 +48,16 @@ export function parseDuo(settings: unknown): DuoSession | null {
   if (!session.agents?.a?.id || !session.agents?.b?.id) return null;
   if (!session.faces?.a?.name || !session.faces?.b?.name) return null;
   if (!session.runId || !session.status) return null;
-  return session as DuoSession;
+  // Normalize so sessions created before secrets existed still load.
+  const rawSecrets = session.secrets as { a?: unknown; b?: unknown } | undefined;
+  return {
+    ...session,
+    seed: typeof session.seed === 'string' ? session.seed : '',
+    secrets: {
+      a: typeof rawSecrets?.a === 'string' ? rawSecrets.a : '',
+      b: typeof rawSecrets?.b === 'string' ? rawSecrets.b : '',
+    },
+  } as DuoSession;
 }
 
 export function isDuoChat(chat: { mode?: string | null; settings?: unknown } | null | undefined): boolean {

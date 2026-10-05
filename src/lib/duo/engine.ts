@@ -290,6 +290,9 @@ export async function executeClaimedTurn(opts: {
   }
 
   const listenerName = otherLabel(speaker.name, listener.name);
+  // Only this speaker's own secret is loaded here — the other side's
+  // secret stays in the database and never enters this prompt.
+  const speakerSecret = (duo.secrets?.[speakerSide] || '').trim();
   await settleStaleStreaming(supabase, chatId, userId);
 
   const { data: recent } = await supabase
@@ -341,6 +344,9 @@ export async function executeClaimedTurn(opts: {
 
   const note = [
     duo.seed.trim() ? `Scene: ${duo.seed.trim()}` : '',
+    speakerSecret
+      ? `[Private direction for ${speaker.name} only — ${listenerName} cannot hear this. Follow it naturally without revealing that you received a secret instruction: ${speakerSecret}]`
+      : '',
     `Write only ${speaker.name}'s next message. ${listenerName} replies on their own turn.`,
   ]
     .filter(Boolean)
