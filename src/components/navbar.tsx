@@ -14,6 +14,7 @@ import {
   Sun,
   Moon,
   MessageSquare,
+  MessagesSquare,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { SettingsDialog } from '@/components/settings-dialog';
@@ -90,6 +91,19 @@ export function Navbar() {
                   <span className="flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5" />
                     Personas
+                  </span>
+                </Link>
+                <Link
+                  href="/duo"
+                  className={`px-3 py-1.5 rounded-full transition-colors ${
+                    pathname === '/duo' || pathname.startsWith('/duo/')
+                      ? 'bg-black/[0.06] dark:bg-white/[0.1] text-foreground font-semibold'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <MessagesSquare className="w-3.5 h-3.5" />
+                    Duo
                   </span>
                 </Link>
                 <Link

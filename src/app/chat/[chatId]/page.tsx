@@ -385,6 +385,15 @@ export default function ChatPage() {
         }
       }
 
+      // Duo scenes live on /duo/[id] — bounce if this chat is one.
+      if (
+        existingChat &&
+        ((existingChat as Chat).mode === 'duo' || (existingChat.settings as any)?.duo)
+      ) {
+        router.replace(`/duo/${chatId}`);
+        return;
+      }
+
       // A. Load Active Persona
       let resolvedPersona: Persona | null = null;
       let localPersonas: Persona[] = [];

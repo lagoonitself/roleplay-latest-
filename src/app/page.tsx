@@ -122,9 +122,9 @@ function HomePageContent() {
       const activeChars = combinedChars.filter((c) => !deletedIds.includes(c.id));
       setCharacters(activeChars);
 
-      // 5. Load Unified Chats (Supabase + LocalStorage)
+      // 5. Load Unified Chats (Supabase + LocalStorage), solo chats only — duo lives on /duo
       const unifiedChats = await getUnifiedChats(activeChars);
-      setChats(unifiedChats);
+      setChats(unifiedChats.filter((c) => (c as Chat).mode !== 'duo' && !(c.settings as any)?.duo));
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -505,6 +505,30 @@ function HomePageContent() {
               ))}
             </div>
           </div>
+
+          {/* Duo entry: two of your people, talking on their own */}
+          {!searchQuery && selectedTag === 'All' && (
+            <Link
+              href="/duo"
+              className="flex items-center gap-3 rounded-3xl border border-purple-500/20 bg-purple-500/[0.06] hover:bg-purple-500/[0.1] px-4 py-3.5 transition-colors group"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-purple-600 flex items-center justify-center shadow-md shadow-purple-600/30 shrink-0 group-hover:scale-105 transition-transform">
+                <Sparkles className="w-4.5 h-4.5 w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold flex items-center gap-1.5">
+                  Duo scenes
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold uppercase tracking-wider">
+                    New
+                  </span>
+                </div>
+                <div className="text-[11px] text-muted-foreground truncate">
+                  Pick two characters or personas — they talk, you watch. It keeps going while you&apos;re away.
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-purple-300 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+          )}
 
           {/* Jump Back In (Compact Recent Chats Strip with Delete Option) */}
           {chats.length > 0 && !searchQuery && selectedTag === 'All' && (
