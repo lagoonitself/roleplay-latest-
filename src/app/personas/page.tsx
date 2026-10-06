@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -17,7 +17,7 @@ export default function PersonasPage() {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const loadPersonas = async () => {
+  const loadPersonas = useCallback(async () => {
     let localList: Persona[] = [];
     try {
       localList = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
@@ -61,11 +61,14 @@ export default function PersonasPage() {
       } catch {}
     }
     setPersonas(localList);
-  };
+  }, [supabase]);
 
   useEffect(() => {
-    loadPersonas();
-  }, [supabase]);
+    const timer = setTimeout(() => {
+      void loadPersonas();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadPersonas]);
 
   const handleSetActive = (persona: Persona) => {
     updateSettings({ activePersonaId: persona.id });

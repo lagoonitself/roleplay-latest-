@@ -105,8 +105,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ summary: summaryResult });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in /api/chat/summarize:', error);
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 });
   }
 }

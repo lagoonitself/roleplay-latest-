@@ -10,11 +10,8 @@ import {
   Sparkles,
   Lock,
   Unlock,
-  Sliders,
   Save,
-  RotateCcw,
   Check,
-  Eye,
   SlidersHorizontal,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -70,17 +67,21 @@ export function SillyTavernContextInspector({
 
   // Sync state if props change
   React.useEffect(() => {
-    if (summary?.content !== undefined) {
-      setSummaryText(summary.content);
-    }
+    const content = summary?.content;
+    if (content === undefined) return;
+    const t = setTimeout(() => setSummaryText(content), 0);
+    return () => clearTimeout(t);
   }, [summary]);
 
   React.useEffect(() => {
-    setNotePrompt(authorsNote.prompt || '');
-    setNoteDepth(authorsNote.depth ?? 4);
-    setNoteInterval(authorsNote.interval ?? 1);
-    setNoteRole(authorsNote.role || 'system');
-    setNotePosition(authorsNote.position || 'in_chat');
+    const t = setTimeout(() => {
+      setNotePrompt(authorsNote.prompt || '');
+      setNoteDepth(authorsNote.depth ?? 4);
+      setNoteInterval(authorsNote.interval ?? 1);
+      setNoteRole(authorsNote.role || 'system');
+      setNotePosition(authorsNote.position || 'in_chat');
+    }, 0);
+    return () => clearTimeout(t);
   }, [authorsNote]);
 
   // Handle Save Edited Summary
@@ -103,8 +104,8 @@ export function SillyTavernContextInspector({
       onSummaryUpdated(data.summary);
       setIsFrozen(true);
       toast.success('Summary updated & locked against auto-overwrite');
-    } catch (e: any) {
-      toast.error(e.message || 'Could not save summary');
+    } catch (e) {
+      toast.error((e instanceof Error ? e.message : '') || 'Could not save summary');
     } finally {
       setIsSavingSummary(false);
     }
@@ -143,8 +144,8 @@ export function SillyTavernContextInspector({
       } else {
         toast.info('No new events to summarize yet');
       }
-    } catch (e: any) {
-      toast.error(e.message || 'Summarization error');
+    } catch (e) {
+      toast.error((e instanceof Error ? e.message : '') || 'Summarization error');
     } finally {
       setIsSummarizing(false);
     }
@@ -156,8 +157,8 @@ export function SillyTavernContextInspector({
       prompt: notePrompt,
       depth: noteDepth,
       interval: noteInterval,
-      role: noteRole as any,
-      position: notePosition as any,
+      role: noteRole as 'system' | 'user' | 'assistant',
+      position: notePosition as 'in_chat' | 'before_scenario' | 'after_scenario',
     };
     onAuthorsNoteUpdated(updated);
     toast.success("Author's note updated");
@@ -215,7 +216,7 @@ export function SillyTavernContextInspector({
           className={tabButtonClass('note')}
         >
           <Bookmark aria-hidden className="h-3.5 w-3.5" />
-          Author's note
+          Author&apos;s note
           {tabUnderline('note')}
         </button>
         <button
@@ -360,7 +361,7 @@ export function SillyTavernContextInspector({
           <div className="space-y-4">
             <div>
               <span className="type-label">
-                Author's note
+                Author&apos;s note
               </span>
               <p className="type-meta mt-0.5">
                 Steers tone, style, or pacing. Injected into chat history at the depth you set.
@@ -399,7 +400,7 @@ export function SillyTavernContextInspector({
                   <select
                     id="authors-note-role"
                     value={noteRole}
-                    onChange={(e) => setNoteRole(e.target.value as any)}
+                    onChange={(e) => setNoteRole(e.target.value as 'system' | 'user' | 'assistant')}
                     className="field text-xs"
                   >
                     <option value="system">System</option>
@@ -413,7 +414,7 @@ export function SillyTavernContextInspector({
                   <select
                     id="authors-note-position"
                     value={notePosition}
-                    onChange={(e) => setNotePosition(e.target.value as any)}
+                    onChange={(e) => setNotePosition(e.target.value as 'in_chat' | 'before_scenario' | 'after_scenario')}
                     className="field text-xs"
                   >
                     <option value="in_chat">In-chat depth</option>
@@ -430,7 +431,7 @@ export function SillyTavernContextInspector({
               className="btn btn-primary w-full text-xs"
             >
               <Check aria-hidden className="h-3.5 w-3.5" />
-              Apply author's note
+              Apply author&apos;s note
             </button>
           </div>
         )}

@@ -57,7 +57,7 @@ export function CharacterChatsDrawer({
       window.addEventListener('keydown', handleKeyDown);
     }
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, menuOpen, confirmDeleteAll, onClose]);
+  }, [open, menuOpen, confirmDeleteAll, confirmDeleteCharacter, onClose]);
 
   if (!open || !character) return null;
 

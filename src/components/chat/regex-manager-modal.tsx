@@ -4,7 +4,6 @@ import React, { useState, useMemo } from 'react';
 import {
   X,
   Plus,
-  Play,
   RotateCcw,
   Download,
   Upload,
@@ -13,17 +12,9 @@ import {
   Trash2,
   Edit2,
   Sliders,
-  Filter,
   Search,
-  Code,
   Eye,
-  Info,
   Layers,
-  ArrowRight,
-  ShieldCheck,
-  Dices,
-  MessageCircle,
-  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -31,8 +22,6 @@ import {
   type RegexCategory,
   type RegexScope,
   type RegexTarget,
-  testRegexScript,
-  DEFAULT_REGEX_SCRIPTS,
 } from '@/lib/formatter/regex-engine';
 import { useRegexScripts } from '@/lib/store/regex-store';
 import { RoleplayMessageContent } from '@/components/chat/roleplay-message-content';

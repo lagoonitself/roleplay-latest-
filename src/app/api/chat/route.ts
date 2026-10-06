@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { streamChatCompletions, getLlmModel } from '@/lib/llm/client';
 import { assemblePrompt } from '@/lib/prompt/assembler';
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://sgnieclbmerpxlbadymm.supabase.co';
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-    let supabase: any;
+    let supabase: SupabaseClient;
     let userId: string | undefined;
 
     if (bearerToken) {
@@ -593,7 +594,7 @@ export async function POST(req: NextRequest) {
                   .eq('id', existingAssistantMessageId)
                   .single();
 
-                const currentMeta = ((existingRow?.meta || {}) as Record<string, any>);
+                const currentMeta = ((existingRow?.meta || {}) as Record<string, unknown>);
                 const currentSwipes = Array.isArray(currentMeta.swipes) ? [...currentMeta.swipes] : [existingRow?.content || ''];
                 const currentReasoningSwipes = Array.isArray(currentMeta.reasoning_swipes) ? [...currentMeta.reasoning_swipes] : [existingRow?.reasoning || ''];
                 const currentDurations = Array.isArray(currentMeta.reasoning_durations) ? [...currentMeta.reasoning_durations] : [];
@@ -714,8 +715,8 @@ export async function POST(req: NextRequest) {
                     userName: persona?.name || 'User',
                     history: [
                       ...history,
-                      { id: savedUserMsgId || 'user-now', role: 'user', content: userMessage } as any,
-                      { id: assistantMsgRow?.id || 'assistant-now', role: 'assistant', content: cleanedAssistant } as any,
+                      { id: savedUserMsgId || 'user-now', role: 'user', content: userMessage } as Message,
+                      { id: assistantMsgRow?.id || 'assistant-now', role: 'assistant', content: cleanedAssistant } as Message,
                     ],
                     apiKey: clientApiKey,
                   });
@@ -835,7 +836,7 @@ export async function POST(req: NextRequest) {
           // Signal stream completion AND close
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
-        } catch (err: any) {
+        } catch (err) {
           controller.error(err);
         }
       },
@@ -848,10 +849,10 @@ export async function POST(req: NextRequest) {
         'Connection': 'keep-alive',
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API /api/chat error:', error);
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }

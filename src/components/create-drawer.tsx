@@ -2,9 +2,7 @@
 
 import React, { useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { UserPlus, Upload, X, BookOpen, ChevronRight } from 'lucide-react';
-import { toast } from 'sonner';
 
 interface CreateDrawerProps {
   open: boolean;
@@ -14,7 +12,6 @@ interface CreateDrawerProps {
 }
 
 export function CreateDrawer({ open, onClose, onImportFile, onOpenImportGuide }: CreateDrawerProps) {
-  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!open) return null;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useTransition } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
-import { parseCharacterCardJson, parseCharacterFromPng, makeCharacter } from '@/lib/cards/card-parser';
+import { parseCharacterCardJson, parseCharacterFromPng, makeCharacter, type CharacterBook } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
 import { PersonaDrawer } from '@/components/persona-drawer';
@@ -74,18 +74,21 @@ function HomePageContent() {
 
   // Resolve active persona name
   useEffect(() => {
-    try {
-      const localList: Persona[] = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
-      const found =
-        localList.find((p) => p.id === settings.activePersonaId) ||
-        localList.find((p) => p.is_default) ||
-        localList[0];
-      if (found) setActivePersonaName(found.name);
-    } catch {}
+    const timer = setTimeout(() => {
+      try {
+        const localList: Persona[] = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
+        const found =
+          localList.find((p) => p.id === settings.activePersonaId) ||
+          localList.find((p) => p.is_default) ||
+          localList[0];
+        if (found) setActivePersonaName(found.name);
+      } catch {}
+    }, 0);
+    return () => clearTimeout(timer);
   }, [settings.activePersonaId, personaDrawerOpen]);
 
   // Load all characters and unified chats
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       // 1. Fetch custom characters from Supabase
       const { data: dbChars } = await supabase
@@ -114,16 +117,18 @@ function HomePageContent() {
 
       // 5. Load Unified Chats (Supabase + LocalStorage), solo chats only — duo lives on /duo
       const unifiedChats = await getUnifiedChats(activeChars);
-      setChats(unifiedChats.filter((c) => (c as Chat).mode !== 'duo' && !(c.settings as any)?.duo));
+      setChats(unifiedChats.filter((c) => (c as Chat).mode !== 'duo' && !(c.settings as Record<string, unknown>)?.duo));
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
 
   useEffect(() => {
-    loadData();
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
 
     // Real-time synchronization: listen for chats changes from any device
     const channel = supabase
@@ -145,18 +150,22 @@ function HomePageContent() {
     window.addEventListener(CHATS_CHANGED_EVENT, handleChanged);
     window.addEventListener('cadenza-characters-changed', handleChanged);
     return () => {
+      clearTimeout(timer);
       supabase.removeChannel(channel);
       window.removeEventListener(CHATS_CHANGED_EVENT, handleChanged);
       window.removeEventListener('cadenza-characters-changed', handleChanged);
     };
-  }, [supabase]);
+  }, [loadData, supabase]);
 
   // Sync tab with URL query parameter if present
   useEffect(() => {
-    const tabParam = searchParams.get('tab') as AppTab;
-    if (tabParam && ['explore', 'chats', 'create', 'profile'].includes(tabParam)) {
-      setActiveTab(tabParam);
-    }
+    const timer = setTimeout(() => {
+      const tabParam = searchParams.get('tab') as AppTab;
+      if (tabParam && ['explore', 'chats', 'create', 'profile'].includes(tabParam)) {
+        setActiveTab(tabParam);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [searchParams]);
 
   // Grouped chats for the "My chats" index
@@ -199,7 +208,7 @@ function HomePageContent() {
     try {
       let parsedChar: Partial<Character> = {};
       let avatarUrl = '';
-      let embeddedBook: any = null;
+      let embeddedBook: CharacterBook | null = null;
 
       if (file.name.toLowerCase().endsWith('.png') || file.type === 'image/png') {
         const buffer = await file.arrayBuffer();
@@ -278,8 +287,8 @@ function HomePageContent() {
       localStorage.setItem('cadenza_local_characters', JSON.stringify([localChar, ...localList]));
       toast.success(`Imported "${newCharPayload.name}" to your roster!`);
       await loadData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to import character card');
+    } catch (err) {
+      toast.error((err instanceof Error ? err.message : '') || 'Failed to import character card');
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -378,9 +387,9 @@ function HomePageContent() {
           router.push(`/chat/${newChat.id}`);
           return;
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('Error starting cloud chat:', err);
-        toast.error('Error starting cloud chat: ' + err.message);
+        toast.error('Error starting cloud chat: ' + (err instanceof Error ? err.message : String(err)));
       }
     }
 

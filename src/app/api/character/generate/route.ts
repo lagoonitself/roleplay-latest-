@@ -22,7 +22,9 @@ export async function POST(req: NextRequest) {
       { role: 'user' as const, content: buildCharacterGeneratorUser(idea.slice(0, MAX_IDEA_CHARS)) },
     ];
 
-    const raw = await jsonCompletion(messages, { apiKey, max_tokens: 8192, temperature: 0.8 });
+    // Lower temperature keeps the card faithful to the user's idea (no invented bloat)
+    // while leaving enough range for fresh character concepts.
+    const raw = await jsonCompletion(messages, { apiKey, max_tokens: 8192, temperature: 0.75 });
     const character = normalizeGeneratedCharacter(raw);
 
     if (!character.name || !character.first_message) {
@@ -30,8 +32,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(character);
-  } catch (error: any) {
+  } catch (error) {
     console.error('Character generation error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to generate character' }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to generate character' }, { status: 500 });
   }
 }

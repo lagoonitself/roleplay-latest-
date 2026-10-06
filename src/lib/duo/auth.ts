@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 
-export async function getRequestUser(req: NextRequest): Promise<{ supabase: any; userId: string | null }> {
+export async function getRequestUser(req: NextRequest): Promise<{ supabase: SupabaseClient; userId: string | null }> {
   const authHeader = req.headers.get('authorization');
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://sgnieclbmerpxlbadymm.supabase.co';

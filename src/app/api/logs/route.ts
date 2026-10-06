@@ -36,9 +36,9 @@ export async function GET(req: NextRequest) {
       throw error;
     }
     return NextResponse.json({ logs: data ?? [], authenticated: true });
-  } catch (e: any) {
+  } catch (e) {
     console.error('API /api/logs GET error:', e);
-    return NextResponse.json({ error: e.message || 'Failed to load logs' }, { status: 500 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load logs' }, { status: 500 });
   }
 }
 
@@ -56,8 +56,8 @@ export async function DELETE(req: NextRequest) {
     const { error } = await query;
     if (error) throw error;
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
+  } catch (e) {
     console.error('API /api/logs DELETE error:', e);
-    return NextResponse.json({ error: e.message || 'Failed to delete logs' }, { status: 500 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to delete logs' }, { status: 500 });
   }
 }

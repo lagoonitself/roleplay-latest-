@@ -32,7 +32,7 @@ export function MyChatsView({
 
   // Filter and sort groups
   const filteredGroups = useMemo(() => {
-    let result = groups.filter((g) => {
+    const result = groups.filter((g) => {
       const q = searchQuery.toLowerCase().trim();
       if (!q) return true;
       return (

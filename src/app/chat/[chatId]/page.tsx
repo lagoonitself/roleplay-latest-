@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   ArrowLeft,
   Sparkles,
@@ -18,15 +16,11 @@ import {
   Edit2,
   Trash2,
   Brain,
-  Sliders,
   Bookmark,
   GitBranch,
   X,
-  Plus,
-  Flame,
   Check,
   User,
-  Settings,
   MoreVertical,
   ExternalLink,
 } from 'lucide-react';
@@ -51,9 +45,7 @@ import {
   getLocalMessages,
   saveLocalMessages,
   getLocalMemories,
-  saveLocalMemories,
   getLocalChatState,
-  saveLocalChatState,
   getLocalSummary,
   saveLocalSummary,
   getLocalAuthorsNote,
@@ -67,7 +59,6 @@ import { useSoundEffects, playSendSound, playReceiveSound } from '@/lib/audio/so
 import {
   SILLY_TAVERN_SPECIAL_PROMPTS,
   SILLY_TAVERN_SYSTEM_PROMPT_PRESETS,
-  type SystemPromptPreset,
 } from '@/lib/prompt/presets';
 import { toast } from 'sonner';
 import type { Chat, Character, Persona, Message, Memory, Summary, ChatState } from '@/lib/supabase/types';
@@ -155,7 +146,7 @@ async function streamRegeneratedReply(
     onReasoning: (fullReasoning: string) => void;
     onThinkingDone: (seconds: number) => void;
     onText: (formattedLive: string) => void;
-    onMetaSync?: (metaSync: any) => void;
+    onMetaSync?: (metaSync: NonNullable<StreamRegenResult['metaSync']>) => void;
   }
 ): Promise<StreamRegenResult> {
   const { charName, userName, onReasoning, onThinkingDone, onText, onMetaSync } = opts;
@@ -282,7 +273,7 @@ export default function ChatPage() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [currentSummary, setCurrentSummary] = useState<Summary | null>(null);
-  const [chatState, setChatState] = useState<ChatState['state']>({});
+  const [, setChatState] = useState<ChatState['state']>({});
   const [currentPresetId, setCurrentPresetId] = useState<string>('roleplay-detailed');
 
   // Editing in-place
@@ -388,7 +379,7 @@ export default function ChatPage() {
       // Duo scenes live on /duo/[id] — bounce if this chat is one.
       if (
         existingChat &&
-        ((existingChat as Chat).mode === 'duo' || (existingChat.settings as any)?.duo)
+        ((existingChat as Chat).mode === 'duo' || (existingChat.settings as Record<string, unknown>)?.duo)
       ) {
         router.replace(`/duo/${chatId}`);
         return;
@@ -752,21 +743,21 @@ export default function ChatPage() {
       if (localNote) {
         setAuthorsNote(localNote);
       } else if (existingChat?.authors_note) {
-        const noteSettings = (existingChat.settings as any) || {};
+        const noteSettings = (existingChat.settings as Record<string, unknown>) || {};
         setAuthorsNote({
           prompt: existingChat.authors_note,
           depth: typeof noteSettings.authors_note_depth === 'number' ? noteSettings.authors_note_depth : 4,
           interval: typeof noteSettings.authors_note_interval === 'number' ? noteSettings.authors_note_interval : 1,
-          role: noteSettings.authors_note_role || 'system',
-          position: noteSettings.authors_note_position || 'in_chat',
+          role: (noteSettings.authors_note_role as LocalAuthorsNote['role']) || 'system',
+          position: (noteSettings.authors_note_position as LocalAuthorsNote['position']) || 'in_chat',
         });
       }
 
       const localPreset = typeof window !== 'undefined' ? localStorage.getItem(`cadenza_preset_${chatId}`) : null;
       if (localPreset) {
         setCurrentPresetId(localPreset);
-      } else if (existingChat && (existingChat.settings as any)?.system_prompt_preset) {
-        setCurrentPresetId((existingChat.settings as any).system_prompt_preset);
+      } else if (existingChat && (existingChat.settings as Record<string, unknown>)?.system_prompt_preset) {
+        setCurrentPresetId((existingChat.settings as Record<string, unknown>).system_prompt_preset as string);
       }
 
       const localMems = getLocalMemories(chatId);
@@ -803,6 +794,9 @@ export default function ChatPage() {
     }
 
     initChat();
+    // initChat is a mount-time chat initializer; re-running it when the router or the active
+    // persona changes would reload and rewrite the conversation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, charIdParam, supabase]);
 
   // Real-time synchronization: subscribe to message inserts/updates across devices
@@ -1221,9 +1215,9 @@ export default function ChatPage() {
           .maybeSingle();
         if (stData?.state) setChatState(stData.state);
       }, 3500);
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        toast.error(err.message || 'Generation error');
+    } catch (err) {
+      if ((err as { name?: unknown } | null | undefined)?.name !== 'AbortError') {
+        toast.error((err instanceof Error ? err.message : '') || 'Generation error');
         let errMessages: Message[] = [];
         setMessages((prev) => {
           errMessages = prev.map((m) =>
@@ -1569,9 +1563,9 @@ export default function ChatPage() {
 
       toast.success(`Generated variation ${newSwipeIndex + 1}/${updatedSwipes.length}`);
       playReceiveSound();
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        toast.error(err.message || 'Regeneration error');
+    } catch (err) {
+      if ((err as { name?: unknown } | null | undefined)?.name !== 'AbortError') {
+        toast.error((err instanceof Error ? err.message : '') || 'Regeneration error');
         setMessages((prev) =>
           prev.map((m, i) =>
             i === assistantMsgIndex
@@ -2621,7 +2615,7 @@ export default function ChatPage() {
                   const { data: authData } = await supabase.auth.getUser();
                   if (authData?.user) {
                     const { data: cRow } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
-                    const existingSettings = (cRow?.settings as any) || {};
+                    const existingSettings = (cRow?.settings as Record<string, unknown>) || {};
                     await supabase
                       .from('chats')
                       .update({
@@ -2674,7 +2668,7 @@ export default function ChatPage() {
                   const { data: authData } = await supabase.auth.getUser();
                   if (authData?.user) {
                     const { data: cRow } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
-                    const existingSettings = (cRow?.settings as any) || {};
+                    const existingSettings = (cRow?.settings as Record<string, unknown>) || {};
                     await supabase
                       .from('chats')
                       .update({

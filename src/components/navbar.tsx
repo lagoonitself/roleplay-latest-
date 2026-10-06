@@ -15,7 +15,8 @@ export function Navbar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    const t = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(t);
   }, []);
 
   // If in active fullscreen chat, hide global header to avoid double navigation on mobile

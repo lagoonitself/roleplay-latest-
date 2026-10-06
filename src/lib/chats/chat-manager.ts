@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import type { Chat, Character, Message, Memory, Summary } from '@/lib/supabase/types';
 
@@ -17,7 +18,7 @@ export function isUuid(id: string | null | undefined): boolean {
 export async function ensureCharacterInCloud(
   character: Character,
   userId: string,
-  supabaseClient?: any
+  supabaseClient?: SupabaseClient
 ): Promise<Character> {
   const supabase = supabaseClient || createClient();
 
@@ -240,7 +241,7 @@ export function saveLocalMemories(chatId: string, memories: Memory[]): void {
 /**
  * Get state for a specific chat from localStorage
  */
-export function getLocalChatState(chatId: string): Record<string, any> {
+export function getLocalChatState(chatId: string): Record<string, unknown> {
   if (typeof window === 'undefined' || !chatId) return {};
   try {
     const raw = localStorage.getItem(`${LOCAL_STATE_PREFIX}${chatId}`);
@@ -253,7 +254,7 @@ export function getLocalChatState(chatId: string): Record<string, any> {
 /**
  * Save state for a specific chat to localStorage
  */
-export function saveLocalChatState(chatId: string, state: Record<string, any>): void {
+export function saveLocalChatState(chatId: string, state: Record<string, unknown>): void {
   if (typeof window === 'undefined' || !chatId) return;
   try {
     localStorage.setItem(`${LOCAL_STATE_PREFIX}${chatId}`, JSON.stringify(state));

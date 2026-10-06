@@ -6,7 +6,6 @@ import {
   User,
   Bookmark,
   Brain,
-  Sliders,
   Sparkles,
   ChevronDown,
   Check,

@@ -79,9 +79,10 @@ async function postWithRetry(
         body: JSON.stringify(payload),
         signal,
       });
-    } catch (err: any) {
+    } catch (err) {
       // Network-level failure (DNS, reset, etc.) — retryable unless aborted by the caller.
-      if (err?.name === 'AbortError') throw err;
+      const errName = (err as { name?: unknown } | null | undefined)?.name;
+      if (errName === 'AbortError') throw err;
       lastError = err;
       if (attempt === retries) break;
       await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
@@ -165,7 +166,7 @@ export async function textCompletion(
  * Robust JSON repair and parser that cleans markdown fences, fixes unescaped newlines
  * inside string literals, and auto-repairs truncated/unclosed strings & brackets.
  */
-export function repairAndParseJson<T = any>(str: string): T {
+export function repairAndParseJson<T = unknown>(str: string): T {
   let s = str.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
 
   // 1. Fast path: try standard parsing
@@ -247,7 +248,7 @@ export function repairAndParseJson<T = any>(str: string): T {
  * Non-streaming JSON completion for background tasks (character generation, memory extraction).
  * Retries once at a lower temperature if the model returns unparseable JSON.
  */
-export async function jsonCompletion<T = any>(
+export async function jsonCompletion<T = unknown>(
   messages: ChatMessage[],
   options: StreamChatOptions = {}
 ): Promise<T> {

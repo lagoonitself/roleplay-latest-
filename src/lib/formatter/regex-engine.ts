@@ -287,22 +287,24 @@ export function expandStandardMacros(text: string, ctx: MacroContext = {}): stri
   const safeUser = (ctx.userName || 'User').trim();
   const now = new Date();
 
+  // Function replacements insert user-authored names literally: a `$` in a
+  // character name would otherwise be read as `$&` / `$'` / `$1` and corrupt text.
   let res = text
     // Possessive macros
-    .replace(/\{\{\s*char\s*\}\}['’]s/gi, `${safeChar}'s`)
-    .replace(/\{\{\s*user\s*\}\}['’]s/gi, `${safeUser}'s`)
+    .replace(/\{\{\s*char\s*\}\}['’]s/gi, () => `${safeChar}'s`)
+    .replace(/\{\{\s*user\s*\}\}['’]s/gi, () => `${safeUser}'s`)
     // Character names
-    .replace(/\{\{\s*CHAR\s*\}\}/g, safeChar.toUpperCase())
-    .replace(/\{\{\s*Char\s*\}\}/g, safeChar)
-    .replace(/\{\{\s*char\s*\}\}/gi, safeChar)
-    .replace(/\{\{\s*bot\s*\}\}/gi, safeChar)
-    .replace(/\{\{\s*char_name\s*\}\}/gi, safeChar)
-    .replace(/\{\{\s*charIfNotGroup\s*\}\}/gi, safeChar)
+    .replace(/\{\{\s*CHAR\s*\}\}/g, () => safeChar.toUpperCase())
+    .replace(/\{\{\s*Char\s*\}\}/g, () => safeChar)
+    .replace(/\{\{\s*char\s*\}\}/gi, () => safeChar)
+    .replace(/\{\{\s*bot\s*\}\}/gi, () => safeChar)
+    .replace(/\{\{\s*char_name\s*\}\}/gi, () => safeChar)
+    .replace(/\{\{\s*charIfNotGroup\s*\}\}/gi, () => safeChar)
     // User names
-    .replace(/\{\{\s*USER\s*\}\}/g, safeUser.toUpperCase())
-    .replace(/\{\{\s*User\s*\}\}/g, safeUser)
-    .replace(/\{\{\s*user\s*\}\}/gi, safeUser)
-    .replace(/\{\{\s*persona\s*\}\}/gi, safeUser)
+    .replace(/\{\{\s*USER\s*\}\}/g, () => safeUser.toUpperCase())
+    .replace(/\{\{\s*User\s*\}\}/g, () => safeUser)
+    .replace(/\{\{\s*user\s*\}\}/gi, () => safeUser)
+    .replace(/\{\{\s*persona\s*\}\}/gi, () => safeUser)
     // Time & Date
     .replace(/\{\{\s*time\s*\}\}/gi, now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
     .replace(/\{\{\s*date\s*\}\}/gi, now.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' }))
@@ -343,9 +345,13 @@ function performReplacement(
   const safeChar = ctx.charName || 'Character';
   const safeUser = ctx.userName || 'User';
 
+  // This result is consumed as a replacement string by the caller, where the
+  // author's own `$1` / `$2` capture references must keep working. So the names
+  // are dollar-doubled here: `$$` survives this pass and collapses back to a
+  // literal `$` on the next, while `$1` stays live for captures.
   const expandedReplacement = replaceStr
-    .replace(/\{\{\s*char\s*\}\}/gi, safeChar)
-    .replace(/\{\{\s*user\s*\}\}/gi, safeUser);
+    .replace(/\{\{\s*char\s*\}\}/gi, () => safeChar.split('$').join('$$'))
+    .replace(/\{\{\s*user\s*\}\}/gi, () => safeUser.split('$').join('$$'));
 
   return text.replace(regex, expandedReplacement);
 }
@@ -386,10 +392,10 @@ export function applyRegexScripts(
     // Dynamic {{char}} replacement in script regex
     let patternStr = script.findRegex;
     if (ctx.charName) {
-      patternStr = patternStr.replace(/\{\{char\}\}/gi, ctx.charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      patternStr = patternStr.replace(/\{\{char\}\}/gi, () => ctx.charName!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     }
     if (ctx.userName) {
-      patternStr = patternStr.replace(/\{\{user\}\}/gi, ctx.userName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      patternStr = patternStr.replace(/\{\{user\}\}/gi, () => ctx.userName!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     }
 
     const rx = compileRegex(patternStr, script.flags || 'g');
@@ -494,10 +500,10 @@ export function testRegexScript(
   try {
     let patternStr = script.findRegex;
     if (ctx.charName) {
-      patternStr = patternStr.replace(/\{\{char\}\}/gi, ctx.charName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      patternStr = patternStr.replace(/\{\{char\}\}/gi, () => ctx.charName!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     }
     if (ctx.userName) {
-      patternStr = patternStr.replace(/\{\{user\}\}/gi, ctx.userName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      patternStr = patternStr.replace(/\{\{user\}\}/gi, () => ctx.userName!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     }
 
     const rx = compileRegex(patternStr, script.flags || 'g');
@@ -510,8 +516,8 @@ export function testRegexScript(
     const result = performReplacement(sampleText, rx, script.replaceString || '', ctx);
 
     return { result, matchesCount };
-  } catch (err: any) {
-    return { result: sampleText, matchesCount: 0, error: err?.message || 'Regex execution failed' };
+  } catch (err) {
+    return { result: sampleText, matchesCount: 0, error: err instanceof Error ? err.message : 'Regex execution failed' };
   }
 }
 
@@ -589,7 +595,7 @@ export function importFromRegexJson(jsonString: string): { scripts: RegexScript[
     }
 
     return { scripts: imported };
-  } catch (err: any) {
-    return { scripts: [], error: err?.message || 'Failed to parse JSON file' };
+  } catch (err) {
+    return { scripts: [], error: err instanceof Error ? err.message : 'Failed to parse JSON file' };
   }
 }

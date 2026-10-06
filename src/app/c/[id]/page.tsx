@@ -16,7 +16,6 @@ import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
 import { deleteCharacter, saveLocalChat, saveLocalMessages, ensureCharacterInCloud, isUuid } from '@/lib/chats/chat-manager';
 import { formatRoleplayText } from '@/lib/prompt/macros';
-import { useSettings } from '@/lib/store/settings';
 import { toast } from 'sonner';
 import type { Character, Persona } from '@/lib/supabase/types';
 
@@ -24,7 +23,6 @@ export default function CharacterProfilePage() {
   const params = useParams();
   const router = useRouter();
   const charId = params?.id as string;
-  const [settings] = useSettings();
   const supabase = createClient();
 
   const [character, setCharacter] = useState<Character | null>(null);
@@ -48,8 +46,8 @@ export default function CharacterProfilePage() {
 
       // 2. Check local storage
       try {
-        const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
-        const found = localList.find((c: any) => c.id === charId || c.name === charId);
+        const localList: Character[] = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+        const found = localList.find((c) => c.id === charId || c.name === charId);
         if (found) {
           setCharacter(found as Character);
           return;
@@ -162,9 +160,9 @@ export default function CharacterProfilePage() {
           router.push(`/chat/${newChat.id}`);
           return;
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('Error starting cloud chat:', err);
-        toast.error('Error starting cloud chat: ' + err.message);
+        toast.error('Error starting cloud chat: ' + (err instanceof Error ? err.message : String(err)));
       }
     }
 

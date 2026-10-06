@@ -106,57 +106,63 @@ export function substituteMacros(
   const safeUser = (ctx.userName || 'User').trim();
   const now = new Date();
 
+  // NOTE ON REPLACEMENTS: `String.replace` parses its replacement string for
+  // `$&`, `$'`, `` $` ``, `$$` and `$1`…`$n`. Every value below is user-authored
+  // free text (character names, descriptions, pasted bios), so each is passed as
+  // a function to be inserted literally — otherwise a single `$'` in a character
+  // description silently injects the rest of the template into the output.
+
   // 1. Possessive macros first (e.g. {{char}}'s or {{user}}'s)
   let result = text
-    .replace(/\{\{\s*char\s*\}\}['’]s/gi, `${safeChar}'s`)
-    .replace(/\{\{\s*user\s*\}\}['’]s/gi, `${safeUser}'s`)
-    .replace(/<BOT>['’]s/gi, `${safeChar}'s`)
-    .replace(/<USER>['’]s/gi, `${safeUser}'s`)
-    .replace(/<CHAR>['’]s/gi, `${safeChar}'s`);
+    .replace(/\{\{\s*char\s*\}\}['’]s/gi, () => `${safeChar}'s`)
+    .replace(/\{\{\s*user\s*\}\}['’]s/gi, () => `${safeUser}'s`)
+    .replace(/<BOT>['’]s/gi, () => `${safeChar}'s`)
+    .replace(/<USER>['’]s/gi, () => `${safeUser}'s`)
+    .replace(/<CHAR>['’]s/gi, () => `${safeChar}'s`);
 
   // 2. Character macros with casing awareness
   result = result
-    .replace(/\{\{\s*CHAR\s*\}\}/g, safeChar.toUpperCase())
-    .replace(/\{\{\s*Char\s*\}\}/g, safeChar)
-    .replace(/\{\{\s*char\s*\}\}/gi, safeChar)
-    .replace(/\{\{\s*bot\s*\}\}/gi, safeChar)
-    .replace(/\{\{\s*char_name\s*\}\}/gi, safeChar)
-    .replace(/\{\{\s*charIfNotGroup\s*\}\}/gi, safeChar)
-    .replace(/<BOT>/gi, safeChar)
-    .replace(/<CHAR>/gi, safeChar);
+    .replace(/\{\{\s*CHAR\s*\}\}/g, () => safeChar.toUpperCase())
+    .replace(/\{\{\s*Char\s*\}\}/g, () => safeChar)
+    .replace(/\{\{\s*char\s*\}\}/gi, () => safeChar)
+    .replace(/\{\{\s*bot\s*\}\}/gi, () => safeChar)
+    .replace(/\{\{\s*char_name\s*\}\}/gi, () => safeChar)
+    .replace(/\{\{\s*charIfNotGroup\s*\}\}/gi, () => safeChar)
+    .replace(/<BOT>/gi, () => safeChar)
+    .replace(/<CHAR>/gi, () => safeChar);
 
   // 3. User / Persona macros with casing awareness
   result = result
-    .replace(/\{\{\s*USER\s*\}\}/g, safeUser.toUpperCase())
-    .replace(/\{\{\s*User\s*\}\}/g, safeUser)
-    .replace(/\{\{\s*user\s*\}\}/gi, safeUser)
-    .replace(/\{\{\s*persona\s*\}\}/gi, safeUser)
-    .replace(/\{\{\s*user_name\s*\}\}/gi, safeUser)
-    .replace(/<USER>/gi, safeUser);
+    .replace(/\{\{\s*USER\s*\}\}/g, () => safeUser.toUpperCase())
+    .replace(/\{\{\s*User\s*\}\}/g, () => safeUser)
+    .replace(/\{\{\s*user\s*\}\}/gi, () => safeUser)
+    .replace(/\{\{\s*persona\s*\}\}/gi, () => safeUser)
+    .replace(/\{\{\s*user_name\s*\}\}/gi, () => safeUser)
+    .replace(/<USER>/gi, () => safeUser);
 
   // 4. Character & Persona metadata macros
   if (ctx.description !== undefined) {
-    result = result.replace(/\{\{\s*description\s*\}\}/gi, ctx.description);
+    result = result.replace(/\{\{\s*description\s*\}\}/gi, () => ctx.description!);
   }
   if (ctx.personality !== undefined) {
-    result = result.replace(/\{\{\s*personality\s*\}\}/gi, ctx.personality);
+    result = result.replace(/\{\{\s*personality\s*\}\}/gi, () => ctx.personality!);
   }
   if (ctx.scenario !== undefined) {
-    result = result.replace(/\{\{\s*scenario\s*\}\}/gi, ctx.scenario);
+    result = result.replace(/\{\{\s*scenario\s*\}\}/gi, () => ctx.scenario!);
   }
   if (ctx.personaDescription !== undefined) {
-    result = result.replace(/\{\{\s*persona_description\s*\}\}/gi, ctx.personaDescription);
+    result = result.replace(/\{\{\s*persona_description\s*\}\}/gi, () => ctx.personaDescription!);
   }
 
   // 5. Message tracking macros
   if (ctx.lastMessage !== undefined) {
-    result = result.replace(/\{\{\s*lastMessage\s*\}\}/gi, ctx.lastMessage);
+    result = result.replace(/\{\{\s*lastMessage\s*\}\}/gi, () => ctx.lastMessage!);
   }
   if (ctx.lastUserMessage !== undefined) {
-    result = result.replace(/\{\{\s*lastUserMessage\s*\}\}/gi, ctx.lastUserMessage);
+    result = result.replace(/\{\{\s*lastUserMessage\s*\}\}/gi, () => ctx.lastUserMessage!);
   }
   if (ctx.lastCharMessage !== undefined) {
-    result = result.replace(/\{\{\s*lastCharMessage\s*\}\}/gi, ctx.lastCharMessage);
+    result = result.replace(/\{\{\s*lastCharMessage\s*\}\}/gi, () => ctx.lastCharMessage!);
   }
 
   // 6. Time and Date macros
@@ -167,7 +173,7 @@ export function substituteMacros(
     .replace(/\{\{\s*isodate\s*\}\}/gi, now.toISOString().split('T')[0]);
 
   // 7. Dynamic Random and Dice Roll macros
-  // {{random::a,b,c}}
+  // {{random::a,b,c}} — function replacement inserts the choice literally
   result = result.replace(/\{\{\s*random::([^}]+)\}\}/gi, (_match, group: string) => {
     const choices = group.split(',').map((s) => s.trim()).filter(Boolean);
     if (!choices.length) return '';

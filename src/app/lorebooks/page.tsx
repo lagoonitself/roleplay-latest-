@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2, Key } from 'lucide-react';
+import { ArrowLeft, Plus, Key } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Lorebook, LorebookEntry } from '@/lib/supabase/types';

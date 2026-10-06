@@ -26,6 +26,7 @@ import { parseCharacterCardJson, parseCharacterFromPng } from '@/lib/cards/card-
 import { CharacterAvatar } from '@/components/character-avatar';
 import { toast } from 'sonner';
 import { saveLocalChat } from '@/lib/chats/chat-manager';
+import type { Character } from '@/lib/supabase/types';
 
 const POPULAR_TAGS = ['Fantasy', 'Romance', 'Sci-Fi', 'Cyberpunk', 'Mystery', 'Supernatural', 'Adventure', 'Companion'];
 
@@ -105,8 +106,8 @@ export default function CreateCharacterPage() {
           if (avatarDataUrl) setAvatarUrl(avatarDataUrl);
 
           toast.success(`Imported PNG card: "${parsed.name || file.name}" with avatar!`);
-        } catch (err: any) {
-          toast.error(err.message || 'Failed to read PNG character card');
+        } catch (err) {
+          toast.error((err instanceof Error ? err.message : '') || 'Failed to read PNG character card');
         }
       };
       reader.readAsArrayBuffer(file);
@@ -186,8 +187,8 @@ export default function CreateCharacterPage() {
       setAiModalOpen(false);
       setAiPrompt('');
       toast.success(`Generated "${char.name}" successfully!`);
-    } catch (err: any) {
-      toast.error(err.message || 'Generation error');
+    } catch (err) {
+      toast.error((err instanceof Error ? err.message : '') || 'Generation error');
     } finally {
       setAiLoading(false);
     }
@@ -253,8 +254,8 @@ export default function CreateCharacterPage() {
 
       // Persist to local cache for instant offline access
       try {
-        const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
-        const filtered = localList.filter((c: any) => c.name !== name.trim());
+        const localList: Character[] = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+        const filtered = localList.filter((c) => c.name !== name.trim());
         localStorage.setItem('cadenza_local_characters', JSON.stringify([data, ...filtered]));
       } catch {}
 
@@ -273,8 +274,8 @@ export default function CreateCharacterPage() {
       ...characterPayload,
     };
     try {
-      const localList = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
-      const filtered = localList.filter((c: any) => c.name !== name.trim());
+      const localList: Character[] = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
+      const filtered = localList.filter((c) => c.name !== name.trim());
       localStorage.setItem('cadenza_local_characters', JSON.stringify([localChar, ...filtered]));
     } catch {}
 
@@ -284,7 +285,7 @@ export default function CreateCharacterPage() {
       id: localChatId,
       user_id: 'guest',
       character_id: localCharId,
-      character: localChar as any,
+      character: localChar as Character,
       persona_id: null,
       title: `Chat with ${name}`,
       leaf_id: null,
@@ -494,7 +495,7 @@ export default function CreateCharacterPage() {
               <select
                 id="studio-rating"
                 value={contentRating}
-                onChange={(e) => setContentRating(e.target.value as any)}
+                onChange={(e) => setContentRating(e.target.value as 'sfw' | 'mature' | 'explicit')}
                 className="field cursor-pointer"
               >
                 <option value="sfw">SFW (general audiences)</option>
@@ -826,7 +827,9 @@ export default function CreateCharacterPage() {
             </div>
 
             <p className="type-meta leading-relaxed">
-              Describe your idea, or paste a bio from another app. The generator fills in name, appearance, greeting, scenario, psychology, and speech style.
+              Describe your idea, or paste a bio from another app. Details you specify — name,
+              traits, tone, rating — are kept exactly; the generator only fills the gaps: appearance,
+              greeting, scenario, psychology, and speech style.
             </p>
 
             <label htmlFor="studio-ai-prompt" className="sr-only">

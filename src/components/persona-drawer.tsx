@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   X,
@@ -37,7 +37,7 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  const loadPersonas = async () => {
+  const loadPersonas = useCallback(async () => {
     let localList: Persona[] = [];
     try {
       localList = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
@@ -81,13 +81,15 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
       } catch {}
     }
     setPersonas(localList);
-  };
+  }, [supabase]);
 
   useEffect(() => {
-    if (open) {
-      loadPersonas();
-    }
-  }, [open, supabase]);
+    if (!open) return;
+    const timer = setTimeout(() => {
+      void loadPersonas();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [open, loadPersonas]);
 
   if (!open) return null;
 

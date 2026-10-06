@@ -79,12 +79,15 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   }, [supabase]);
 
   useEffect(() => {
-    setApiKey(settings.opencodeApiKey);
-    setModel(settings.opencodeModel);
-    setEndpoint(settings.opencodeEndpoint);
-    setUncensored(settings.uncensoredMode);
-    setTemperature(settings.defaultTemperature);
-    setThinking(settings.thinkingEnabled);
+    const t = setTimeout(() => {
+      setApiKey(settings.opencodeApiKey);
+      setModel(settings.opencodeModel);
+      setEndpoint(settings.opencodeEndpoint);
+      setUncensored(settings.uncensoredMode);
+      setTemperature(settings.defaultTemperature);
+      setThinking(settings.thinkingEnabled);
+    }, 0);
+    return () => clearTimeout(t);
   }, [settings, open]);
 
   if (!open) return null;

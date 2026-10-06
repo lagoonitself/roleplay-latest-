@@ -10,7 +10,7 @@ export interface Profile {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
-  settings: Record<string, any>;
+  settings: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -54,7 +54,7 @@ export interface Character {
     presence_penalty?: number;
     custom_state_fields?: Record<string, string>;
   };
-  generation: Record<string, any>;
+  generation: Record<string, unknown>;
   accent_color: string | null;
   favorite: boolean;
   chat_count: number;
@@ -99,7 +99,7 @@ export interface Chat {
   leaf_id: string | null;
   memory_cursor_id: string | null;
   authors_note: string;
-  settings: Record<string, any>;
+  settings: Record<string, unknown>;
   mode?: 'solo' | 'duo' | string;
   pinned: boolean;
   archived: boolean;
@@ -188,7 +188,7 @@ export interface ChatState {
     inventory?: string[];
     current_clothing?: string;
     active_events?: string[];
-    custom?: Record<string, any>;
+    custom?: Record<string, unknown>;
   };
   updated_at: string;
 }

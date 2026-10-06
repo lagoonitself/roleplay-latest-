@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { assemblePrompt } from '@/lib/prompt/assembler';
 import { VERBOSITY_GUIDE } from '@/lib/prompt/system-prompt';
 import { formatRoleplayText } from '@/lib/prompt/macros';
@@ -18,7 +19,7 @@ function sleep(ms: number) {
 }
 
 export async function loadOwnedAgent(
-  supabase: any,
+  supabase: SupabaseClient,
   userId: string,
   ref: DuoAgentRef
 ): Promise<LoadedAgent | null> {
@@ -57,7 +58,7 @@ export async function loadOwnedAgent(
   };
 }
 
-async function readChat(supabase: any, chatId: string, userId: string) {
+async function readChat(supabase: SupabaseClient, chatId: string, userId: string) {
   const { data, error } = await supabase
     .from('chats')
     .select('*')
@@ -65,11 +66,11 @@ async function readChat(supabase: any, chatId: string, userId: string) {
     .eq('user_id', userId)
     .maybeSingle();
   if (error || !data) return null;
-  return data as { id: string; user_id: string; settings: Record<string, any>; updated_at: string };
+  return data as { id: string; user_id: string; settings: Record<string, unknown>; updated_at: string };
 }
 
 export async function claimTurn(
-  supabase: any,
+  supabase: SupabaseClient,
   chatId: string,
   userId: string,
   runId: string
@@ -101,7 +102,7 @@ export async function claimTurn(
 }
 
 export async function mergeDuo(
-  supabase: any,
+  supabase: SupabaseClient,
   chatId: string,
   userId: string,
   patch: (current: DuoSession) => DuoSession
@@ -140,7 +141,7 @@ function cutAtOtherName(text: string, otherName: string): string {
   return match > 0 ? text.slice(0, match).trim() : text;
 }
 
-async function settleStaleStreaming(supabase: any, chatId: string, userId: string) {
+async function settleStaleStreaming(supabase: SupabaseClient, chatId: string, userId: string) {
   await supabase
     .from('messages')
     .update({ status: 'stopped' })
@@ -150,7 +151,7 @@ async function settleStaleStreaming(supabase: any, chatId: string, userId: strin
 }
 
 async function insertMessage(
-  supabase: any,
+  supabase: SupabaseClient,
   input: {
     chatId: string;
     userId: string;
@@ -212,7 +213,23 @@ async function consumeStream(
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed.startsWith('data: ') || trimmed === 'data: [DONE]') continue;
-      let data: any;
+      let data: {
+        usage?: {
+          prompt_tokens?: number;
+          input_tokens?: number;
+          completion_tokens?: number;
+          output_tokens?: number;
+          prompt_tokens_details?: { cached_tokens?: number };
+          prompt_cache_hit_tokens?: number;
+        };
+        choices?: {
+          delta?: {
+            content?: string | null;
+            reasoning_content?: string | null;
+            reasoning?: string | null;
+          };
+        }[];
+      };
       try {
         data = JSON.parse(trimmed.slice(6));
       } catch {
@@ -248,7 +265,7 @@ async function consumeStream(
 }
 
 export async function executeClaimedTurn(opts: {
-  supabase: any;
+  supabase: SupabaseClient;
   userId: string;
   chatId: string;
   runId: string;
@@ -523,7 +540,7 @@ export async function executeClaimedTurn(opts: {
 }
 
 async function advance(
-  supabase: any,
+  supabase: SupabaseClient,
   chatId: string,
   userId: string,
   runId: string,

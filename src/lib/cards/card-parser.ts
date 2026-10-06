@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Character } from '@/lib/supabase/types';
 import { repairMojibake } from '@/lib/prompt/macros';
 
@@ -15,7 +16,7 @@ export interface CharacterBookEntry {
   secondary_keys?: string[];
   constant?: boolean;
   position?: 'before_char' | 'after_char' | 'at_depth';
-  extensions?: Record<string, any>;
+  extensions?: Record<string, unknown>;
 }
 
 export interface CharacterBook {
@@ -24,7 +25,7 @@ export interface CharacterBook {
   scan_depth?: number;
   token_budget?: number;
   recursive_scanning?: boolean;
-  extensions?: Record<string, any>;
+  extensions?: Record<string, unknown>;
   entries: CharacterBookEntry[];
 }
 
@@ -46,7 +47,7 @@ export interface CharacterCardV2 {
     tags?: string[];
     creator?: string;
     character_version?: string;
-    extensions?: Record<string, any>;
+    extensions?: Record<string, unknown>;
   };
 }
 
@@ -97,11 +98,12 @@ const clean = (val: unknown): string => (typeof val === 'string' ? repairMojibak
 /**
  * Normalizes an embedded CharacterBook from SillyTavern or Chub card
  */
-export function normalizeCharacterBook(rawBook: any): CharacterBook | null {
-  if (!rawBook || typeof rawBook !== 'object') return null;
+export function normalizeCharacterBook(raw: unknown): CharacterBook | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const rawBook = raw as Record<string, unknown>;
 
   const entries: CharacterBookEntry[] = (Array.isArray(rawBook.entries) ? rawBook.entries : [])
-    .map((e: any) => {
+    .map((e: Record<string, unknown>): CharacterBookEntry => {
       const keys = Array.isArray(e.keys)
         ? e.keys.map(clean).filter(Boolean)
         : typeof e.key === 'string'
@@ -127,7 +129,7 @@ export function normalizeCharacterBook(rawBook: any): CharacterBook | null {
         priority: typeof e.priority === 'number' ? e.priority : (typeof e.insertion_order === 'number' ? e.insertion_order : 100),
         insertion_order: typeof e.insertion_order === 'number' ? e.insertion_order : 100,
         position: e.position === 'after_char' ? 'after_char' : (e.position === 'at_depth' ? 'at_depth' : 'before_char'),
-        extensions: e.extensions || {},
+        extensions: (e.extensions as Record<string, unknown>) || {},
       };
     })
     .filter((e: CharacterBookEntry) => e.content.length > 0 && (e.keys.length > 0 || e.constant));
@@ -138,7 +140,7 @@ export function normalizeCharacterBook(rawBook: any): CharacterBook | null {
     scan_depth: typeof rawBook.scan_depth === 'number' ? rawBook.scan_depth : 4,
     token_budget: typeof rawBook.token_budget === 'number' ? rawBook.token_budget : 1200,
     recursive_scanning: rawBook.recursive_scanning !== false,
-    extensions: rawBook.extensions || {},
+    extensions: (rawBook.extensions as Record<string, unknown>) || {},
     entries,
   };
 }
@@ -307,7 +309,7 @@ export function parseCharacterFromPng(buffer: ArrayBuffer): ParsedCardResult {
  * Saves an embedded CharacterBook into Supabase lorebooks, entries, and character_lorebooks association.
  */
 export async function saveEmbeddedCharacterBook(
-  supabase: any,
+  supabase: SupabaseClient,
   characterId: string,
   userId: string,
   book: CharacterBook

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   Plus,
@@ -64,7 +64,7 @@ export function PersonaModal({
   const [aiLoading, setAiLoading] = useState(false);
 
   // Load Personas (from DB + localStorage)
-  const loadPersonas = async () => {
+  const loadPersonas = useCallback(async () => {
     let localList: Persona[] = [];
     try {
       localList = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
@@ -86,8 +86,9 @@ export function PersonaModal({
           if (!dbIds.has(lp.id)) combined.push(lp);
         }
         setPersonas(combined);
-        if (!selectedPersonaId && combined[0]) {
-          setSelectedPersonaId(combined[0].id);
+        const first = combined[0];
+        if (first) {
+          setSelectedPersonaId((prev) => prev || first.id);
         }
         return;
       }
@@ -101,17 +102,20 @@ export function PersonaModal({
       } catch {}
     }
     setPersonas(localList);
-    if (!selectedPersonaId && localList[0]) {
-      setSelectedPersonaId(localList[0].id);
+    const firstLocal = localList[0];
+    if (firstLocal) {
+      setSelectedPersonaId((prev) => prev || firstLocal.id);
     }
-  };
+  }, [supabase]);
 
   useEffect(() => {
-    if (open) {
-      loadPersonas();
+    if (!open) return;
+    const timer = setTimeout(() => {
+      void loadPersonas();
       setMode('list');
-    }
-  }, [open]);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [open, loadPersonas]);
 
   // AI Persona Generation
   const handleGenerateAI = async () => {
@@ -122,6 +126,8 @@ export function PersonaModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           idea: aiPrompt.trim(),
+          // Full partner context so the persona fits the actual world, tone, and
+          // opening scene it will chat in (and never contradicts the character).
           character: character
             ? {
                 name: character.name,
@@ -129,6 +135,10 @@ export function PersonaModal({
                 description: character.description,
                 scenario: character.scenario,
                 personality: character.personality,
+                first_message: character.first_message,
+                speech_style: character.speech_style,
+                tags: character.tags,
+                content_rating: character.content_rating,
               }
             : null,
           apiKey: settings.opencodeApiKey,
@@ -146,8 +156,8 @@ export function PersonaModal({
       if (generated.accent_color) setAccentColor(generated.accent_color);
 
       toast.success(`Generated persona "${generated.name}"!`);
-    } catch (err: any) {
-      toast.error(err.message || 'Generation error');
+    } catch (err) {
+      toast.error((err instanceof Error ? err.message : '') || 'Generation error');
     } finally {
       setAiLoading(false);
     }
@@ -384,8 +394,9 @@ export function PersonaModal({
                 </div>
 
                 <p className="type-meta leading-relaxed">
-                  Describe who you want to play, or leave it blank and let the generator draft a
-                  counterpart for this story.
+                  Describe who you want to play — anything you specify is used exactly, and the
+                  rest is filled in to fit {character ? character.name : 'your story'}. Or leave it
+                  blank and let the generator draft a counterpart for this story.
                 </p>
 
                 <div className="space-y-2">

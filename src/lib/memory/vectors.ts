@@ -78,7 +78,7 @@ export async function retrieveVectorMemories(
     });
 
     if (!error && Array.isArray(rpcData) && rpcData.length > 0) {
-      retrievedMemories = rpcData.filter((m: any) => {
+      retrievedMemories = rpcData.filter((m: Memory & { score?: number }) => {
         const score = typeof m.score === 'number' ? m.score : 1;
         // Filter out items below threshold
         if (score < scoreThreshold) return false;

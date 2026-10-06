@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Share, PlusSquare, X, Smartphone } from 'lucide-react';
 
 interface IOSInstallPromptProps {
@@ -10,21 +10,16 @@ interface IOSInstallPromptProps {
 
 export function IOSInstallPrompt({ forceOpen = false, onClose }: IOSInstallPromptProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
     // Check if device is iOS (iPhone/iPad/iPod)
     const userAgent = window.navigator.userAgent.toLowerCase();
     const isIOSDevice = /iphone|ipad|ipod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const standaloneMode = (window.navigator as any).standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-
-    setIsIOS(isIOSDevice);
-    setIsStandalone(standaloneMode);
+    const standaloneMode = (window.navigator as Navigator & { standalone?: boolean }).standalone === true || window.matchMedia('(display-mode: standalone)').matches;
 
     if (forceOpen) {
-      setIsOpen(true);
-      return;
+      const t = setTimeout(() => setIsOpen(true), 0);
+      return () => clearTimeout(t);
     }
 
     // Auto show once for iOS users not in standalone mode
@@ -38,11 +33,11 @@ export function IOSInstallPrompt({ forceOpen = false, onClose }: IOSInstallPromp
     }
   }, [forceOpen]);
 
-  const handleDismiss = () => {
+  const handleDismiss = useCallback(() => {
     setIsOpen(false);
     localStorage.setItem('cadenza_ios_pwa_dismissed', 'true');
     onClose?.();
-  };
+  }, [onClose]);
 
   // Escape closes the sheet without recording a dismissal beyond handleDismiss.
   useEffect(() => {
@@ -52,7 +47,7 @@ export function IOSInstallPrompt({ forceOpen = false, onClose }: IOSInstallPromp
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, forceOpen]);
+  }, [isOpen, forceOpen, handleDismiss]);
 
   if (!isOpen && !forceOpen) return null;
 

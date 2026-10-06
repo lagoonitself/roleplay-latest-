@@ -8,6 +8,7 @@ import {
   clearLocalLogs,
   LLM_LOG_EVENT,
   type LlmLogEntry,
+  type LoggedChatMessage,
 } from '@/lib/logs/llm-log-store';
 import { toast } from 'sonner';
 
@@ -18,8 +19,8 @@ interface ServerRow {
   character_id: string | null;
   kind: string;
   model: string;
-  params: any;
-  request_messages: any;
+  params: LlmLogEntry['params'] | null;
+  request_messages: LoggedChatMessage[] | null;
   user_message: string;
   output: string;
   reasoning: string | null;
@@ -38,7 +39,7 @@ function serverRowToEntry(r: ServerRow): LlmLogEntry {
     characterName: '',
     kind: r.kind === 'swipe' ? 'swipe' : 'chat',
     model: r.model || '',
-    params: r.params || {},
+    params: r.params || ({} as LlmLogEntry['params']),
     requestMessages: Array.isArray(r.request_messages) ? r.request_messages : [],
     userMessage: r.user_message || '',
     output: r.output || '',
@@ -94,10 +95,15 @@ export default function ModelLogsPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    const t = setTimeout(() => {
+      load();
+    }, 0);
     const onLog = () => setLocalLogs(getLocalLogs());
     window.addEventListener(LLM_LOG_EVENT, onLog);
-    return () => window.removeEventListener(LLM_LOG_EVENT, onLog);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener(LLM_LOG_EVENT, onLog);
+    };
   }, [load]);
 
   // Dedupe: a turn saved locally AND on the server appears once (prefer local — same prompt).

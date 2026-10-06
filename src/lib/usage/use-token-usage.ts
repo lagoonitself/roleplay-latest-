@@ -14,8 +14,6 @@ interface UseTokenUsageResult extends TokenUsage {
   refresh: () => Promise<void>;
 }
 
-const EMPTY: TokenUsage = { input: 0, output: 0, total: 0 };
-
 /**
  * Single source of truth for the Profile Token HUD.
  * - Guests: localStorage only.
@@ -70,7 +68,9 @@ export function useTokenUsage(): UseTokenUsageResult {
   }, []);
 
   useEffect(() => {
-    refresh();
+    const t = setTimeout(() => {
+      refresh();
+    }, 0);
     const onLocal = () => {
       // Optimistic instant update; server re-sync follows.
       setUsage(getLocalUsage());
@@ -81,6 +81,7 @@ export function useTokenUsage(): UseTokenUsageResult {
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
     return () => {
+      clearTimeout(t);
       window.removeEventListener(TOKEN_USAGE_EVENT, onLocal);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);

@@ -107,7 +107,10 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
   };
 
   useEffect(() => {
-    loadPersonas();
+    const t = setTimeout(() => {
+      loadPersonas();
+    }, 0);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
