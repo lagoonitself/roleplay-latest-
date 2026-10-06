@@ -27,15 +27,18 @@ export default function ProfilePage() {
 
   return (
     <div className="flex min-h-dvh flex-1 flex-col">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 pt-4 sm:px-6">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 pt-4 sm:px-6">
         <Link
           href="/"
-          className="apple-button rounded-full p-2 text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+          className="icon-btn"
           aria-label="Back to home"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <ArrowLeft className="h-5 w-5" aria-hidden />
         </Link>
-        <h1 className="text-base font-bold tracking-tight">Profile</h1>
+        <div>
+          <h1 className="type-page">Profile</h1>
+          <p className="type-meta">Your account, personas, and usage</p>
+        </div>
       </div>
 
       <ProfileView onOpenSettingsDialog={() => setSettingsOpen(true)} />

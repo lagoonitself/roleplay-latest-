@@ -161,30 +161,26 @@ export default function DuoNewPage() {
   const slotCard = (side: DuoSide, pick: Pick | null) => (
     <button
       onClick={() => setSlot(side)}
-      className={`flex-1 rounded-2xl border p-3 text-left transition-all apple-button ${
-        slot === side
-          ? 'border-purple-500/50 bg-purple-500/[0.08]'
-          : 'border-white/[0.08] bg-zinc-900/50 hover:border-white/[0.16]'
+      aria-pressed={slot === side}
+      aria-label={side === 'a' ? 'First voice slot' : 'Second voice slot'}
+      className={`surface flex-1 rounded-xl p-3 text-left ${
+        slot === side ? 'border-accent-line bg-accent-wash' : ''
       }`}
     >
-      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-        {side === 'a' ? 'First voice' : 'Second voice'}
-      </div>
+      <div className="type-label mb-2">{side === 'a' ? 'First voice' : 'Second voice'}</div>
       {pick ? (
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 border border-line">
             <CharacterAvatar name={pick.name} avatarUrl={pick.avatar_url} />
           </div>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold truncate">{pick.name}</div>
-            <div className="text-[11px] text-muted-foreground truncate capitalize">{pick.kind}</div>
+          <div className="min-w-0 flex-1">
+            <div className="font-serif text-[0.95rem] font-medium text-ink truncate">{pick.name}</div>
+            <div className="type-meta truncate capitalize">{pick.kind}</div>
           </div>
-          <Check className="w-4 h-4 text-emerald-400 ml-auto shrink-0" />
+          <Check className="w-4 h-4 text-accent-text ml-auto shrink-0" aria-hidden />
         </div>
       ) : (
-        <div className="text-xs text-muted-foreground py-2">
-          {slot === side ? 'Tap someone below…' : 'Not picked yet'}
-        </div>
+        <div className="type-meta py-2">{slot === side ? 'Pick someone below…' : 'Not picked yet'}</div>
       )}
     </button>
   );
@@ -192,84 +188,102 @@ export default function DuoNewPage() {
   return (
     <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-5 pb-24">
       <div className="flex items-center gap-3">
-        <Link
-          href="/duo"
-          className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Back to scenes"
-        >
-          <ArrowLeft className="w-5 h-5" />
+        <Link href="/duo" className="icon-btn shrink-0" aria-label="Back to scenes">
+          <ArrowLeft className="w-5 h-5" aria-hidden />
         </Link>
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">New scene</h1>
-          <p className="text-xs text-muted-foreground">Two people. One situation. No script.</p>
+          <h1 className="type-page">New scene</h1>
+          <p className="type-meta">Two people. One situation. No script.</p>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch">
         {slotCard('a', pickA)}
-        <div className="hidden sm:flex items-center text-[11px] font-bold text-muted-foreground px-1">×</div>
+        <div className="flex items-center justify-center type-meta px-1" aria-hidden>
+          and
+        </div>
         {slotCard('b', pickB)}
       </div>
 
-      <div className="rounded-3xl border border-white/[0.06] bg-zinc-900/40 p-4 space-y-3">
-        <label className="block">
-          <span className="text-xs font-semibold">Situation <span className="text-muted-foreground font-normal">(optional — sets the scene)</span></span>
+      <div className="surface rounded-xl p-4 space-y-4">
+        <div className="block">
+          <label htmlFor="duo-seed" className="type-label">
+            Situation <span className="text-ink-3 font-normal">(optional, sets the scene)</span>
+          </label>
           <textarea
+            id="duo-seed"
             value={seed}
             onChange={(e) => setSeed(e.target.value)}
             rows={3}
             maxLength={2000}
-            placeholder="A rooftop at midnight, rain just stopped. They haven't seen each other in years…"
-            className="mt-1.5 w-full rounded-2xl bg-black/30 border border-white/[0.08] px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40 resize-none"
+            placeholder="A rooftop at midnight, rain just stopped. They have not seen each other in years…"
+            className="field mt-1.5 resize-none"
           />
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label className="block">
-            <span className="text-xs font-semibold">Who speaks first</span>
-            <div className="mt-1.5 flex rounded-full bg-black/30 border border-white/[0.08] p-1 text-xs font-semibold">
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="block">
+            <span id="duo-first-label" className="type-label">
+              Who speaks first
+            </span>
+            <div
+              role="group"
+              aria-labelledby="duo-first-label"
+              className="mt-1.5 flex rounded-full border border-line p-1 text-xs font-medium"
+            >
               {(['a', 'b'] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => setFirstSpeaker(s)}
-                  className={`flex-1 px-3 py-1.5 rounded-full transition-colors apple-button truncate ${
-                    firstSpeaker === s ? 'bg-purple-600 text-white' : 'text-muted-foreground hover:text-foreground'
+                  aria-pressed={firstSpeaker === s}
+                  className={`flex-1 px-3 py-1.5 rounded-full truncate ${
+                    firstSpeaker === s ? 'bg-accent-wash text-accent-text' : 'text-ink-3'
                   }`}
                 >
                   {(s === 'a' ? pickA?.name : pickB?.name) || (s === 'a' ? 'First' : 'Second')}
                 </button>
               ))}
             </div>
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold">Length · {maxTurns} lines</span>
-            <input
-              type="range"
-              min={4}
-              max={DUO_MAX_TURNS_CAP}
-              value={maxTurns}
-              onChange={(e) => setMaxTurns(Number(e.target.value))}
-              className="mt-3 w-full accent-purple-500"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold">Pace · {(delayMs / 1000).toFixed(1)}s</span>
-            <input
-              type="range"
-              min={0}
-              max={6000}
-              step={400}
-              value={delayMs}
-              onChange={(e) => setDelayMs(Number(e.target.value))}
-              className="mt-3 w-full accent-purple-500"
-            />
-          </label>
+          </div>
+          <div className="block">
+            <label htmlFor="duo-length" className="type-label">
+              Length
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="duo-length"
+                type="range"
+                min={4}
+                max={DUO_MAX_TURNS_CAP}
+                value={maxTurns}
+                aria-label={`Length, ${maxTurns} lines`}
+                onChange={(e) => setMaxTurns(Number(e.target.value))}
+                className="mt-3 w-full accent-[var(--accent)]"
+              />
+              <span className="type-code shrink-0">{maxTurns}</span>
+            </div>
+          </div>
+          <div className="block">
+            <label htmlFor="duo-pace" className="type-label">
+              Pace
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="duo-pace"
+                type="range"
+                min={0}
+                max={6000}
+                step={400}
+                value={delayMs}
+                aria-label={`Pace, ${(delayMs / 1000).toFixed(1)} seconds between lines`}
+                onChange={(e) => setDelayMs(Number(e.target.value))}
+                className="mt-3 w-full accent-[var(--accent)]"
+              />
+              <span className="type-code shrink-0">{(delayMs / 1000).toFixed(1)}s</span>
+            </div>
+          </div>
         </div>
-        <button
-          onClick={start}
-          disabled={!canStart}
-          className="w-full py-2.5 rounded-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold apple-button flex items-center justify-center gap-2 shadow-md shadow-purple-600/20"
-        >
-          {starting && <Loader2 className="w-4 h-4 animate-spin" />}
+        <button onClick={start} disabled={!canStart} className="btn btn-primary w-full py-2.5 disabled:opacity-40">
+          {starting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}
           {starting ? 'Opening the scene…' : 'Start the scene'}
         </button>
       </div>
@@ -277,21 +291,30 @@ export default function DuoNewPage() {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row gap-2.5">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden />
+            <label htmlFor="duo-search" className="sr-only">
+              Search your roster
+            </label>
             <input
+              id="duo-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search your roster…"
-              className="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-zinc-800/40 border border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+              className="field pl-9"
             />
           </div>
-          <div className="flex rounded-full bg-zinc-800/50 border border-white/[0.08] p-1 text-xs font-semibold">
+          <div
+            role="group"
+            aria-label="Filter roster"
+            className="flex rounded-full border border-line p-1 text-xs font-medium"
+          >
             {(['all', 'characters', 'personas'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-3.5 py-1.5 rounded-full capitalize transition-colors apple-button ${
-                  tab === t ? 'bg-purple-600 text-white' : 'text-muted-foreground hover:text-foreground'
+                aria-pressed={tab === t}
+                className={`px-3.5 py-1.5 rounded-full capitalize ${
+                  tab === t ? 'bg-accent-wash text-accent-text' : 'text-ink-3'
                 }`}
               >
                 {t}
@@ -313,30 +336,27 @@ export default function DuoNewPage() {
                 key={`${opt.kind}-${opt.id}`}
                 onClick={() => choose(opt)}
                 disabled={taken}
-                className={`flex items-center gap-2.5 p-2.5 rounded-2xl border text-left transition-all apple-button ${
-                  active
-                    ? 'border-purple-500/60 bg-purple-500/[0.1]'
-                    : taken
-                      ? 'border-white/[0.04] bg-zinc-900/30 opacity-40'
-                      : 'border-white/[0.06] bg-zinc-900/40 hover:border-purple-500/30'
-                }`}
+                aria-pressed={active}
+                className={`surface flex items-center gap-2.5 p-2.5 rounded-lg text-left ${
+                  active ? 'border-accent-line' : ''
+                } ${taken ? 'opacity-40' : ''}`}
               >
-                <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0">
+                <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 border border-line">
                   <CharacterAvatar name={opt.name} avatarUrl={opt.avatar_url} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold truncate">{opt.name}</div>
-                  <div className="text-[11px] text-muted-foreground truncate capitalize">
-                    {opt.kind} · {opt.sub}
+                  <div className="font-serif text-[0.9rem] font-medium text-ink truncate">{opt.name}</div>
+                  <div className="type-meta truncate capitalize">
+                    {opt.kind}, {opt.sub}
                   </div>
                 </div>
-                {active && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                {active && <Check className="w-4 h-4 text-accent-text shrink-0" aria-hidden />}
               </button>
             );
           })}
         </div>
         {options.length === 0 && (
-          <p className="text-xs text-muted-foreground text-center py-8">
+          <p className="type-meta text-center py-8">
             Nothing matches. Create characters or personas first, then come back.
           </p>
         )}

@@ -11,10 +11,10 @@ import {
   Sun,
   Moon,
   BookOpen,
-  ExternalLink,
   LogOut,
   RefreshCw,
   FlaskConical,
+  ChevronRight,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { createClient } from '@/lib/supabase/client';
@@ -205,10 +205,10 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-4 pb-28 pt-4 sm:px-6 sm:pt-6">
       {/* Account header */}
-      <section className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[#151518]/90 p-5 shadow-xl shadow-black/30">
+      <section className="surface rounded-xl p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3.5">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-zinc-800 text-lg font-bold text-white">
+            <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-sunken font-serif text-lg text-ink" style={{ width: 56, height: 56 }}>
               {user?.avatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={user.avatar} alt="" className="h-full w-full object-cover" />
@@ -217,51 +217,55 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
               )}
             </div>
             <div className="min-w-0">
-              <h2 className="truncate text-base font-bold tracking-tight text-white">
+              <h2 className="type-page truncate font-serif">
                 {user?.name || 'Guest explorer'}
               </h2>
-              <p className="truncate text-xs text-zinc-400">
+              <p className="type-meta truncate">
                 {user?.email || 'Chats and usage saved on this device'}
               </p>
-              <p className="mt-1 text-[11px] text-zinc-500">
+              <p className="type-meta mt-1">
                 {personas.length} {personas.length === 1 ? 'persona' : 'personas'} in your roster
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="apple-button rounded-full border border-white/10 p-2 text-zinc-400 hover:text-white disabled:opacity-50"
+            className="icon-btn border border-line disabled:opacity-50"
             title="Refresh profile and usage"
             aria-label="Refresh profile and usage"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
           </button>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {user ? (
             <button
+              type="button"
               onClick={handleSignOut}
-              className="apple-button inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-3.5 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20"
+              className="btn btn-danger inline-flex items-center gap-1.5"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <LogOut className="h-3.5 w-3.5" aria-hidden />
               Sign out
             </button>
           ) : (
             <button
+              type="button"
               onClick={handleSignIn}
-              className="apple-button rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black hover:opacity-90"
+              className="btn btn-ghost"
             >
               Sign in with Google
             </button>
           )}
           <button
+            type="button"
             onClick={onOpenSettingsDialog}
-            className="apple-button inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.08]"
+            className="btn btn-ghost inline-flex items-center gap-1.5"
           >
-            <Settings className="h-3.5 w-3.5 text-purple-400" />
-            AI engine & keys
+            <Settings className="h-3.5 w-3.5 text-ink-3" aria-hidden />
+            AI engine and keys
           </button>
         </div>
       </section>
@@ -277,18 +281,18 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
 
       {/* Active persona spotlight */}
       {activePersona && (
-        <section className="rounded-3xl border border-purple-500/30 bg-purple-950/20 p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">
-              Currently roleplaying as
+        <section className="rounded-xl border border-accent-line bg-accent-wash p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="type-label">
+              Roleplaying as
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-purple-600 px-2 py-0.5 text-[10px] font-bold text-white">
-              <Check className="h-3 w-3" />
+            <span className="chip chip-accent inline-flex items-center gap-1">
+              <Check className="h-3 w-3" aria-hidden />
               Active
             </span>
           </div>
           <div className="flex items-center gap-3 pt-2.5">
-            <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-800">
+            <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
               <CharacterAvatar
                 name={activePersona.name}
                 avatarUrl={activePersona.avatar_url}
@@ -296,8 +300,8 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
               />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate text-sm font-bold text-white">{activePersona.name}</h3>
-              <p className="line-clamp-1 text-xs text-zinc-300">{activePersona.description}</p>
+              <h3 className="truncate font-serif text-base font-medium text-ink">{activePersona.name}</h3>
+              <p className="type-meta line-clamp-1">{activePersona.description}</p>
             </div>
           </div>
         </section>
@@ -306,55 +310,59 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
       {/* Persona roster */}
       <section className="space-y-2.5">
         <div className="flex items-center justify-between px-1">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+          <h3 className="type-sec">
             Persona roster ({personas.length})
           </h3>
           <button
+            type="button"
             onClick={() => setCreateModalOpen(true)}
-            className="apple-button inline-flex items-center gap-1 text-xs font-semibold text-purple-400 hover:text-purple-300"
+            className="btn btn-quiet inline-flex items-center gap-1"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5" aria-hidden />
             Add persona
           </button>
         </div>
 
-        <div className="space-y-2">
+        <div className="surface rounded-xl divide-y divide-line overflow-hidden">
           {personas.map((persona) => {
             const isActive = persona.id === activePersona?.id;
             return (
               <div
                 key={persona.id}
-                onClick={() => handleSetActive(persona)}
-                className={`group flex cursor-pointer items-center justify-between rounded-2xl border p-3 transition-all apple-button ${
-                  isActive
-                    ? 'border-purple-500/40 bg-purple-900/15 text-white'
-                    : 'border-white/[0.06] bg-zinc-800/40 text-zinc-300 hover:bg-zinc-800/70'
-                }`}
+                className={`flex items-center gap-2 p-3 ${isActive ? 'border-l-2 border-accent-line' : ''}`}
               >
-                <div className="flex min-w-0 items-center gap-3 pr-2">
-                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => handleSetActive(persona)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  aria-pressed={isActive}
+                >
+                  <span className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-line">
                     <CharacterAvatar
                       name={persona.name}
                       avatarUrl={persona.avatar_url}
                       className="h-full w-full object-cover"
                     />
-                  </div>
-                  <div className="truncate">
-                    <div className="flex items-center gap-1.5 truncate text-xs font-semibold text-white sm:text-sm">
+                  </span>
+                  <span className="truncate min-w-0">
+                    <span className="flex items-center gap-1.5 truncate font-serif text-sm font-medium text-ink">
                       <span className="truncate">{persona.name}</span>
-                      {isActive && <Check className="h-3.5 w-3.5 shrink-0 text-purple-400" />}
-                    </div>
-                    <p className="mt-0.5 truncate text-[11px] text-zinc-400">{persona.description}</p>
-                  </div>
-                </div>
+                      {isActive && (
+                        <span className="chip chip-accent shrink-0">Active</span>
+                      )}
+                    </span>
+                    <span className="type-meta mt-0.5 block truncate">{persona.description}</span>
+                  </span>
+                </button>
                 {personas.length > 1 && (
                   <button
+                    type="button"
                     onClick={(e) => handleDelete(e, persona.id, persona.name)}
-                    className="shrink-0 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                    className="icon-btn shrink-0"
                     title={`Delete ${persona.name}`}
                     aria-label={`Delete ${persona.name}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
                   </button>
                 )}
               </div>
@@ -364,58 +372,59 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
       </section>
 
       {/* Preferences */}
-      <section className="space-y-2 border-t border-white/[0.06] pt-4">
-        <h3 className="px-1 text-xs font-bold uppercase tracking-wider text-zinc-400">Preferences</h3>
-        <div className="grid grid-cols-2 gap-2">
+      <section className="space-y-2">
+        <h3 className="type-sec px-1">Preferences</h3>
+        <div className="surface rounded-xl divide-y divide-line overflow-hidden">
           <button
+            type="button"
             onClick={onOpenSettingsDialog}
-            className="flex items-center gap-2.5 rounded-2xl border border-white/[0.06] bg-zinc-800/50 p-3 text-left text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-800 apple-button"
+            className="flex w-full items-center justify-between p-3 text-left"
           >
-            <User className="h-4 w-4 shrink-0 text-purple-400" />
-            <span>AI engine & API keys</span>
+            <span className="flex items-center gap-2.5">
+              <User className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+              <span className="type-sec">AI engine and API keys</span>
+            </span>
+            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
           </button>
           <button
+            type="button"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="flex items-center gap-2.5 rounded-2xl border border-white/[0.06] bg-zinc-800/50 p-3 text-left text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-800 apple-button"
+            className="flex w-full items-center justify-between p-3 text-left"
           >
-            {theme === 'dark' ? (
-              <>
-                <Sun className="h-4 w-4 shrink-0 text-amber-400" />
-                <span>Light theme</span>
-              </>
-            ) : (
-              <>
-                <Moon className="h-4 w-4 shrink-0 text-purple-400" />
-                <span>Dark theme</span>
-              </>
-            )}
+            <span className="flex items-center gap-2.5">
+              {theme === 'dark' ? (
+                <Sun className="h-4 w-4 shrink-0 text-ink-2" aria-hidden />
+              ) : (
+                <Moon className="h-4 w-4 shrink-0 text-ink-2" aria-hidden />
+              )}
+              <span className="type-sec">{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+            </span>
+            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
           </button>
-        </div>
-        <Link
-          href="/lorebooks"
-          className="flex w-full items-center justify-between rounded-2xl border border-white/[0.04] bg-zinc-800/30 p-3 text-xs text-zinc-300 transition-colors hover:bg-zinc-800/60"
-        >
-          <div className="flex items-center gap-2.5">
-            <BookOpen className="h-4 w-4 text-blue-400" />
-            <span>World lorebooks & knowledge</span>
-          </div>
-          <ExternalLink className="h-3.5 w-3.5 text-zinc-500" />
-        </Link>
-        <Link
-          href="/logs"
-          className="flex w-full items-center justify-between rounded-2xl border border-amber-400/15 bg-amber-500/[0.04] p-3 text-xs text-zinc-300 transition-colors hover:bg-amber-500/[0.08]"
-        >
-          <div className="flex items-center gap-2.5">
-            <FlaskConical className="h-4 w-4 text-amber-300" />
-            <span>
-              Model logs{' '}
-              <span className="ml-1 rounded-full border border-amber-400/25 bg-amber-500/10 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-amber-300">
+          <Link
+            href="/lorebooks"
+            className="flex w-full items-center justify-between p-3"
+          >
+            <span className="flex items-center gap-2.5">
+              <BookOpen className="h-4 w-4 text-ink-3" aria-hidden />
+              <span className="type-sec">World lorebooks and knowledge</span>
+            </span>
+            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
+          </Link>
+          <Link
+            href="/logs"
+            className="flex w-full items-center justify-between p-3"
+          >
+            <span className="flex items-center gap-2.5">
+              <FlaskConical className="h-4 w-4 text-ink-3" aria-hidden />
+              <span className="type-sec">Model logs</span>
+              <span className="chip chip-warn">
                 Dev
               </span>
             </span>
-          </div>
-          <ExternalLink className="h-3.5 w-3.5 text-zinc-500" />
-        </Link>
+            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
+          </Link>
+        </div>
       </section>
 
       <PersonaModal

@@ -10,27 +10,11 @@ interface CharacterAvatarProps {
 }
 
 /**
- * Procedural minimalist color palette for avatar gradients
+ * Monochrome engraved monogram fallback.
+ * A dark plate with a serif initial and a single hairline ring.
+ * `accentColor` is honoured only as a low-opacity tint on the
+ * ring and initial — never as a saturated fill or gradient.
  */
-const PALETTES = [
-  { from: '#3b82f6', to: '#1d4ed8', glyph: '#93c5fd' }, // Blue
-  { from: '#8b5cf6', to: '#6d28d9', glyph: '#c4b5fd' }, // Violet
-  { from: '#ec4899', to: '#be185d', glyph: '#fbcfe8' }, // Rose
-  { from: '#f59e0b', to: '#b45309', glyph: '#fde68a' }, // Amber
-  { from: '#10b981', to: '#047857', glyph: '#a7f3d0' }, // Emerald
-  { from: '#6366f1', to: '#4338ca', glyph: '#c7d2fe' }, // Indigo
-  { from: '#14b8a6', to: '#0f766e', glyph: '#99f6e4' }, // Teal
-];
-
-function getPalette(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % PALETTES.length;
-  return PALETTES[index];
-}
-
 export function CharacterAvatar({
   name,
   avatarUrl,
@@ -38,8 +22,13 @@ export function CharacterAvatar({
   accentColor,
 }: CharacterAvatarProps) {
   const [imgError, setImgError] = useState(false);
-  const palette = getPalette(name || 'Character');
   const initial = (name || 'C').trim().charAt(0).toUpperCase();
+
+  // The only colour on this plate: the author's accent folded
+  // into the metadata ink at low opacity. Falls back to plain ink-2.
+  const tint = accentColor
+    ? `color-mix(in oklab, ${accentColor} 30%, var(--ink-3))`
+    : 'var(--ink-2)';
 
   // If valid image provided and not errored, render it
   if (avatarUrl && !imgError && !avatarUrl.includes('images.unsplash.com/photo-1534528741775')) {
@@ -48,63 +37,44 @@ export function CharacterAvatar({
       <img
         src={avatarUrl}
         alt={name}
+        width={96}
+        height={96}
+        loading="lazy"
         onError={() => setImgError(true)}
         className={`object-cover object-center ${className}`}
+        style={{ aspectRatio: '1 / 1' }}
       />
     );
   }
 
-  // Otherwise render a sleek, minimalist SVG avatar with monogram & ambient glow
+  // Otherwise render the engraved monogram plate
   return (
     <div
-      className={`relative flex items-center justify-center overflow-hidden select-none ${className}`}
-      style={{
-        background: `radial-gradient(120% 120% at 30% 20%, #27272a 0%, #18181b 60%, #09090b 100%)`,
-      }}
+      className={`bg-sunken relative flex items-center justify-center overflow-hidden select-none ${className}`}
+      role="img"
+      aria-label={name}
     >
-      {/* Subtle ambient lighting arc */}
-      <div
-        className="absolute -top-1/4 -right-1/4 w-3/4 h-3/4 rounded-full opacity-30 blur-xl pointer-events-none"
-        style={{
-          background: accentColor || palette.from,
-        }}
-      />
-
       <svg
         viewBox="0 0 100 100"
-        className="w-full h-full p-2"
+        className="h-full w-full"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
       >
-        <defs>
-          <linearGradient id={`grad-${initial}`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={accentColor || palette.glyph} stopOpacity="0.9" />
-            <stop offset="100%" stopColor={palette.from} stopOpacity="0.6" />
-          </linearGradient>
-        </defs>
+        {/* Concentric hairline ring */}
+        <circle cx="50" cy="50" r="40" stroke="var(--line)" strokeWidth="1" />
+        <circle cx="50" cy="50" r="32" stroke={tint} strokeOpacity="0.45" strokeWidth="1" />
 
-        {/* Minimal geometric background halo */}
-        <circle cx="50" cy="50" r="38" stroke="white" strokeOpacity="0.08" strokeWidth="1.5" />
-        <circle
-          cx="50"
-          cy="50"
-          r="30"
-          stroke={`url(#grad-${initial})`}
-          strokeOpacity="0.25"
-          strokeWidth="1"
-          strokeDasharray="4 4"
-        />
-
-        {/* Sleek initial monogram */}
+        {/* Serif initial */}
         <text
           x="50"
-          y="58"
+          y="61"
           textAnchor="middle"
-          fill={`url(#grad-${initial})`}
-          fontSize="30"
-          fontWeight="600"
-          letterSpacing="-0.03em"
-          style={{ fontFamily: 'var(--font-geist-sans), sans-serif' }}
+          fill={tint}
+          fontSize="32"
+          fontWeight="500"
+          letterSpacing="-0.01em"
+          style={{ fontFamily: 'var(--font-newsreader), serif' }}
         >
           {initial}
         </text>

@@ -1,59 +1,725 @@
 @import "tailwindcss";
 
+/* ══════════════════════════════════════════════════════════════════════
+   CADENZA — "The black-box theatre"
+   A pitch-black stage where the only thing lit is the page.
+
+   Rules of the house:
+   1. Black is black.   Dark surfaces are #000000. Structure comes from
+                        1px hairlines, never from grey panels.
+   2. One accent.       Gilt. Low chroma. It marks the primary action,
+                        the active state, the streaming caret. Nowhere else.
+   3. Colour is status. danger / warn / ok only. Never decoration.
+   4. Prose is the hero. Narrative is serif at a 62ch measure.
+   5. Radii nest.       Child radius <= parent radius.
+   6. Motion answers.   No ambient loops. Enter 180ms, exit 120ms.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Theme tokens ──────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+
+  /* Canvas — dark surfaces sit on the page, they do not float above it */
+  --bg: #f5f5f3;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #ecece8;
+
+  /* Structure */
+  --line: rgba(23, 23, 26, 0.11);
+  --line-strong: rgba(23, 23, 26, 0.24);
+
+  /* Ink */
+  --ink: #17171a;
+  --ink-2: #5a5a58;
+  --ink-3: #66665e;
+
+  /* Accent — gilt */
+  --accent: #a07f33;
+  --accent-hover: #8a6a1e;
+  --accent-ink: #ffffff;
+  --accent-text: #7a5c1a;
+  --accent-line: rgba(122, 92, 26, 0.34);
+  --accent-wash: rgba(160, 127, 51, 0.1);
+
+  /* Status — desaturated so they sit with the gilt */
+  --danger-text: #a8342a;
+  --danger-line: rgba(168, 52, 42, 0.3);
+  --danger-wash: rgba(168, 52, 42, 0.08);
+  --warn-text: #8a6212;
+  --warn-line: rgba(138, 98, 18, 0.3);
+  --warn-wash: rgba(138, 98, 18, 0.08);
+  --ok-text: #3f6b4c;
+  --ok-line: rgba(63, 107, 76, 0.3);
+  --ok-wash: rgba(63, 107, 76, 0.08);
+
+  /* Shadow — near-silent in light, absent in dark */
+  --shadow-raised: 0 1px 2px rgba(23, 23, 26, 0.04), 0 8px 28px -12px rgba(23, 23, 26, 0.16);
+  --shadow-float: 0 2px 6px rgba(23, 23, 26, 0.06), 0 24px 60px -24px rgba(23, 23, 26, 0.24);
+
+  /* Roleplay prose */
+  --rp-action: #5f5f5c;
+  --rp-dialogue: #17171a;
+  --rp-quote-rule: rgba(122, 92, 26, 0.4);
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* PITCH BLACK. Do not tint these. */
+  --bg: #000000;
+  --surface: #000000;
+  --surface-raised: #0a0a0a;
+  --surface-sunken: #060606;
+
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.2);
+
+  --ink: #f2f2f0;
+  --ink-2: #a1a1a0;
+  --ink-3: #85857f;
+
+  --accent: #cfa961;
+  --accent-hover: #dcb873;
+  --accent-ink: #17130a;
+  --accent-text: #d9b673;
+  --accent-line: rgba(207, 169, 97, 0.34);
+  --accent-wash: rgba(207, 169, 97, 0.1);
+
+  --danger-text: #dd6f63;
+  --danger-line: rgba(209, 96, 84, 0.3);
+  --danger-wash: rgba(209, 96, 84, 0.1);
+  --warn-text: #c8973a;
+  --warn-line: rgba(200, 151, 58, 0.3);
+  --warn-wash: rgba(200, 151, 58, 0.1);
+  --ok-text: #7ba585;
+  --ok-line: rgba(123, 165, 133, 0.3);
+  --ok-wash: rgba(123, 165, 133, 0.1);
+
+  /* No shadows on black — hairlines do the work */
+  --shadow-raised: 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --shadow-float: 0 0 0 1px rgba(255, 255, 255, 0.04);
+
+  --rp-action: #9b9b98;
+  --rp-dialogue: #f2f2f0;
+  --rp-quote-rule: rgba(207, 169, 97, 0.45);
+}
+
+/* ── Design system exposed to Tailwind ─────────────────────────────── */
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-muted-foreground: var(--ink-2);
+  --color-foreground: var(--ink);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-text: var(--accent-text);
+  --color-accent-line: var(--accent-line);
+  --color-accent-wash: var(--accent-wash);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+
+  --color-danger: var(--danger-text);
+  --color-warn: var(--warn-text);
+  --color-ok: var(--ok-text);
+
+  /* Nested radius scale — child radius <= parent radius */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-3xl: 36px;
+
+  --shadow-raised: var(--shadow-raised);
+  --shadow-float: var(--shadow-float);
+
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────── */
+
 @layer base {
-  :root {
-    --background: #fbfbfd;
-    --foreground: #1d1d1f;
-    --card: rgba(255, 255, 255, 0.75);
-    --card-foreground: #1d1d1f;
-    --card-border: rgba(0, 0, 0, 0.08);
-    --muted: #86868b;
-    --muted-bg: rgba(0, 0, 0, 0.04);
-    --accent: #0071e3;
-    --accent-hover: #0077ed;
-    --accent-foreground: #ffffff;
-    --glass-bg: rgba(255, 255, 255, 0.8);
-    --glass-border: rgba(0, 0, 0, 0.06);
-    --chat-user-bg: #0071e3;
-    --chat-user-text: #ffffff;
-    --chat-char-bg: rgba(255, 255, 255, 0.9);
-    --chat-char-text: #1d1d1f;
-    --chat-char-border: rgba(0, 0, 0, 0.06);
+  * {
+    -webkit-tap-highlight-color: transparent;
   }
 
-  .dark {
-    --background: #000000;
-    --foreground: #f5f5f7;
-    --card: rgba(22, 22, 24, 0.75);
-    --card-foreground: #f5f5f7;
-    --card-border: rgba(255, 255, 255, 0.08);
-    --muted: #86868b;
-    --muted-bg: rgba(255, 255, 255, 0.06);
-    --accent: #2997ff;
-    --accent-hover: #40a9ff;
-    --accent-foreground: #ffffff;
-    --glass-bg: rgba(18, 18, 20, 0.8);
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --chat-user-bg: #0071e3;
-    --chat-user-text: #ffffff;
-    --chat-char-bg: rgba(28, 28, 30, 0.9);
-    --chat-char-text: #f5f5f7;
-    --chat-char-border: rgba(255, 255, 255, 0.08);
+  html {
+    background-color: var(--bg);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    letter-spacing: -0.006em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: var(--accent-wash);
+    color: var(--ink);
+  }
+
+  /* Visible, unobscured focus on everything */
+  :focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Native controls inherit the scheme (fixes Windows dark-mode selects) */
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+    background-color: transparent;
+  }
+
+  select option {
+    background-color: var(--surface-raised);
+    color: var(--ink);
+  }
+
+  /* Headings breathe; no widow lines */
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-3);
   }
 }
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  letter-spacing: -0.011em;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-  -webkit-tap-highlight-color: transparent;
+/* ── Type roles ────────────────────────────────────────────────────── */
+
+@layer components {
+  /* The voice of the product. Wordmark, page titles, narrative. */
+  .type-display {
+    font-family: var(--font-serif);
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  .type-page {
+    font-family: var(--font-serif);
+    font-size: 1.5rem;
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+
+  /* Section titles are sentence case and quiet. Never tracked-out caps. */
+  .type-sec {
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 550;
+    letter-spacing: -0.004em;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+
+  .type-label {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+
+  .type-meta {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .type-code {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+
+  /* ── Surfaces ──────────────────────────────────────────────────────── */
+
+  /* A content plate. In dark this is black with a hairline — no fill. */
+  .surface {
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+  }
+
+  /* Anything that physically overlays the page (menus, sheets, modals) */
+  .panel {
+    background-color: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-float);
+    overscroll-behavior: contain;
+  }
+
+  /* An inset well: textareas, code blocks, search fields */
+  .well {
+    background-color: var(--surface-sunken);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+  }
+
+  /* Focused wells strengthen the border — interactions increase contrast */
+  .well:focus-within {
+    border-color: var(--accent-line);
+    outline: 2px solid var(--accent-wash);
+    outline-offset: 0;
+  }
+
+  /* ── Controls ──────────────────────────────────────────────────────── */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ink-2);
+    padding: 0.45rem 0.85rem;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+    transition:
+      transform var(--t-fast) var(--ease-out),
+      color var(--t-fast) var(--ease-out),
+      background-color var(--t-fast) var(--ease-out),
+      border-color var(--t-fast) var(--ease-out);
+  }
+
+  .btn:hover {
+    color: var(--ink);
+    background-color: color-mix(in oklab, var(--ink) 6%, transparent);
+    border-color: var(--line-strong);
+  }
+
+  .btn:active {
+    transform: scale(0.97);
+  }
+
+  .btn:disabled {
+    opacity: 0.38;
+    pointer-events: none;
+  }
+
+  .btn-ghost {
+    border: 1px solid var(--line);
+  }
+
+  /* Quiet text-only action */
+  .btn-quiet {
+    border: 1px solid transparent;
+    padding: 0.35rem 0.5rem;
+  }
+
+  /* The single loud thing on any screen */
+  .btn-primary {
+    background-color: var(--accent);
+    color: var(--accent-ink);
+    border: 1px solid transparent;
+    font-weight: 600;
+    padding: 0.5rem 1.05rem;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--accent-hover);
+    color: var(--accent-ink);
+    border-color: transparent;
+  }
+
+  .btn-danger {
+    color: var(--danger-text);
+    border: 1px solid var(--danger-line);
+    background-color: var(--danger-wash);
+    font-weight: 550;
+  }
+
+  .btn-danger:hover {
+    background-color: color-mix(in oklab, var(--danger-text) 16%, transparent);
+    color: var(--danger-text);
+    border-color: var(--danger-text);
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    color: var(--ink-3);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      transform var(--t-fast) var(--ease-out),
+      color var(--t-fast) var(--ease-out),
+      background-color var(--t-fast) var(--ease-out);
+  }
+
+  .icon-btn:hover {
+    color: var(--ink);
+    background-color: color-mix(in oklab, var(--ink) 7%, transparent);
+  }
+
+  .icon-btn:active {
+    transform: scale(0.94);
+  }
+
+  /* ── Chips: metadata, never decoration ─────────────────────────────── */
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--ink-2);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip-accent {
+    color: var(--accent-text);
+    border-color: var(--accent-line);
+    background-color: var(--accent-wash);
+  }
+
+  .chip-danger {
+    color: var(--danger-text);
+    border-color: var(--danger-line);
+    background-color: var(--danger-wash);
+  }
+
+  .chip-warn {
+    color: var(--warn-text);
+    border-color: var(--warn-line);
+    background-color: var(--warn-wash);
+  }
+
+  .chip-ok {
+    color: var(--ok-text);
+    border-color: var(--ok-line);
+    background-color: var(--ok-wash);
+  }
+
+  /* ── Fields ────────────────────────────────────────────────────────── */
+
+  .field {
+    width: 100%;
+    background-color: var(--surface-sunken);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    padding: 0.6rem 0.8rem;
+    transition: border-color var(--t-fast) var(--ease-out);
+  }
+
+  .field::placeholder {
+    color: var(--ink-3);
+  }
+
+  .field:focus {
+    outline: none;
+    border-color: var(--accent-line);
+    outline: 2px solid var(--accent-wash);
+    outline-offset: 0;
+  }
+
+  /* ── Long transcripts ─────────────────────────────────────────────── */
+
+  /* Roleplay chats run to hundreds of turns. Skip layout and paint for rows
+     far off-screen; `auto` remembers the real height once a row has rendered,
+     so the scrollbar never jumps while scrolling back up. */
+  .msg-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+  }
+
+  /* ── The reading surface — the hero of the whole product ───────────── */
+
+  .prose-rp {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.78;
+    letter-spacing: 0.002em;
+    color: var(--ink);
+    max-width: 62ch;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .prose-rp p {
+    margin-bottom: 0.85em;
+  }
+
+  .prose-rp p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Actions & stage directions: italic serif, one step back */
+  .prose-rp em,
+  .rp-action {
+    font-style: italic;
+    color: var(--rp-action);
+  }
+
+  /* Dialogue: the voice lifts, without a hue */
+  .rp-dialogue {
+    color: var(--rp-dialogue);
+  }
+
+  .prose-rp blockquote {
+    margin: 0.9em 0;
+    padding-left: 1em;
+    border-left: 2px solid var(--rp-quote-rule);
+    color: var(--ink-2);
+    font-style: italic;
+  }
+
+  .prose-rp strong {
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .prose-rp code {
+    font-family: var(--font-mono);
+    font-size: 0.82em;
+    padding: 0.1em 0.35em;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xs);
+    background-color: var(--surface-sunken);
+    color: var(--accent-text);
+  }
+
+  .prose-rp ul,
+  .prose-rp ol {
+    margin: 0.85em 0;
+    padding-left: 1.4em;
+    list-style: disc;
+    color: var(--ink-2);
+  }
+
+  .prose-rp li {
+    margin-bottom: 0.35em;
+  }
+
+  /* ── Reading-surface aliases ──────────────────────────────────────── */
+
+  .roleplay-prose {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.78;
+    color: var(--ink);
+    max-width: 62ch;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .roleplay-prose p {
+    margin-bottom: 0.85em;
+    line-height: 1.78;
+  }
+
+  .roleplay-prose p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* The user's turn: a right-set plate, hairline framed. No loud bubble. */
+  .rp-user-bubble {
+    background-color: var(--surface-raised);
+    border: 1px solid var(--line-strong);
+    border-right: 2px solid var(--accent-line);
+  }
+
+  .streaming-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 0.25em;
+    vertical-align: text-bottom;
+    background-color: var(--accent-text);
+    animation: blink-cursor 1.05s steps(2, start) infinite;
+  }
 }
 
-/* iOS Safe Area Utilities for PWA & Safari */
+/* ── Motion ─────────────────────────────────────────────────────────── */
+
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --t-fast: 120ms;
+  --t-base: 180ms;
+  --t-slow: 240ms;
+}
+
+@keyframes cad-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cad-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cad-slide-b {
+  from {
+    transform: translateY(18px);
+    opacity: 0;
+  }
+}
+
+@keyframes cad-slide-t {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+
+@keyframes cad-slide-r {
+  from {
+    transform: translateX(14px);
+    opacity: 0;
+  }
+}
+
+@keyframes cad-pop {
+  from {
+    transform: scale(0.97);
+    opacity: 0;
+  }
+}
+
+@keyframes blink-cursor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Entry animations. Never from scale(0) — nothing appears from nothing. */
+.animate-in {
+  animation-duration: 180ms;
+  animation-timing-function: var(--ease-out);
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: cad-fade;
+}
+.slide-in-from-bottom {
+  animation-name: cad-slide-b;
+}
+.slide-in-from-top-1 {
+  animation-name: cad-slide-t;
+}
+.slide-in-from-right-2 {
+  animation-name: cad-slide-r;
+}
+.zoom-in-95,
+.zoom-in-\[0\.98\] {
+  animation-name: cad-pop;
+}
+.duration-150 {
+  animation-duration: 150ms;
+}
+.duration-200 {
+  animation-duration: 200ms;
+}
+.duration-250 {
+  animation-duration: 250ms;
+}
+.duration-300 {
+  animation-duration: 300ms;
+}
+.ease-out {
+  animation-timing-function: var(--ease-out);
+}
+
+/* Quiet attention: a caret, not a light show */
+.pulse-soft {
+  animation: pulse-soft 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ── Responsive & safe-area helpers ─────────────────────────────────── */
+
 .pt-safe {
   padding-top: env(safe-area-inset-top, 0px);
 }
@@ -66,149 +732,49 @@ body {
 .pr-safe {
   padding-right: env(safe-area-inset-right, 0px);
 }
-.top-safe {
-  top: env(safe-area-inset-top, 0px);
-}
-.bottom-safe {
-  bottom: env(safe-area-inset-bottom, 0px);
-}
 
-/* Prevent auto-zooming on focus in iOS Safari */
+/* Prevent iOS Safari auto-zoom on focus */
 @media screen and (max-width: 768px) {
-  input, textarea, select {
+  input,
+  textarea,
+  select {
     font-size: 16px !important;
   }
 }
 
-/* Apple-style smooth glass card */
-.glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid var(--glass-border);
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
-.glass-card {
-  background: var(--card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--card-border);
-  transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 240ms cubic-bezier(0.23, 1, 0.32, 1);
-}
+/* ── Reduced motion: keep comprehension, drop the movement ──────────── */
 
-.glass-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.12);
-}
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .fade-in,
+  .slide-in-from-bottom,
+  .slide-in-from-top-1,
+  .slide-in-from-right-2,
+  .zoom-in-95,
+  .zoom-in-\[0\.98\],
+  .pulse-soft,
+  .streaming-cursor,
+  .animate-spin,
+  .animate-pulse,
+  .animate-bounce,
+  .animate-ping {
+    animation: none !important;
+  }
 
-.dark .glass-card:hover {
-  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.45);
-}
+  .btn:active,
+  .icon-btn:active {
+    transform: none;
+  }
 
-/* Button interactive spring press */
-.apple-button {
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), opacity 160ms ease, background-color 160ms ease;
-}
-
-.apple-button:active {
-  transform: scale(0.97);
-}
-
-/* Roleplay message typography: italicized actions, highlighted dialogue */
-:root {
-  --rp-dialogue: #3730a3;
-  --rp-action-italic: #4b5563;
-  --ease-out-custom: cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.dark {
-  --rp-dialogue: #a5b4fc;
-  --rp-action-italic: #9ca3af;
-}
-
-::selection {
-  background: rgba(0, 113, 227, 0.25);
-  color: inherit;
-}
-
-.roleplay-prose {
-  word-break: break-word;
-  line-height: 1.72;
-  max-width: 72ch;
-}
-
-.roleplay-prose em, .rp-action {
-  font-style: italic;
-  font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  color: var(--rp-action-italic);
-  opacity: 0.92;
-  letter-spacing: 0.012em;
-}
-
-.rp-dialogue {
-  color: var(--rp-dialogue-color, var(--rp-dialogue));
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  transition: color 150ms ease, text-shadow 150ms ease;
-}
-
-.dark .rp-dialogue {
-  text-shadow: 0 0 14px rgba(165, 180, 252, 0.14);
-}
-
-.roleplay-prose p {
-  margin-bottom: 0.9rem;
-  line-height: 1.72;
-}
-
-.roleplay-prose p:last-child {
-  margin-bottom: 0;
-}
-
-/* User Message bubble luxury treatment */
-.rp-user-bubble {
-  background: linear-gradient(135deg, var(--accent) 0%, #0060cc 100%);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.28), 0 4px 16px -2px rgba(0, 113, 227, 0.24);
-}
-
-.dark .rp-user-bubble {
-  background: linear-gradient(135deg, #1d68bd 0%, #154c8a 100%);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 4px 20px -2px rgba(0, 0, 0, 0.45);
-}
-
-
-/* Custom minimal scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(134, 134, 139, 0.25);
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(134, 134, 139, 0.45);
-}
-
-/* Pulsing streaming cursor */
-@keyframes blink-cursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.streaming-cursor {
-  display: inline-block;
-  width: 7px;
-  height: 15px;
-  background-color: var(--accent);
-  margin-left: 4px;
-  vertical-align: middle;
-  border-radius: 2px;
-  animation: blink-cursor 0.8s infinite;
+  * {
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
 }

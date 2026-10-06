@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Share, PlusSquare, X, Smartphone, Sparkles } from 'lucide-react';
+import { Share, PlusSquare, X, Smartphone } from 'lucide-react';
 
 interface IOSInstallPromptProps {
   forceOpen?: boolean;
@@ -44,72 +44,87 @@ export function IOSInstallPrompt({ forceOpen = false, onClose }: IOSInstallPromp
     onClose?.();
   };
 
+  // Escape closes the sheet without recording a dismissal beyond handleDismiss.
+  useEffect(() => {
+    if (!isOpen && !forceOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleDismiss();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, forceOpen]);
+
   if (!isOpen && !forceOpen) return null;
 
+  const steps = [
+    {
+      body: (
+        <>
+          Tap the <span className="font-medium text-ink">Share</span> button{' '}
+          <Share className="mx-1 inline h-3.5 w-3.5 text-ink-3" aria-hidden="true" /> in the
+          Safari toolbar…
+        </>
+      ),
+    },
+    {
+      body: (
+        <>
+          Scroll down and tap <span className="font-medium text-ink">“Add to Home Screen”</span>{' '}
+          <PlusSquare className="mx-1 inline h-3.5 w-3.5 text-ink-3" aria-hidden="true" />…
+        </>
+      ),
+    },
+    {
+      body: (
+        <>
+          Tap <span className="font-medium text-ink">“Add”</span> in the top-right corner to
+          finish.
+        </>
+      ),
+    },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-background/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="absolute inset-0" onClick={handleDismiss} />
 
       <div
-        className="relative z-10 w-full max-w-md bg-[#1c1c1f] dark:bg-[#121214] text-white rounded-t-[2.25rem] border-t border-white/[0.12] shadow-2xl p-6 space-y-5 animate-in slide-in-from-bottom duration-300 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add to home screen instructions"
+        className="panel bg-raised relative z-10 w-full max-w-md space-y-5 rounded-t-3xl rounded-b-none border-x-0 border-b-0 border-t border-line p-6 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] animate-in slide-in-from-bottom"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Handle */}
-        <div className="w-12 h-1.5 rounded-full bg-zinc-600/60 mx-auto -mt-2" />
+        <div className="bg-line-strong mx-auto -mt-2 h-1.5 w-12 rounded-full" />
 
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center border border-purple-500/30">
-              <Smartphone className="w-5 h-5" />
-            </div>
+            <Smartphone className="h-5 w-5 shrink-0 text-ink-3" aria-hidden="true" />
             <div>
-              <h3 className="font-bold text-base tracking-tight">Add Cadenza to Home Screen</h3>
-              <p className="text-xs text-zinc-400">Install as a native iPhone PWA app</p>
+              <h3 className="type-sec text-base">Add Cadenza to your home screen</h3>
+              <p className="type-meta mt-0.5">It opens in its own window, next to your other apps</p>
             </div>
           </div>
-          <button
-            onClick={handleDismiss}
-            className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
+          <button onClick={handleDismiss} aria-label="Close" className="icon-btn shrink-0">
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
         {/* Steps */}
-        <div className="space-y-3 bg-zinc-800/40 p-4 rounded-2xl border border-white/[0.06] text-xs">
-          <div className="flex items-center gap-3 text-zinc-200">
-            <div className="w-7 h-7 rounded-xl bg-purple-600/30 text-purple-300 flex items-center justify-center shrink-0 font-bold">
-              1
-            </div>
-            <div className="flex-1">
-              Tap the Safari <span className="font-semibold text-white">Share</span> button <Share className="inline w-3.5 h-3.5 mx-1 text-purple-400" /> in the bottom navigation bar.
-            </div>
-          </div>
+        <ol className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+          {steps.map((step, i) => (
+            <li key={i} className="flex items-center gap-3 p-4">
+              <span className="type-code w-5 shrink-0 text-ink" aria-hidden="true">
+                {i + 1}
+              </span>
+              <p className="type-meta flex-1 leading-relaxed">{step.body}</p>
+            </li>
+          ))}
+        </ol>
 
-          <div className="flex items-center gap-3 text-zinc-200">
-            <div className="w-7 h-7 rounded-xl bg-purple-600/30 text-purple-300 flex items-center justify-center shrink-0 font-bold">
-              2
-            </div>
-            <div className="flex-1">
-              Scroll down the menu and select <span className="font-semibold text-white">Add to Home Screen</span> <PlusSquare className="inline w-3.5 h-3.5 mx-1 text-purple-400" />.
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 text-zinc-200">
-            <div className="w-7 h-7 rounded-xl bg-purple-600/30 text-purple-300 flex items-center justify-center shrink-0 font-bold">
-              3
-            </div>
-            <div className="flex-1">
-              Tap <span className="font-semibold text-white">Add</span> in the top-right corner to launch Cadenza in fullscreen!
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={handleDismiss}
-          className="w-full py-3 rounded-2xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-semibold text-xs transition-all apple-button shadow-md shadow-purple-600/25"
-        >
-          Got it
+        <button onClick={handleDismiss} className="btn btn-primary w-full text-xs">
+          Done
         </button>
       </div>
     </div>

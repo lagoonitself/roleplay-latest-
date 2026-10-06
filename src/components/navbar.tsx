@@ -3,19 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  Sparkles,
-  Compass,
-  Users,
-  BookOpen,
-  Settings,
-  Plus,
-  Flame,
-  Sun,
-  Moon,
-  MessageSquare,
-  MessagesSquare,
-} from 'lucide-react';
+import { Plus, Sun, Moon, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { SettingsDialog } from '@/components/settings-dialog';
 
@@ -35,132 +23,84 @@ export function Navbar() {
     return <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />;
   }
 
+  const links = [
+    { href: '/', label: 'Explore', active: pathname === '/' },
+    { href: '/?tab=chats', label: 'My chats', active: false },
+    { href: '/personas', label: 'Personas', active: pathname === '/personas' },
+    {
+      href: '/duo',
+      label: 'Duo',
+      active: pathname === '/duo' || pathname.startsWith('/duo/'),
+    },
+    { href: '/lorebooks', label: 'Lorebooks', active: pathname === '/lorebooks' },
+  ];
+
   return (
     <>
-      <header className="sticky top-0 z-40 w-full border-b border-black/[0.06] dark:border-white/[0.08] glass-panel transition-all pt-safe">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+      <header className="bg-background sticky top-0 z-40 w-full border-b border-line pt-safe">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
           {/* Left Brand */}
-          <div className="flex items-center gap-6">
-            <Link href="/" className="flex items-center gap-2.5 group">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent to-purple-500 flex items-center justify-center shadow-md shadow-accent/20 group-hover:scale-105 transition-transform">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-              <div className="flex flex-col">
-                <span className="font-semibold text-sm tracking-tight flex items-center gap-1.5">
-                  Cadenza
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent font-medium uppercase tracking-wider">
-                    Roleplay
-                  </span>
-                </span>
-              </div>
+          <div className="flex items-center gap-8">
+            <Link href="/" className="flex items-baseline gap-2">
+              <span className="type-display text-xl leading-none">Cadenza</span>
+              <span className="chip chip-accent">Roleplay</span>
             </Link>
 
             {/* Desktop Navigation Links */}
             {!isChatPage && (
-              <nav className="hidden md:flex items-center gap-1 text-xs font-medium">
-                <Link
-                  href="/"
-                  className={`px-3 py-1.5 rounded-full transition-colors ${
-                    pathname === '/'
-                      ? 'bg-black/[0.06] dark:bg-white/[0.1] text-foreground font-semibold'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Compass className="w-3.5 h-3.5" />
-                    Explore
-                  </span>
-                </Link>
-                <Link
-                  href="/?tab=chats"
-                  className="px-3 py-1.5 rounded-full transition-colors text-muted-foreground hover:text-foreground"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    My Chats
-                  </span>
-                </Link>
-                <Link
-                  href="/personas"
-                  className={`px-3 py-1.5 rounded-full transition-colors ${
-                    pathname === '/personas'
-                      ? 'bg-black/[0.06] dark:bg-white/[0.1] text-foreground font-semibold'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5" />
-                    Personas
-                  </span>
-                </Link>
-                <Link
-                  href="/duo"
-                  className={`px-3 py-1.5 rounded-full transition-colors ${
-                    pathname === '/duo' || pathname.startsWith('/duo/')
-                      ? 'bg-black/[0.06] dark:bg-white/[0.1] text-foreground font-semibold'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <MessagesSquare className="w-3.5 h-3.5" />
-                    Duo
-                  </span>
-                </Link>
-                <Link
-                  href="/lorebooks"
-                  className={`px-3 py-1.5 rounded-full transition-colors ${
-                    pathname === '/lorebooks'
-                      ? 'bg-black/[0.06] dark:bg-white/[0.1] text-foreground font-semibold'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5" />
-                    Lorebooks
-                  </span>
-                </Link>
+              <nav className="hidden items-center gap-5 md:flex" aria-label="Primary">
+                {links.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    aria-current={link.active ? 'page' : undefined}
+                    className={`relative py-2 text-[13px] transition-colors ${
+                      link.active ? 'text-ink font-medium' : 'text-ink-2 hover:text-ink'
+                    }`}
+                  >
+                    {link.label}
+                    {link.active && (
+                      <span
+                        aria-hidden="true"
+                        className="bg-accent-line absolute inset-x-0 -bottom-[1px] h-px"
+                      />
+                    )}
+                  </Link>
+                ))}
               </nav>
             )}
           </div>
 
           {/* Right Actions */}
-          <div className="flex items-center gap-2">
-            <Link
-              href="/c/new"
-              className="px-3.5 py-1.5 rounded-full bg-accent text-white hover:bg-accent-hover text-xs font-medium apple-button flex items-center gap-1.5 shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Create Character</span>
+          <div className="flex items-center gap-1.5">
+            <Link href="/c/new" className="btn btn-ghost text-xs">
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Create character</span>
               <span className="sm:hidden">New</span>
-            </Link>
-
-            <Link
-              href="/personas"
-              aria-label="View Personas"
-              title="View Personas"
-              className="md:hidden p-2 rounded-full hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground apple-button"
-            >
-              <Users className="w-4 h-4" />
             </Link>
 
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               aria-label="Toggle theme"
-              className="p-2 rounded-full hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground apple-button w-8 h-8 flex items-center justify-center"
+              className="icon-btn"
             >
               {mounted ? (
-                theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />
+                theme === 'dark' ? (
+                  <Sun className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Moon className="h-4 w-4" aria-hidden="true" />
+                )
               ) : (
-                <span className="w-4 h-4" />
+                <span className="h-4 w-4" />
               )}
             </button>
 
             <button
               onClick={() => setSettingsOpen(true)}
               aria-label="Open settings"
-              className="p-2 rounded-full hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground apple-button"
+              className="icon-btn"
             >
-              <Settings className="w-4 h-4" />
+              <Settings className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>

@@ -160,94 +160,105 @@ export function SillyTavernContextInspector({
       position: notePosition as any,
     };
     onAuthorsNoteUpdated(updated);
-    toast.success("Author's Note updated");
+    toast.success("Author's note updated");
   };
 
   if (!open) return null;
 
+  const tabButtonClass = (tab: typeof activeTab) =>
+    `relative flex items-center gap-1.5 whitespace-nowrap px-3 py-2.5 font-medium transition-colors ${
+      activeTab === tab ? 'text-ink' : 'text-ink-2 hover:text-ink'
+    }`;
+
+  const tabUnderline = (tab: typeof activeTab) =>
+    activeTab === tab ? (
+      <span aria-hidden className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent" />
+    ) : null;
+
   return (
-    <aside className="w-full sm:w-96 border-l border-black/[0.06] dark:border-white/[0.08] glass-panel flex flex-col shrink-0 z-30 absolute sm:relative inset-0 sm:inset-auto h-full bg-background/95 backdrop-blur-md animate-in fade-in slide-in-from-right-2 duration-150 ease-out">
+    <aside className="animate-in fade-in slide-in-from-right-2 absolute inset-0 z-30 flex h-full w-full shrink-0 flex-col border-l border-line bg-background duration-150 ease-out sm:relative sm:inset-auto sm:w-96">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-black/[0.06] dark:border-white/[0.08]">
+      <div className="flex items-center justify-between border-b border-line p-4">
         <div className="flex items-center gap-2">
-          <Brain className="w-4 h-4 text-accent" />
-          <h3 className="text-sm font-bold tracking-tight">SillyTavern Memory Engine</h3>
+          <Brain aria-hidden className="h-4 w-4 text-ink-3" />
+          <h3 className="type-sec">SillyTavern memory</h3>
         </div>
         <button
+          type="button"
           onClick={onClose}
-          className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Close memory panel"
+          className="icon-btn"
+          style={{ width: 28, height: 28 }}
         >
-          <X className="w-4 h-4" />
+          <X aria-hidden className="h-4 w-4" />
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center border-b border-black/[0.06] dark:border-white/[0.08] px-2 py-1 gap-1 text-xs overflow-x-auto scrollbar-none">
+      <div className="scrollbar-none flex items-center gap-1 overflow-x-auto border-b border-line px-2 text-xs" role="tablist">
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'summary'}
           onClick={() => setActiveTab('summary')}
-          className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'summary'
-              ? 'bg-accent/15 text-accent font-semibold'
-              : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-          }`}
+          className={tabButtonClass('summary')}
         >
-          <FileText className="w-3.5 h-3.5" />
-          Chat Summary
+          <FileText aria-hidden className="h-3.5 w-3.5" />
+          Chat summary
+          {tabUnderline('summary')}
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'note'}
           onClick={() => setActiveTab('note')}
-          className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'note'
-              ? 'bg-accent/15 text-accent font-semibold'
-              : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-          }`}
+          className={tabButtonClass('note')}
         >
-          <Bookmark className="w-3.5 h-3.5" />
-          Author's Note
+          <Bookmark aria-hidden className="h-3.5 w-3.5" />
+          Author's note
+          {tabUnderline('note')}
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'worldInfo'}
           onClick={() => setActiveTab('worldInfo')}
-          className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'worldInfo'
-              ? 'bg-accent/15 text-accent font-semibold'
-              : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-          }`}
+          className={tabButtonClass('worldInfo')}
         >
-          <BookOpen className="w-3.5 h-3.5" />
-          World Info
+          <BookOpen aria-hidden className="h-3.5 w-3.5" />
+          World info
+          {tabUnderline('worldInfo')}
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'vectors'}
           onClick={() => setActiveTab('vectors')}
-          className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'vectors'
-              ? 'bg-accent/15 text-accent font-semibold'
-              : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-          }`}
+          className={tabButtonClass('vectors')}
         >
-          <Brain className="w-3.5 h-3.5" />
+          <Brain aria-hidden className="h-3.5 w-3.5" />
           Vectors
+          {tabUnderline('vectors')}
         </button>
       </div>
 
       {/* Body Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {/* TAB 1: CHAT SUMMARY */}
         {activeTab === 'summary' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
-                Active Story Summary (Depth 2)
+            <div className="flex items-center justify-between gap-2">
+              <span className="type-label">
+                Active story summary
               </span>
               <button
+                type="button"
                 onClick={() => setIsFrozen(!isFrozen)}
-                className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md font-medium transition-colors ${
-                  isFrozen
-                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                title="When locked/frozen, automated turn summarization will not overwrite your custom text"
+                aria-pressed={isFrozen}
+                className={isFrozen ? 'chip chip-warn' : 'chip'}
+                title="When frozen, automatic summarization will not overwrite your text"
               >
-                {isFrozen ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                {isFrozen ? <Lock aria-hidden className="h-3 w-3" /> : <Unlock aria-hidden className="h-3 w-3" />}
                 {isFrozen ? 'Frozen' : 'Unfrozen'}
               </button>
             </div>
@@ -255,51 +266,56 @@ export function SillyTavernContextInspector({
             <textarea
               value={summaryText}
               onChange={(e) => setSummaryText(e.target.value)}
-              placeholder="No active summary yet. Summarization triggers automatically every 10 turns, or click 'Summarize Now' below..."
+              aria-label="Story summary"
+              placeholder="No active summary yet, e.g. the party entered the lower vaults…"
               rows={8}
-              className="w-full p-3 rounded-2xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent resize-y"
+              className="field resize-y text-xs leading-relaxed"
             />
 
             {/* Actions Bar */}
             <div className="flex items-center justify-between gap-2 pt-1">
               <button
+                type="button"
                 onClick={handleSaveSummaryEdit}
                 disabled={isSavingSummary || !summaryText.trim()}
-                className="px-3 py-1.5 rounded-xl bg-accent text-white text-xs font-semibold flex items-center gap-1.5 apple-button disabled:opacity-50"
+                className="btn btn-ghost text-xs"
               >
-                <Save className="w-3.5 h-3.5" />
-                {isSavingSummary ? 'Saving...' : 'Save Edit'}
+                <Save aria-hidden className="h-3.5 w-3.5" />
+                {isSavingSummary ? 'Saving…' : 'Save edit'}
               </button>
 
               <button
+                type="button"
                 onClick={handleTriggerSummarizeNow}
                 disabled={isSummarizing}
-                className="px-3 py-1.5 rounded-xl bg-purple-500 hover:bg-purple-600 text-white text-xs font-semibold flex items-center gap-1.5 apple-button disabled:opacity-50"
+                className="btn btn-primary text-xs"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                {isSummarizing ? 'Generating...' : 'Summarize Now'}
+                <Sparkles aria-hidden className="h-3.5 w-3.5" />
+                {isSummarizing ? 'Summarizing…' : 'Summarize now'}
               </button>
             </div>
 
             {/* Summary Configuration Drawer */}
-            <div className="pt-3 border-t border-black/[0.06] dark:border-white/[0.08] space-y-3">
+            <div className="space-y-3 border-t border-line pt-3">
               <button
+                type="button"
                 onClick={() => setShowSummarySettings(!showSummarySettings)}
-                className="flex items-center justify-between w-full text-xs text-muted-foreground hover:text-foreground font-medium"
+                aria-expanded={showSummarySettings}
+                className="flex w-full items-center justify-between text-xs font-medium text-ink-2 transition-colors hover:text-ink"
               >
                 <span className="flex items-center gap-1.5">
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  Summarizer Settings
+                  <SlidersHorizontal aria-hidden className="h-3.5 w-3.5" />
+                  Summarizer settings
                 </span>
-                <span>{showSummarySettings ? '▲' : '▼'}</span>
+                <span aria-hidden>{showSummarySettings ? '▲' : '▼'}</span>
               </button>
 
               {showSummarySettings && (
-                <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.04] dark:border-white/[0.06] space-y-3 text-xs">
+                <div className="well space-y-3 p-3 text-xs">
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-muted-foreground">
-                      <span>Update Interval</span>
-                      <span>Every {summaryInterval} turns</span>
+                    <div className="flex justify-between text-[11px] text-ink-2">
+                      <span>Update interval</span>
+                      <span className="type-code">Every {summaryInterval} turns</span>
                     </div>
                     <input
                       type="range"
@@ -307,15 +323,16 @@ export function SillyTavernContextInspector({
                       max="30"
                       step="1"
                       value={summaryInterval}
+                      aria-label="Summary update interval in turns"
                       onChange={(e) => setSummaryInterval(Number(e.target.value))}
                       className="w-full accent-accent"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-muted-foreground">
-                      <span>Max Target Words</span>
-                      <span>{summaryMaxWords} words</span>
+                    <div className="flex justify-between text-[11px] text-ink-2">
+                      <span>Max target words</span>
+                      <span className="type-code">{summaryMaxWords} words</span>
                     </div>
                     <input
                       type="range"
@@ -323,13 +340,14 @@ export function SillyTavernContextInspector({
                       max="500"
                       step="25"
                       value={summaryMaxWords}
+                      aria-label="Summary maximum words"
                       onChange={(e) => setSummaryMaxWords(Number(e.target.value))}
                       className="w-full accent-accent"
                     />
                   </div>
 
-                  <div className="text-[10px] text-muted-foreground leading-relaxed">
-                    SillyTavern summary engine automatically condenses dialogue turns into a persistent story summary injected at in-chat depth 2 formatted as <code className="bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded">[Summary: ...]</code>.
+                  <div className="text-[10px] leading-relaxed text-ink-3">
+                    The summary engine condenses dialogue turns into a persistent story summary injected at in-chat depth 2, formatted as <code className="type-code text-accent-text">[Summary: …]</code>.
                   </div>
                 </div>
               )}
@@ -341,33 +359,35 @@ export function SillyTavernContextInspector({
         {activeTab === 'note' && (
           <div className="space-y-4">
             <div>
-              <span className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
-                Author's Note / Floating Prompt
+              <span className="type-label">
+                Author's note
               </span>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Steers tone, style, or pacing. Injected directly into chat history at designated depth.
+              <p className="type-meta mt-0.5">
+                Steers tone, style, or pacing. Injected into chat history at the depth you set.
               </p>
             </div>
 
             <textarea
               value={notePrompt}
               onChange={(e) => setNotePrompt(e.target.value)}
-              placeholder="e.g. Focus on subtle body language, dramatic tension, slow pacing. Mention the pouring rain outside."
+              aria-label="Author's note prompt"
+              placeholder="E.g. focus on subtle body language and slow pacing…"
               rows={4}
-              className="w-full p-3 rounded-2xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent resize-y"
+              className="field resize-y text-xs leading-relaxed"
             />
 
-            <div className="space-y-3 p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.04] dark:border-white/[0.06] text-xs">
+            <div className="well space-y-3 p-3 text-xs">
               <div className="space-y-1">
-                <div className="flex justify-between text-[11px] text-muted-foreground">
-                  <span>Insertion Depth</span>
-                  <span>{noteDepth} messages from end</span>
+                <div className="flex justify-between text-[11px] text-ink-2">
+                  <span>Insertion depth</span>
+                  <span className="type-code">{noteDepth} messages from end</span>
                 </div>
                 <input
                   type="range"
                   min="0"
                   max="10"
                   value={noteDepth}
+                  aria-label="Author's note insertion depth"
                   onChange={(e) => setNoteDepth(Number(e.target.value))}
                   className="w-full accent-accent"
                 />
@@ -375,11 +395,12 @@ export function SillyTavernContextInspector({
 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-semibold text-muted-foreground">Role</span>
+                  <label className="type-label" htmlFor="authors-note-role">Role</label>
                   <select
+                    id="authors-note-role"
                     value={noteRole}
                     onChange={(e) => setNoteRole(e.target.value as any)}
-                    className="w-full p-1.5 rounded-lg bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs"
+                    className="field text-xs"
                   >
                     <option value="system">System</option>
                     <option value="user">User</option>
@@ -388,26 +409,28 @@ export function SillyTavernContextInspector({
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-semibold text-muted-foreground">Position</span>
+                  <label className="type-label" htmlFor="authors-note-position">Position</label>
                   <select
+                    id="authors-note-position"
                     value={notePosition}
                     onChange={(e) => setNotePosition(e.target.value as any)}
-                    className="w-full p-1.5 rounded-lg bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs"
+                    className="field text-xs"
                   >
-                    <option value="in_chat">In-Chat Depth</option>
-                    <option value="before_scenario">Before Scenario</option>
-                    <option value="after_scenario">After Scenario</option>
+                    <option value="in_chat">In-chat depth</option>
+                    <option value="before_scenario">Before scenario</option>
+                    <option value="after_scenario">After scenario</option>
                   </select>
                 </div>
               </div>
             </div>
 
             <button
+              type="button"
               onClick={handleSaveAuthorsNote}
-              className="w-full py-2 rounded-xl bg-accent text-white text-xs font-semibold flex items-center justify-center gap-1.5 apple-button"
+              className="btn btn-primary w-full text-xs"
             >
-              <Check className="w-3.5 h-3.5" />
-              Apply Author's Note
+              <Check aria-hidden className="h-3.5 w-3.5" />
+              Apply author's note
             </button>
           </div>
         )}
@@ -416,8 +439,8 @@ export function SillyTavernContextInspector({
         {activeTab === 'worldInfo' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
-                Triggered World Info ({activeLorebookEntries.length})
+              <span className="type-label">
+                World info ({activeLorebookEntries.length})
               </span>
             </div>
 
@@ -426,32 +449,32 @@ export function SillyTavernContextInspector({
                 activeLorebookEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.04] dark:border-white/[0.06] text-xs space-y-1.5"
+                    className="surface space-y-1.5 rounded-lg p-3 text-xs"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-accent">{entry.title || 'Untitled Entry'}</span>
-                      <div className="flex gap-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-xs font-medium text-ink">{entry.title || 'Untitled entry'}</span>
+                      <div className="flex shrink-0 flex-wrap justify-end gap-1">
                         {entry.keys.map((k) => (
                           <span
                             key={k}
-                            className="px-1.5 py-0.5 rounded bg-accent/10 text-accent text-[9px] font-mono"
+                            className="chip type-code"
                           >
                             {k}
                           </span>
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-3">
+                    <p className="line-clamp-3 text-[11px] leading-relaxed text-ink-2">
                       {entry.content}
                     </p>
                   </div>
                 ))
               ) : (
-                <div className="p-6 text-center text-xs text-muted-foreground border border-dashed border-black/[0.08] dark:border-white/[0.1] rounded-2xl space-y-1">
-                  <BookOpen className="w-6 h-6 mx-auto opacity-40 text-accent mb-1" />
-                  <p className="font-medium">No Lorebook Entries Triggered</p>
-                  <p className="text-[11px] opacity-75">
-                    Entries trigger automatically when their activation keywords appear in recent messages.
+                <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
+                  <BookOpen aria-hidden className="mb-1 h-6 w-6 text-ink-3" />
+                  <p className="type-sec">No lorebook entries triggered</p>
+                  <p className="type-meta">
+                    Entries appear here when their keywords show up in recent messages.
                   </p>
                 </div>
               )}
@@ -463,11 +486,11 @@ export function SillyTavernContextInspector({
         {activeTab === 'vectors' && (
           <div className="space-y-4">
             <div>
-              <span className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
-                Vector Memories (Depth 2)
+              <span className="type-label">
+                Vector memories
               </span>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Past semantic events recalled outside the 5-turn protection window.
+              <p className="type-meta mt-0.5">
+                Past events recalled from outside the short-term window.
               </p>
             </div>
 
@@ -476,24 +499,24 @@ export function SillyTavernContextInspector({
                 vectorMemories.map((vm, i) => (
                   <div
                     key={i}
-                    className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.04] dark:border-white/[0.06] text-xs space-y-1"
+                    className="surface space-y-1 rounded-lg p-3 text-xs"
                   >
                     {vm.score !== undefined && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500">
+                      <span className="chip type-code">
                         Score: {(vm.score * 100).toFixed(0)}%
                       </span>
                     )}
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <p className="text-[11px] leading-relaxed text-ink-2">
                       {vm.content}
                     </p>
                   </div>
                 ))
               ) : (
-                <div className="p-6 text-center text-xs text-muted-foreground border border-dashed border-black/[0.08] dark:border-white/[0.1] rounded-2xl space-y-1">
-                  <Brain className="w-6 h-6 mx-auto opacity-40 text-accent mb-1" />
-                  <p className="font-medium">No Vector Recalls Active</p>
-                  <p className="text-[11px] opacity-75">
-                    Semantic events appear here once the conversation grows beyond the short-term window.
+                <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
+                  <Brain aria-hidden className="mb-1 h-6 w-6 text-ink-3" />
+                  <p className="type-sec">No vector recalls yet</p>
+                  <p className="type-meta">
+                    Recalled events appear here once the conversation grows past the short-term window.
                   </p>
                 </div>
               )}

@@ -4,20 +4,10 @@ import React, { useState, useEffect, useRef, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Compass,
-  MessageSquare,
-  Flame,
   Search,
   Plus,
-  BookOpen,
   ArrowRight,
-  Upload,
-  UserPlus,
-  Sparkles,
-  Layers,
   Trash2,
-  ExternalLink,
-  Settings,
   X,
   User,
 } from 'lucide-react';
@@ -169,7 +159,7 @@ function HomePageContent() {
     }
   }, [searchParams]);
 
-  // Grouped chats for JanitorAI-style "My Chats"
+  // Grouped chats for the "My chats" index
   const chatGroups: CharacterChatGroup[] = React.useMemo(() => {
     return groupChatsByCharacter(chats, characters);
   }, [chats, characters]);
@@ -445,59 +435,65 @@ function HomePageContent() {
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {/* Search Bar */}
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <div className="relative max-w-md flex-1">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-ink-3"
+                  aria-hidden="true"
+                />
                 <input
                   type="text"
-                  placeholder="Search characters or keywords..."
+                  placeholder="Search by name, e.g. Elara…"
+                  aria-label="Search characters"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-zinc-800/40 dark:bg-zinc-800/60 border border-white/[0.08] text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40 transition-all"
+                  className="field pr-9 pl-9"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
+                    className="icon-btn absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 )}
               </div>
 
               {/* Action Buttons: Persona Switcher & Create */}
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex shrink-0 items-center gap-2">
                 {/* Persona Pill: View and Switch Personas */}
                 <button
                   onClick={() => setPersonaDrawerOpen(true)}
-                  className="px-3 py-2 rounded-full bg-zinc-800/60 hover:bg-zinc-700/60 border border-white/[0.08] text-zinc-200 hover:text-white transition-all apple-button flex items-center gap-1.5 text-xs font-medium shadow-xs"
-                  title="Click to view and switch your roleplay persona"
+                  className="chip gap-1.5 px-3 py-2 text-xs transition-colors hover:text-ink"
+                  title="View and switch your roleplay persona"
                   aria-label="Your Personas"
                 >
-                  <User className="w-3.5 h-3.5 text-purple-400" />
-                  <span className="hidden sm:inline text-zinc-400">Persona:</span>
-                  <span className="font-semibold max-w-[110px] truncate">{activePersonaName}</span>
+                  <User className="h-3.5 w-3.5 text-ink-2" aria-hidden="true" />
+                  <span className="hidden text-ink-3 sm:inline">Persona:</span>
+                  <span className="max-w-[110px] truncate font-medium">{activePersonaName}</span>
                 </button>
 
                 <button
                   onClick={() => setCreateDrawerOpen(true)}
-                  className="px-3.5 py-2 rounded-full bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs apple-button flex items-center gap-1.5 shadow-md shadow-purple-600/20"
+                  className="btn btn-primary text-xs"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Create</span>
                 </button>
               </div>
             </div>
 
             {/* Category Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-none">
+            <div className="scrollbar-none flex items-center gap-1.5 overflow-x-auto pb-1.5">
               {tags.map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setSelectedTag(tag)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap apple-button ${
+                  aria-pressed={selectedTag === tag}
+                  className={`whitespace-nowrap transition-colors ${
                     selectedTag === tag
-                      ? 'bg-purple-600 text-white font-semibold shadow-sm'
-                      : 'bg-zinc-800/50 hover:bg-zinc-800 border border-white/[0.06] text-muted-foreground hover:text-foreground'
+                      ? 'chip-accent chip inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold'
+                      : 'chip hover:text-ink px-3.5 py-1.5 text-xs'
                   }`}
                 >
                   {tag}
@@ -510,23 +506,22 @@ function HomePageContent() {
           {!searchQuery && selectedTag === 'All' && (
             <Link
               href="/duo"
-              className="flex items-center gap-3 rounded-3xl border border-purple-500/20 bg-purple-500/[0.06] hover:bg-purple-500/[0.1] px-4 py-3.5 transition-colors group"
+              className="group flex items-center gap-3 border-y border-line py-3.5 transition-colors"
             >
-              <div className="w-10 h-10 rounded-2xl bg-purple-600 flex items-center justify-center shadow-md shadow-purple-600/30 shrink-0 group-hover:scale-105 transition-transform">
-                <Sparkles className="w-4.5 h-4.5 w-5 h-5 text-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold flex items-center gap-1.5">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-sm font-medium text-accent-text">
                   Duo scenes
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold uppercase tracking-wider">
-                    New
-                  </span>
+                  <span className="chip chip-accent">New</span>
                 </div>
-                <div className="text-[11px] text-muted-foreground truncate">
-                  Pick two characters or personas — they talk, you watch. It keeps going while you&apos;re away.
+                <div className="mt-0.5 truncate text-xs text-ink-2">
+                  Pick two characters or personas — they talk, you watch. It keeps going while
+                  you&apos;re away.
                 </div>
               </div>
-              <ArrowRight className="w-4 h-4 text-purple-300 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              <ArrowRight
+                className="h-4 w-4 shrink-0 text-ink-3 transition-transform duration-150 group-hover:translate-x-0.5"
+                aria-hidden="true"
+              />
             </Link>
           )}
 
@@ -534,21 +529,18 @@ function HomePageContent() {
           {chats.length > 0 && !searchQuery && selectedTag === 'All' && (
             <section className="space-y-2.5 pt-1">
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-purple-400" />
-                  Continue Recent Chats
-                </h2>
+                <h2 className="type-sec">Continue recent chats</h2>
                 <button
                   onClick={() => setActiveTab('chats')}
-                  className="text-xs font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 apple-button"
+                  className="btn btn-quiet text-xs text-accent-text"
                 >
-                  View All ({chats.length})
-                  <ArrowRight className="w-3 h-3" />
+                  View all ({chats.length})
+                  <ArrowRight className="h-3 w-3" aria-hidden="true" />
                 </button>
               </div>
 
-              {/* Horizontal Scroll / Compact Grid of Recent Chats */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {/* Compact list of Recent Chats */}
+              <div className="divide-y divide-line border-y border-line">
                 {chats.slice(0, 3).map((chat) => {
                   const resolvedChar =
                     chat.character ||
@@ -568,24 +560,24 @@ function HomePageContent() {
                     <div
                       key={chat.id}
                       onClick={() => router.push(`/chat/${chat.id}${queryParam}`)}
-                      className="group relative flex items-center justify-between p-3 rounded-2xl bg-zinc-800/40 hover:bg-zinc-800/70 border border-white/[0.06] hover:border-purple-500/30 transition-all cursor-pointer shadow-xs"
+                      className="group flex cursor-pointer items-center justify-between gap-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklab,var(--ink)_3%,transparent)]"
                     >
-                      <div className="flex items-center space-x-3 truncate">
-                        <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-800 shrink-0 border border-white/10 relative">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="bg-sunken h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-line">
                           <CharacterAvatar
                             name={charName}
                             avatarUrl={avatarUrl}
-                            className="w-full h-full object-cover"
+                            className="h-full w-full object-cover"
                           />
                         </div>
-                        <div className="truncate">
-                          <div className="text-xs sm:text-sm font-semibold text-foreground group-hover:text-purple-300 transition-colors truncate">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-ink">
                             {charName}
                           </div>
-                          <div className="text-[11px] text-muted-foreground truncate">
+                          <div className="truncate text-xs text-ink-2">
                             {chat.title}
                           </div>
-                          <div className="text-[10px] text-zinc-500 font-medium mt-0.5">
+                          <div className="type-meta mt-0.5">
                             {timeFormatted}
                           </div>
                         </div>
@@ -594,11 +586,11 @@ function HomePageContent() {
                       {/* Delete button on recent chat pill */}
                       <button
                         onClick={(e) => handleDeleteRecentChat(e, chat.id)}
-                        className="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-500/20 text-zinc-400 hover:text-red-400 transition-all apple-button shrink-0"
+                        className="icon-btn h-8 w-8 shrink-0 opacity-0 transition-[opacity,color,background-color] group-hover:opacity-100 focus-visible:opacity-100"
                         title="Delete chat from recent history"
-                        aria-label="Delete chat"
+                        aria-label={`Delete chat with ${charName}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   );
@@ -610,109 +602,90 @@ function HomePageContent() {
           {/* Character Roster Gallery */}
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                Featured Characters
-              </h2>
-              <span className="text-xs text-muted-foreground">
+              <h2 className="type-sec">Featured characters</h2>
+              <span className="type-meta">
                 {filteredCharacters.length} {filteredCharacters.length === 1 ? 'character' : 'characters'}
               </span>
             </div>
 
             {filteredCharacters.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-5">
+              <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 lg:grid-cols-4">
                 {filteredCharacters.map((character) => (
                   <div
                     key={character.id}
                     onClick={() => handleStartChat(character)}
-                    className="flex flex-col rounded-3xl overflow-hidden bg-zinc-900/40 hover:bg-zinc-800/40 border border-white/[0.06] hover:border-purple-500/30 group cursor-pointer transition-all shadow-sm"
+                    className="group flex cursor-pointer flex-col"
                   >
-                    {/* Image & Header */}
-                    <div className="relative h-52 w-full overflow-hidden bg-zinc-900">
+                    {/* Portrait plate */}
+                    <div className="bg-sunken relative aspect-[3/4] overflow-hidden rounded-xl border border-line">
                       <CharacterAvatar
                         name={character.name}
                         avatarUrl={character.avatar_url}
                         accentColor={character.accent_color}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        className="h-full w-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none" />
 
-                      {/* Rating badge */}
+                      {/* Rating marker */}
                       {character.content_rating !== 'sfw' && (
-                        <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-red-600/80 backdrop-blur-md text-[10px] font-bold text-white uppercase tracking-wider flex items-center gap-1 shadow-sm">
-                          <Flame className="w-3 h-3" />
+                        <span className="chip chip-danger absolute top-2 left-2">
                           18+
-                        </div>
+                        </span>
                       )}
-
-                      {/* Name & Tagline */}
-                      <div className="absolute bottom-3 left-4 right-4 text-white">
-                        <h3 className="font-bold text-base sm:text-lg tracking-tight group-hover:text-purple-300 transition-colors">
-                          {character.name}
-                        </h3>
-                        <p className="text-xs text-zinc-300 line-clamp-1 mt-0.5">
-                          {character.tagline}
-                        </p>
-                      </div>
                     </div>
 
-                    {/* Card Body */}
-                    <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                        {character.description}
-                      </p>
+                    {/* Caption beneath the plate */}
+                    <div className="min-w-0 pt-2">
+                      <h3 className="truncate font-serif text-[17px] leading-snug text-ink">
+                        {character.name}
+                      </h3>
+                      {character.tagline && (
+                        <p className="type-meta mt-0.5 line-clamp-1">
+                          {character.tagline}
+                        </p>
+                      )}
+                      {character.tags && character.tags.length > 0 && (
+                        <p className="type-meta mt-0.5 truncate">
+                          {character.tags.slice(0, 3).join(', ')}
+                        </p>
+                      )}
 
-                      {/* Tags */}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {character.tags?.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag}
-                            className="px-2 py-0.5 rounded-md bg-white/[0.05] text-[10px] text-zinc-400"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
+                      {/* Actions, revealed on hover or keyboard focus */}
+                      <div className="flex items-center gap-1 pt-1.5 opacity-0 transition-[opacity] duration-150 group-hover:opacity-100 focus-within:opacity-100">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/c/${character.id}`);
+                          }}
+                          className="btn btn-quiet text-xs"
+                        >
+                          Details
+                        </button>
 
-                      {/* Bottom Actions */}
-                      <div className="pt-2 border-t border-white/[0.04] flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/c/${character.id}`);
-                            }}
-                            className="px-2.5 py-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
-                          >
-                            Details
-                          </button>
-
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (window.confirm(`Permanently delete "${character.name}" from your roster?`)) {
-                                await deleteCharacter(character.id);
-                                toast.success(`Deleted "${character.name}"`);
-                                await loadData();
-                              }
-                            }}
-                            className="p-1.5 rounded-full hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors apple-button"
-                            title="Delete character"
-                            aria-label="Delete character"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Permanently delete "${character.name}" from your roster?`)) {
+                              await deleteCharacter(character.id);
+                              toast.success(`Deleted "${character.name}"`);
+                              await loadData();
+                            }
+                          }}
+                          className="icon-btn h-8 w-8"
+                          title="Delete character"
+                          aria-label={`Delete ${character.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
 
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleStartChat(character);
                           }}
-                          className="px-4 py-1.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold apple-button flex items-center gap-1 shadow-sm"
+                          className="btn btn-primary ml-auto text-xs"
                         >
                           Chat
-                          <ArrowRight className="w-3 h-3" />
+                          <ArrowRight className="h-3 w-3" aria-hidden="true" />
                         </button>
                       </div>
                     </div>
@@ -722,12 +695,36 @@ function HomePageContent() {
             ) : (
               /* Empty Search State */
               !loading && (
-                <div className="py-14 text-center space-y-3 bg-zinc-900/20 rounded-3xl border border-white/[0.04]">
-                  <Compass className="w-8 h-8 text-muted-foreground mx-auto opacity-40" />
-                  <h3 className="text-sm font-semibold">No characters found matching &ldquo;{searchQuery}&rdquo;</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Try adjusting your search query or switching categories.
+                <div className="space-y-3 py-14 text-center">
+                  <h3 className="type-display text-2xl">
+                    {searchQuery || selectedTag !== 'All' ? 'Nothing matches' : 'Your roster is empty'}
+                  </h3>
+                  <p className="mx-auto max-w-sm text-sm text-ink-2">
+                    {searchQuery
+                      ? `Nothing matches \u201c${searchQuery}\u201d. Try another word, or clear the filter.`
+                      : selectedTag !== 'All'
+                      ? `Nothing is tagged ${selectedTag}. Clear the filter to see everything.`
+                      : 'Create a character from scratch, or import a card from Janitor AI or Chub.'}
                   </p>
+                  {searchQuery || selectedTag !== 'All' ? (
+                    <button
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSelectedTag('All');
+                      }}
+                      className="btn btn-ghost text-xs"
+                    >
+                      Clear filters
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setCreateDrawerOpen(true)}
+                      className="btn btn-primary text-xs"
+                    >
+                      <Plus className="h-3.5 w-3.5" aria-hidden />
+                      Create character
+                    </button>
+                  )}
                 </div>
               )
             )}
@@ -735,7 +732,7 @@ function HomePageContent() {
         </div>
       )}
 
-      {/* ─────────────────── FLOATING MOBILE PWA DOCK (Matching JanitorAI Image 3) ─────────────────── */}
+      {/* ─────────────────── FLOATING MOBILE DOCK ─────────────────── */}
       <MobileDock
         activeTab={activeTab}
         onTabChange={handleTabChange}
@@ -766,39 +763,46 @@ function HomePageContent() {
 
       {/* ─────────────────── IMPORT GUIDE MODAL ─────────────────── */}
       {showImportGuide && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-lg bg-[#18181b] border border-white/10 rounded-3xl p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="panel bg-raised relative w-full max-w-lg space-y-4 p-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
-                <BookOpen className="w-4 h-4 text-purple-400" />
-                Importing from Janitor AI & Chub
-              </h3>
+              <h3 className="type-sec text-sm">Import a character card</h3>
               <button
                 onClick={() => setShowImportGuide(false)}
-                className="p-1 rounded-full text-zinc-400 hover:text-white"
+                aria-label="Close"
+                className="icon-btn h-8 w-8"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
-            <div className="space-y-3 text-xs text-muted-foreground">
-              <div className="p-3.5 rounded-2xl bg-white/[0.03] space-y-1">
-                <span className="font-semibold text-foreground block">1. Export Card</span>
-                <p>On Janitor AI or Chub.ai, open any character and click <em>Export / Download Card (PNG or JSON)</em>.</p>
-              </div>
-              <div className="p-3.5 rounded-2xl bg-white/[0.03] space-y-1">
-                <span className="font-semibold text-foreground block">2. Tap Import Card</span>
-                <p>Select your downloaded image or JSON file. Cadenza automatically extracts personality, scenario, greeting, and embedded avatar.</p>
-              </div>
-              <div className="p-3.5 rounded-2xl bg-white/[0.03] space-y-1">
-                <span className="font-semibold text-foreground block">3. Immediate Play</span>
-                <p>The character is ready to chat immediately with deep memory and uncensored responses.</p>
-              </div>
-            </div>
+            <ol className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+              <li className="flex items-start gap-3 p-3.5">
+                <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">1</span>
+                <div className="space-y-1">
+                  <span className="block text-xs font-medium text-ink">Export the card</span>
+                  <p className="text-xs leading-relaxed text-ink-2">On the character&apos;s page, choose the export or download option and save the PNG or JSON file.</p>
+                </div>
+              </li>
+              <li className="flex items-start gap-3 p-3.5">
+                <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">2</span>
+                <div className="space-y-1">
+                  <span className="block text-xs font-medium text-ink">Choose import</span>
+                  <p className="text-xs leading-relaxed text-ink-2">Select your downloaded file. Cadenza reads the personality, scenario, greeting and avatar from it.</p>
+                </div>
+              </li>
+              <li className="flex items-start gap-3 p-3.5">
+                <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">3</span>
+                <div className="space-y-1">
+                  <span className="block text-xs font-medium text-ink">Start chatting</span>
+                  <p className="text-xs leading-relaxed text-ink-2">The character is ready straight away, with its memory and instructions intact.</p>
+                </div>
+              </li>
+            </ol>
             <button
               onClick={() => setShowImportGuide(false)}
-              className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold apple-button"
+              className="btn btn-primary w-full text-xs"
             >
-              Got it
+              Close
             </button>
           </div>
         </div>
@@ -833,7 +837,7 @@ export default function HomePage() {
     <React.Suspense
       fallback={
         <div className="flex-1 flex items-center justify-center p-12">
-          <div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+          <div className="border-accent h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" />
         </div>
       }
     >

@@ -45,19 +45,19 @@ export function ComposerFormatToolbar({
   };
 
   return (
-    <div className="flex items-center justify-between gap-1 text-[11px] px-1 py-0.5 select-none">
+    <div className="flex select-none items-center justify-between gap-1 px-1 py-0.5 text-[11px]">
       {/* Left: Quick Formatting Chips */}
-      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5">
+      <div className="scrollbar-none flex items-center gap-1 overflow-x-auto py-0.5">
         {/* Dialogue Quote Chip */}
         <button
           type="button"
           disabled={disabled}
           onClick={() => onFormat('“', '”')}
-          className="px-2 py-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-serif text-xs transition-all apple-button flex items-center gap-1 active:scale-95 disabled:opacity-40"
+          className="btn btn-quiet text-[11px]"
           title='Format dialogue: wraps selection in "quotes"'
         >
-          <Quote className="w-3 h-3 text-accent shrink-0" />
-          <span className="font-semibold text-[11px]">“Quote”</span>
+          <Quote aria-hidden className="h-3 w-3 shrink-0 text-ink-2" />
+          <span className="font-serif text-xs font-semibold">“Quote”</span>
         </button>
 
         {/* Prose Action Italic Chip */}
@@ -65,11 +65,11 @@ export function ComposerFormatToolbar({
           type="button"
           disabled={disabled}
           onClick={() => onFormat('*', '*')}
-          className="px-2 py-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-serif italic text-xs transition-all apple-button flex items-center gap-1 active:scale-95 disabled:opacity-40"
+          className="btn btn-quiet text-[11px]"
           title="Format action/narration: wraps selection in *asterisks*"
         >
-          <Italic className="w-3 h-3 text-emerald-500 shrink-0" />
-          <span className="text-[11px] font-medium">*Action*</span>
+          <Italic aria-hidden className="h-3 w-3 shrink-0 text-ink-2" />
+          <span className="font-serif text-xs font-medium italic">*Action*</span>
         </button>
 
         {/* Out-Of-Character Note Chip */}
@@ -77,10 +77,10 @@ export function ComposerFormatToolbar({
           type="button"
           disabled={disabled}
           onClick={() => onFormat('(( ', ' ))')}
-          className="px-2 py-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-mono text-[10px] transition-all apple-button flex items-center gap-1 active:scale-95 disabled:opacity-40"
+          className="btn btn-quiet font-mono text-[10px]"
           title="Out-of-character directive: (( Note to AI / OOC instruction ))"
         >
-          <MessageSquareCode className="w-3 h-3 text-purple-500 shrink-0" />
+          <MessageSquareCode aria-hidden className="h-3 w-3 shrink-0 text-ink-2" />
           <span className="font-medium">(( OOC ))</span>
         </button>
 
@@ -89,10 +89,10 @@ export function ComposerFormatToolbar({
           type="button"
           disabled={disabled}
           onClick={() => onFormat('||', '||')}
-          className="px-2 py-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground text-[10px] transition-all apple-button flex items-center gap-1 active:scale-95 disabled:opacity-40 hidden xs:flex"
+          className="btn btn-quiet hidden text-[10px] sm:flex"
           title="Spoiler: wraps in ||spoiler|| for click-to-reveal blur"
         >
-          <EyeOff className="w-3 h-3 text-amber-500 shrink-0" />
+          <EyeOff aria-hidden className="h-3 w-3 shrink-0 text-ink-2" />
           <span>|| Spoiler ||</span>
         </button>
 
@@ -102,12 +102,14 @@ export function ComposerFormatToolbar({
             type="button"
             disabled={disabled}
             onClick={() => setDiceDropdownOpen(!diceDropdownOpen)}
-            className="px-2 py-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-mono text-[10px] transition-all apple-button flex items-center gap-1 active:scale-95 disabled:opacity-40"
+            aria-expanded={diceDropdownOpen}
+            aria-haspopup="menu"
+            className="btn btn-quiet font-mono text-[10px]"
             title="Insert interactive dice roll macro"
           >
-            <Dices className="w-3 h-3 text-accent shrink-0" />
-            <span className="font-semibold text-accent">🎲 Roll</span>
-            <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+            <Dices aria-hidden className="h-3 w-3 shrink-0 text-ink-2" />
+            <span className="font-semibold">Roll</span>
+            <ChevronDown aria-hidden className="h-2.5 w-2.5 opacity-60" />
           </button>
 
           {diceDropdownOpen && (
@@ -116,24 +118,29 @@ export function ComposerFormatToolbar({
                 className="fixed inset-0 z-40"
                 onClick={() => setDiceDropdownOpen(false)}
               />
-              <div className="absolute left-0 bottom-full mb-1.5 w-48 p-1.5 rounded-2xl bg-background border border-black/[0.08] dark:border-white/[0.1] shadow-xl glass-card z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                  Insert Dice Roll Macro
+              <div
+                role="menu"
+                style={{ transformOrigin: 'bottom left' }}
+                className="panel animate-in fade-in absolute bottom-full left-0 z-50 mb-1.5 w-48 space-y-0.5 rounded-xl border-line bg-raised p-1.5 shadow-float duration-150"
+              >
+                <div className="type-label px-2 py-1">
+                  Insert dice roll
                 </div>
                 {COMMON_DICE.map((d) => (
                   <button
                     key={d.formula}
                     type="button"
+                    role="menuitem"
                     onClick={() => handleRollInsert(d.formula)}
-                    className="w-full px-2.5 py-1.5 rounded-xl text-left text-xs hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-between group transition-colors"
+                    className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs text-ink-2 transition-colors hover:text-ink"
                   >
                     <div>
-                      <span className="font-mono font-semibold text-accent group-hover:scale-105 inline-block">
+                      <span className="font-mono font-semibold text-accent-text">
                         {d.formula}
                       </span>
-                      <p className="text-[10px] text-muted-foreground">{d.desc}</p>
+                      <p className="text-[10px] text-ink-3">{d.desc}</p>
                     </div>
-                    <span className="text-[10px] opacity-40 font-mono">Insert</span>
+                    <span className="font-mono text-[10px] opacity-40">Insert</span>
                   </button>
                 ))}
               </div>
@@ -147,17 +154,15 @@ export function ComposerFormatToolbar({
         <button
           type="button"
           onClick={onToggleSound}
-          className={`p-1.5 rounded-lg transition-colors apple-button shrink-0 ml-1 ${
-            soundEnabled
-              ? 'text-accent hover:bg-accent/10'
-              : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'
-          }`}
+          aria-label={soundEnabled ? 'Mute sound effects' : 'Enable sound effects'}
+          className="icon-btn ml-1 shrink-0"
+          style={{ width: 24, height: 24 }}
           title={soundEnabled ? 'Sound effects enabled (Click to mute)' : 'Sound effects muted (Click to enable)'}
         >
           {soundEnabled ? (
-            <Volume2 className="w-3.5 h-3.5" />
+            <Volume2 aria-hidden className="h-3.5 w-3.5" />
           ) : (
-            <VolumeX className="w-3.5 h-3.5" />
+            <VolumeX aria-hidden className="h-3.5 w-3.5" />
           )}
         </button>
       )}

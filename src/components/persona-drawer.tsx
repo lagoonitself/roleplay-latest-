@@ -121,51 +121,57 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div
+        className="fixed inset-0 z-50 flex items-end justify-center bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
+        onClick={onClose}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onClose();
+        }}
+      >
         <div className="absolute inset-0" onClick={onClose} />
 
         <div
-          className="relative z-10 w-full max-w-lg bg-[#18181b] dark:bg-[#121214] text-zinc-100 rounded-t-[2.25rem] border-t border-white/[0.09] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in slide-in-from-bottom duration-300 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Your personas"
           onClick={(e) => e.stopPropagation()}
+          className="panel relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in slide-in-from-bottom duration-200 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]"
         >
           {/* Handle */}
-          <div className="w-12 h-1.5 rounded-full bg-zinc-600/60 mx-auto mt-3 mb-2" />
+          <div className="w-8 h-1 rounded-full bg-line-strong mx-auto mt-3 mb-2" aria-hidden />
 
           {/* Header */}
-          <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-purple-600/20 text-purple-400 flex items-center justify-center border border-purple-500/20">
-                <User className="w-4 h-4" />
+          <div className="px-5 py-3 flex items-center justify-between border-b border-line">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-md bg-sunken border border-line flex items-center justify-center shrink-0">
+                <User className="w-4 h-4 text-ink-3" aria-hidden />
               </div>
-              <div>
-                <h3 className="font-bold text-base text-white tracking-tight">Your Personas & Profile</h3>
-                <p className="text-xs text-zinc-400">Choose who you roleplay as in stories</p>
+              <div className="min-w-0">
+                <h3 className="type-page text-base">Your personas</h3>
+                <p className="type-meta truncate">Choose who you play in your stories</p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-            >
-              <X className="w-5 h-5" />
+            <button onClick={onClose} className="icon-btn shrink-0" aria-label="Close personas">
+              <X className="w-5 h-5" aria-hidden />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
             {/* Active Persona Spotlight Card */}
             {activePersona && (
-              <div className="p-4 rounded-2xl bg-purple-950/20 border border-purple-500/30 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-purple-400 flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3" />
-                    Currently Roleplaying As
+              <div className="rounded-lg border border-accent-line bg-accent-wash p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="type-sec flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-ink-3" aria-hidden />
+                    Currently roleplaying as
                   </span>
-                  <span className="px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold text-[10px] flex items-center gap-1">
-                    <Check className="w-3 h-3" />
+                  <span className="chip-accent chip">
+                    <Check className="w-3 h-3" aria-hidden />
                     Active
                   </span>
                 </div>
-                <div className="flex items-center gap-3 pt-1">
-                  <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-800 shrink-0 border border-white/10 relative">
+                <div className="flex items-center gap-3 pt-1 min-w-0">
+                  <div className="w-11 h-11 rounded-md overflow-hidden bg-sunken shrink-0 border border-line relative">
                     <CharacterAvatar
                       name={activePersona.name}
                       avatarUrl={activePersona.avatar_url}
@@ -173,69 +179,66 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
                     />
                   </div>
                   <div className="min-w-0">
-                    <h4 className="font-bold text-sm text-white truncate">{activePersona.name}</h4>
-                    <p className="text-xs text-zinc-300 line-clamp-1">{activePersona.description}</p>
+                    <h4 className="font-serif text-[0.95rem] font-medium text-ink truncate">
+                      {activePersona.name}
+                    </h4>
+                    <p className="type-meta line-clamp-1">{activePersona.description}</p>
                   </div>
                 </div>
               </div>
             )}
 
             {/* All Personas List */}
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                  Available Personas ({personas.length})
-                </span>
-                <button
-                  onClick={() => setCreateModalOpen(true)}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-purple-400 hover:text-purple-300 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Persona
+                <span className="type-sec">All personas ({personas.length})</span>
+                <button onClick={() => setCreateModalOpen(true)} className="btn btn-quiet">
+                  <Plus className="w-3.5 h-3.5 text-accent-text" aria-hidden />
+                  Add persona
                 </button>
               </div>
 
-              <div className="space-y-2">
+              <div className="surface rounded-lg divide-y divide-line overflow-hidden">
                 {personas.map((persona) => {
                   const isActive = persona.id === activePersona?.id;
 
                   return (
                     <div
                       key={persona.id}
-                      onClick={() => handleSetActive(persona)}
-                      className={`group flex items-center justify-between p-3 rounded-2xl border cursor-pointer transition-all ${
-                        isActive
-                          ? 'bg-purple-900/15 border-purple-500/40 text-white shadow-xs'
-                          : 'bg-zinc-800/40 hover:bg-zinc-800/70 border-white/[0.06] text-zinc-300'
+                      className={`group flex items-center justify-between gap-2 p-3 transition-[background-color] duration-150 ${
+                        isActive ? 'bg-accent-wash' : ''
                       }`}
                     >
-                      <div className="flex items-center gap-3 min-w-0 pr-2">
-                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-800 shrink-0 border border-white/10 relative">
+                      <button
+                        type="button"
+                        onClick={() => handleSetActive(persona)}
+                        aria-pressed={isActive}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 pr-2 text-left"
+                      >
+                        <div className="w-10 h-10 rounded-md overflow-hidden bg-sunken shrink-0 border border-line relative">
                           <CharacterAvatar
                             name={persona.name}
                             avatarUrl={persona.avatar_url}
                             className="w-full h-full object-cover"
                           />
                         </div>
-                        <div className="truncate">
-                          <div className="font-semibold text-xs sm:text-sm text-white truncate flex items-center gap-1.5">
+                        <div className="min-w-0">
+                          <div className="font-serif text-[0.9rem] font-medium text-ink truncate flex items-center gap-1.5">
                             {persona.name}
-                            {isActive && <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+                            {isActive && <Check className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden />}
                           </div>
-                          <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                            {persona.description}
-                          </p>
+                          <p className="type-meta truncate mt-0.5">{persona.description}</p>
                         </div>
-                      </div>
+                      </button>
 
                       <div className="flex items-center gap-1 shrink-0">
                         {personas.length > 1 && (
                           <button
                             onClick={(e) => handleDelete(e, persona.id, persona.name)}
-                            className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                            title="Delete persona"
+                            className="icon-btn"
+                            aria-label={`Delete ${persona.name}`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5" aria-hidden />
                           </button>
                         )}
                       </div>
@@ -246,10 +249,8 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
             </div>
 
             {/* Quick App Settings Section */}
-            <div className="space-y-2 pt-2 border-t border-white/[0.06]">
-              <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
-                Preferences & Engine
-              </span>
+            <div className="space-y-2 pt-3 border-t border-line">
+              <span className="type-sec block">Preferences</span>
 
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -257,25 +258,26 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
                     onClose();
                     onOpenSettingsDialog();
                   }}
-                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-zinc-800/50 hover:bg-zinc-800 border border-white/[0.06] text-xs font-medium text-zinc-200 transition-colors text-left"
+                  className="surface rounded-lg flex items-center gap-2.5 p-3 text-xs font-medium text-ink-2 text-left"
                 >
-                  <Settings className="w-4 h-4 text-purple-400 shrink-0" />
-                  <span>AI Engine & API Keys</span>
+                  <Settings className="w-4 h-4 text-ink-3 shrink-0" aria-hidden />
+                  <span>Engine and keys</span>
                 </button>
 
                 <button
                   onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-zinc-800/50 hover:bg-zinc-800 border border-white/[0.06] text-xs font-medium text-zinc-200 transition-colors text-left"
+                  className="surface rounded-lg flex items-center gap-2.5 p-3 text-xs font-medium text-ink-2 text-left"
+                  aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
                 >
                   {theme === 'dark' ? (
                     <>
-                      <Sun className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>Light Theme</span>
+                      <Sun className="w-4 h-4 text-ink-2 shrink-0" aria-hidden />
+                      <span>Light theme</span>
                     </>
                   ) : (
                     <>
-                      <Moon className="w-4 h-4 text-purple-400 shrink-0" />
-                      <span>Dark Theme</span>
+                      <Moon className="w-4 h-4 text-ink-2 shrink-0" aria-hidden />
+                      <span>Dark theme</span>
                     </>
                   )}
                 </button>
@@ -284,13 +286,13 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
               <Link
                 href="/lorebooks"
                 onClick={onClose}
-                className="w-full flex items-center justify-between p-3 rounded-2xl bg-zinc-800/30 hover:bg-zinc-800/60 border border-white/[0.04] text-xs text-zinc-300 transition-colors"
+                className="surface rounded-lg w-full flex items-center justify-between p-3 text-xs text-ink-2"
               >
                 <div className="flex items-center gap-2.5">
-                  <BookOpen className="w-4 h-4 text-blue-400" />
-                  <span>World Lorebooks & Knowledge</span>
+                  <BookOpen className="w-4 h-4 text-ink-3" aria-hidden />
+                  <span>World lorebooks</span>
                 </div>
-                <ExternalLink className="w-3.5 h-3.5 text-zinc-500" />
+                <ExternalLink className="w-3.5 h-3.5 text-ink-3" aria-hidden />
               </Link>
             </div>
           </div>

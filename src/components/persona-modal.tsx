@@ -6,13 +6,10 @@ import {
   Plus,
   Sparkles,
   Check,
-  User,
   ArrowRight,
   Trash2,
-  Edit2,
   ChevronLeft,
   Image as ImageIcon,
-  Link2,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
@@ -62,7 +59,7 @@ export function PersonaModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [accentColor, setAccentColor] = useState('#3b82f6');
+  const [accentColor, setAccentColor] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -257,43 +254,47 @@ export function PersonaModal({
 
   if (!open) return null;
 
+  const chosenName = personas.find((p) => p.id === selectedPersonaId)?.name || 'Default';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+    >
       {/* Mobile Bottom Sheet / Desktop Modal Dialog */}
-      <div className="w-full sm:max-w-xl max-h-[92vh] sm:max-h-[85vh] flex flex-col bg-background/95 border border-black/[0.08] dark:border-white/[0.12] rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-250">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={mode === 'list' ? 'Choose your persona' : 'Create a persona'}
+        onClick={(e) => e.stopPropagation()}
+        className="panel w-full sm:max-w-xl max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl overflow-hidden animate-in slide-in-from-bottom duration-200"
+      >
         {/* Mobile Grab Bar */}
-        <div className="sm:hidden flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full bg-black/20 dark:bg-white/20" />
+        <div className="sm:hidden flex justify-center pt-3 pb-1" aria-hidden>
+          <div className="w-8 h-1 rounded-full bg-line-strong" />
         </div>
 
         {/* Modal Header */}
-        <div className="px-5 sm:px-6 py-4 border-b border-black/[0.06] dark:border-white/[0.08] flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="px-5 sm:px-6 py-4 border-b border-line flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {mode === 'create' && (
-              <button
-                onClick={() => setMode('list')}
-                className="p-1.5 -ml-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
-              >
-                <ChevronLeft className="w-5 h-5" />
+              <button onClick={() => setMode('list')} className="icon-btn" aria-label="Back to personas">
+                <ChevronLeft className="w-5 h-5" aria-hidden />
               </button>
             )}
-            <div>
-              <h2 className="text-base sm:text-lg font-bold tracking-tight">
-                {mode === 'list' ? 'Choose Your Persona' : 'Create New Persona'}
-              </h2>
-              <p className="text-xs text-muted-foreground line-clamp-1">
-                {character
-                  ? `Roleplaying with ${character.name}`
-                  : 'Define who you are playing in this story'}
+            <div className="min-w-0">
+              <h2 className="type-page text-lg">{mode === 'list' ? 'Choose your persona' : 'Create a persona'}</h2>
+              <p className="type-meta truncate">
+                {character ? `Roleplaying with ${character.name}` : 'Define who you play in this story'}
               </p>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
-          >
-            <X className="w-4 h-4" />
+          <button onClick={onClose} className="icon-btn shrink-0" aria-label="Close personas">
+            <X className="w-4 h-4" aria-hidden />
           </button>
         </div>
 
@@ -301,17 +302,12 @@ export function PersonaModal({
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
           {mode === 'list' ? (
             /* LIST MODE */
-            <div className="space-y-3">
+            <div className="space-y-2">
               <div className="flex items-center justify-between pb-1">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Your Personas ({personas.length})
-                </span>
-                <button
-                  onClick={() => setMode('create')}
-                  className="px-3 py-1 rounded-full bg-accent/10 text-accent hover:bg-accent/20 text-xs font-semibold apple-button flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  New Persona
+                <span className="type-sec">Your personas ({personas.length})</span>
+                <button onClick={() => setMode('create')} className="btn btn-ghost">
+                  <Plus className="w-3.5 h-3.5 text-accent-text" aria-hidden />
+                  New persona
                 </button>
               </div>
 
@@ -321,15 +317,17 @@ export function PersonaModal({
                 return (
                   <div
                     key={persona.id}
-                    onClick={() => setSelectedPersonaId(persona.id)}
-                    className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                      isSelected
-                        ? 'border-accent bg-accent/[0.04] shadow-sm'
-                        : 'border-black/[0.06] dark:border-white/[0.08] hover:border-black/20 dark:hover:border-white/20'
+                    className={`p-3.5 sm:p-4 rounded-lg border flex items-center justify-between gap-3 transition-[border-color,background-color] duration-150 ${
+                      isSelected ? 'border-accent-line bg-accent-wash' : 'border-line'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-11 h-11 rounded-2xl overflow-hidden shrink-0 border border-white/10 shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPersonaId(persona.id)}
+                      aria-pressed={isSelected}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                    >
+                      <div className="w-11 h-11 rounded-md overflow-hidden shrink-0 border border-line">
                         <CharacterAvatar
                           name={persona.name}
                           avatarUrl={persona.avatar_url}
@@ -337,40 +335,35 @@ export function PersonaModal({
                         />
                       </div>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold tracking-tight truncate">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-serif text-[0.95rem] font-medium text-ink truncate">
                             {persona.name}
                           </span>
-                          {isSelected && (
-                            <span className="text-[10px] px-2 py-0.2 rounded-full bg-accent text-white font-bold">
-                              Selected
-                            </span>
-                          )}
+                          {isSelected && <span className="chip-accent chip">Selected</span>}
                         </div>
-                        <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                          {persona.description || 'No background description provided.'}
+                        <p className="type-meta line-clamp-1 mt-0.5">
+                          {persona.description || 'No background yet.'}
                         </p>
                       </div>
-                    </div>
+                    </button>
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       {personas.length > 1 && (
                         <button
                           onClick={(e) => handleDeletePersona(persona.id, e)}
-                          className="p-2 text-muted-foreground hover:text-red-500 rounded-xl hover:bg-red-500/10 transition-colors"
-                          title="Delete persona"
+                          className="icon-btn"
+                          aria-label={`Delete ${persona.name}`}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5" aria-hidden />
                         </button>
                       )}
                       <div
-                        className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${
-                          isSelected
-                            ? 'bg-accent border-accent text-white'
-                            : 'border-muted-foreground/30'
+                        aria-hidden
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                          isSelected ? 'border-accent-line bg-accent-wash' : 'border-line-strong'
                         }`}
                       >
-                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        {isSelected && <Check className="w-3 h-3 text-accent-text" aria-hidden />}
                       </div>
                     </div>
                   </div>
@@ -381,52 +374,47 @@ export function PersonaModal({
             /* CREATE MODE */
             <div className="space-y-4 animate-in fade-in duration-150">
               {/* AI Generator Box */}
-              <div className="p-4 rounded-2xl bg-purple-500/[0.06] border border-purple-500/20 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    AI Persona Generator
+              <div className="surface rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="type-sec flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-accent-text" aria-hidden />
+                    Persona generator
                   </span>
-                  {character && (
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      Matched to {character.name}
-                    </span>
-                  )}
+                  {character && <span className="type-meta">Matched to {character.name}</span>}
                 </div>
 
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Describe what kind of character you want to play, or leave blank to automatically design a counterpart with rich backstory!
+                <p className="type-meta leading-relaxed">
+                  Describe who you want to play, or leave it blank and let the generator draft a
+                  counterpart for this story.
                 </p>
 
-                <div className="space-y-2.5">
+                <div className="space-y-2">
+                  <label htmlFor="persona-ai-idea" className="type-label">
+                    Your idea
+                  </label>
                   <textarea
+                    id="persona-ai-idea"
                     rows={3}
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="Describe your character concept (e.g. Her estranged ex-husband, a cynical detective who still carries an old silver lighter she gave him)..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-500/40 resize-y min-h-[76px] max-h-[180px] overflow-y-auto"
+                    placeholder="Describe your idea, e.g. a cynical detective with an old silver lighter…"
+                    className="field resize-y min-h-[76px] max-h-[180px] text-xs leading-relaxed"
                   />
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-muted-foreground">
-                      {aiPrompt.length > 0 ? `${aiPrompt.length} characters` : 'Optional • Leave blank for auto-generation'}
+                    <span className="type-meta">
+                      {aiPrompt.length > 0 ? `${aiPrompt.length} characters` : 'Optional'}
                     </span>
                     <button
                       type="button"
                       onClick={handleGenerateAI}
                       disabled={aiLoading}
-                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold apple-button flex items-center gap-1.5 shrink-0 shadow-sm disabled:opacity-50 transition-all cursor-pointer"
+                      className="btn btn-ghost disabled:opacity-50"
                     >
-                      {aiLoading ? (
-                        <>
-                          <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                          Generating...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-3.5 h-3.5" />
-                          Generate
-                        </>
-                      )}
+                      <Sparkles
+                        className={`w-3.5 h-3.5 text-accent-text ${aiLoading ? 'animate-spin' : ''}`}
+                        aria-hidden
+                      />
+                      {aiLoading ? 'Generating…' : 'Generate'}
                     </button>
                   </div>
                 </div>
@@ -436,7 +424,7 @@ export function PersonaModal({
               <div className="space-y-3 pt-1">
                 <div className="flex items-center gap-4">
                   {/* Avatar Preview */}
-                  <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 border border-black/10 dark:border-white/10 shadow-xs relative group">
+                  <div className="w-16 h-16 rounded-md overflow-hidden shrink-0 border border-line relative">
                     <CharacterAvatar
                       name={name || 'Persona'}
                       avatarUrl={avatarUrl}
@@ -445,16 +433,17 @@ export function PersonaModal({
                     />
                   </div>
 
-                  <div className="flex-1 space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Persona Name <span className="text-accent">*</span>
+                  <div className="flex-1 space-y-1.5 min-w-0">
+                    <label htmlFor="persona-name" className="type-label">
+                      Persona name
                     </label>
                     <input
+                      id="persona-name"
                       type="text"
                       placeholder="e.g. Alexander Vance"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-accent/40 font-medium"
+                      className="field font-medium"
                     />
                   </div>
                 </div>
@@ -464,10 +453,10 @@ export function PersonaModal({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-3 py-1.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] hover:bg-black/[0.06] dark:hover:bg-white/[0.1] text-xs font-medium apple-button flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+                    className="btn btn-quiet"
                   >
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    Upload Photo
+                    <ImageIcon className="w-3.5 h-3.5" aria-hidden />
+                    Upload photo
                   </button>
                   <input
                     ref={fileInputRef}
@@ -475,29 +464,27 @@ export function PersonaModal({
                     accept="image/*"
                     onChange={handleImageUpload}
                     className="hidden"
+                    aria-label="Upload persona photo"
                   />
                   {avatarUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setAvatarUrl('')}
-                      className="px-2.5 py-1.5 rounded-xl text-xs text-red-500 hover:bg-red-500/10"
-                    >
-                      Clear Photo
+                    <button type="button" onClick={() => setAvatarUrl('')} className="btn btn-quiet text-danger">
+                      Clear photo
                     </button>
                   )}
                 </div>
 
                 {/* Description / Backstory */}
                 <div className="space-y-1.5 pt-1">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Persona Backstory & Appearance
+                  <label htmlFor="persona-backstory" className="type-label">
+                    Backstory and appearance
                   </label>
                   <textarea
+                    id="persona-backstory"
                     rows={4}
-                    placeholder="Describe your character's physical traits, connection to {{char}}, profession, or personality..."
+                    placeholder="How they look, what they do, how they know this story…"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="w-full p-3.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-accent/40"
+                    className="field text-xs leading-relaxed"
                   />
                 </div>
               </div>
@@ -506,36 +493,25 @@ export function PersonaModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 sm:p-5 border-t border-black/[0.06] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.02] flex items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 border-t border-line flex items-center justify-between gap-3">
           {mode === 'list' ? (
             <>
-              <p className="text-xs text-muted-foreground hidden sm:block">
-                Selected: <strong>{personas.find((p) => p.id === selectedPersonaId)?.name || 'Default'}</strong>
+              <p className="type-meta hidden sm:block min-w-0 truncate">
+                Selected: <strong className="text-ink-2">{chosenName}</strong>
               </p>
-              <button
-                onClick={handleConfirmSelection}
-                className="w-full sm:w-auto ml-auto px-6 py-2.5 rounded-full bg-accent text-white hover:bg-accent-hover text-xs sm:text-sm font-semibold apple-button flex items-center justify-center gap-2 shadow-sm"
-              >
-                <span>Start Roleplay</span>
-                <ArrowRight className="w-4 h-4" />
+              <button onClick={handleConfirmSelection} className="btn btn-primary w-full sm:w-auto ml-auto">
+                <span>Start roleplay</span>
+                <ArrowRight className="w-4 h-4" aria-hidden />
               </button>
             </>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => setMode('list')}
-                className="px-4 py-2 text-xs font-medium rounded-full hover:bg-black/5 dark:hover:bg-white/10 apple-button"
-              >
+              <button type="button" onClick={() => setMode('list')} className="btn btn-quiet">
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleSavePersona}
-                className="px-5 py-2 rounded-full bg-accent text-white hover:bg-accent-hover text-xs font-semibold apple-button flex items-center gap-1.5 shadow-sm"
-              >
-                <Check className="w-3.5 h-3.5" />
-                Save & Select
+              <button type="button" onClick={handleSavePersona} className="btn btn-primary">
+                <Check className="w-3.5 h-3.5" aria-hidden />
+                Save and select
               </button>
             </>
           )}

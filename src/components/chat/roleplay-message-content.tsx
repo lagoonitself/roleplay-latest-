@@ -10,13 +10,9 @@ import {
   ChevronDown,
   ChevronRight,
   Shield,
-  Heart,
-  Zap,
-  Coins,
   Copy,
   Check,
   Brain,
-  MessageSquare,
   Award,
   Scroll,
 } from 'lucide-react';
@@ -40,21 +36,30 @@ interface RoleplayMessageContentProps {
 }
 
 /**
- * Interactive Spoiler Tag component with frosted blur reveal.
+ * Interactive Spoiler Tag with blur reveal.
  */
 function SpoilerSpan({ children }: { children: React.ReactNode }) {
   const [revealed, setRevealed] = useState(false);
+  const toggle = () => setRevealed((v) => !v);
   return (
     <span
+      role="button"
+      tabIndex={0}
       onClick={(e) => {
         e.stopPropagation();
-        setRevealed(!revealed);
+        toggle();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          toggle();
+        }
       }}
       title={revealed ? 'Click to hide spoiler' : 'Click to reveal secret'}
-      className={`inline-block px-1.5 py-0.5 my-0.5 rounded cursor-pointer transition-all duration-200 select-none ${
-        revealed
-          ? 'bg-black/10 dark:bg-white/10 text-foreground'
-          : 'bg-black/40 dark:bg-white/30 text-transparent blur-[5px] hover:blur-[2px]'
+      aria-label={revealed ? 'Hide spoiler' : 'Reveal spoiler'}
+      className={`my-0.5 inline-block cursor-pointer select-none rounded px-1.5 py-0.5 transition-[filter,opacity,color,background-color] duration-150 ${
+        revealed ? 'bg-sunken text-ink' : 'text-ink-3 blur-[4px]'
       }`}
     >
       {children}
@@ -63,8 +68,8 @@ function SpoilerSpan({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Interactive Dice Roll Chip Component
- * Supports clicking to reroll with tactile Web Audio sound, haptic toast, and animation!
+ * Interactive Dice Roll Chip.
+ * Click to reroll with sound and a quiet pulse.
  */
 function DiceRollChip({ formula }: { formula: string }) {
   const [currentRoll, setCurrentRoll] = useState(() => rollDice(formula));
@@ -87,25 +92,25 @@ function DiceRollChip({ formula }: { formula: string }) {
     : '';
 
   return (
-    <span
+    <button
+      type="button"
       onClick={handleReroll}
       title={`Click to re-roll ${formula} (Current: ${currentRoll.rolls.join('+')}${modStr})`}
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 my-0.5 mx-1 rounded-lg text-xs font-mono font-semibold border transition-all duration-200 cursor-pointer select-none align-middle shadow-2xs ${
-        isRolling
-          ? 'scale-95 bg-accent/25 border-accent text-accent animate-pulse'
-          : 'bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15 border-black/10 dark:border-white/15 text-foreground hover:scale-105'
+      aria-label={`Re-roll ${formula}, current total ${currentRoll.total}`}
+      className={`chip mx-1 my-0.5 cursor-pointer select-none px-2 py-0.5 align-middle font-mono text-xs font-semibold transition-[opacity] duration-150 ${
+        isRolling ? 'pulse-soft opacity-70' : ''
       }`}
     >
-      <Dices className={`w-3.5 h-3.5 text-accent ${isRolling ? 'animate-spin' : ''}`} />
+      <Dices aria-hidden className="h-3.5 w-3.5 text-ink-2" />
       <span className="text-[11px] opacity-75">{formula}</span>
-      <span className="text-accent font-bold">→ {currentRoll.total}</span>
-      <RotateCcw className="w-2.5 h-2.5 opacity-40 hover:opacity-100 ml-0.5" />
-    </span>
+      <span className="font-bold text-accent-text">→ {currentRoll.total}</span>
+      <RotateCcw aria-hidden className="ml-0.5 h-2.5 w-2.5 opacity-40" />
+    </button>
   );
 }
 
 /**
- * Custom Luxury Glass Roleplay Card Component (<card> or {{card}})
+ * Roleplay Card (<card> or {{card}})
  */
 function RoleplayCard({
   title,
@@ -133,53 +138,49 @@ function RoleplayCard({
     switch (icon?.toLowerCase()) {
       case 'shield':
       case 'armor':
-        return <Shield className="w-4 h-4 text-sky-500" />;
+        return <Shield aria-hidden className="h-4 w-4 shrink-0 text-ink-3" />;
       case 'quest':
       case 'scroll':
-        return <Scroll className="w-4 h-4 text-amber-500" />;
+        return <Scroll aria-hidden className="h-4 w-4 shrink-0 text-ink-3" />;
       case 'award':
       case 'achievement':
-        return <Award className="w-4 h-4 text-emerald-500" />;
+        return <Award aria-hidden className="h-4 w-4 shrink-0 text-ink-3" />;
       default:
-        return <Sparkles className="w-4 h-4 text-accent" />;
+        return <Sparkles aria-hidden className="h-4 w-4 shrink-0 text-ink-3" />;
     }
   };
 
   return (
-    <div className="my-3 rounded-2xl p-4 glass-card border border-black/10 dark:border-white/10 shadow-sm relative overflow-hidden group">
-      {/* Decorative gradient top edge */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-accent/60 via-purple-500/60 to-accent/60" />
-
+    <div className="surface group relative my-3 overflow-hidden rounded-lg p-4">
       {/* Header */}
-      <div className="flex items-center justify-between pb-2 mb-2 border-b border-black/[0.06] dark:border-white/[0.08]">
-        <div className="flex items-center gap-2">
+      <div className="mb-2 flex items-center justify-between gap-2 border-b border-line pb-2">
+        <div className="flex min-w-0 items-center gap-2">
           {getIcon()}
-          {title && <span className="font-semibold text-xs tracking-tight text-foreground">{title}</span>}
+          {title && <span className="type-sec truncate">{title}</span>}
         </div>
-        <div className="flex items-center gap-2">
-          {badge && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-accent/15 text-accent border border-accent/20">
-              {badge}
-            </span>
-          )}
+        <div className="flex shrink-0 items-center gap-2">
+          {badge && <span className="chip chip-accent">{badge}</span>}
           <button
+            type="button"
             onClick={handleCopy}
-            className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground transition-all"
+            aria-label="Copy card text"
             title="Copy card text"
+            className="icon-btn opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            style={{ width: 24, height: 24 }}
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? <Check aria-hidden className="h-3.5 w-3.5" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>
 
       {/* Body */}
-      <div className="text-xs text-foreground/90 leading-relaxed font-normal">{children}</div>
+      <div className="text-xs font-normal leading-relaxed text-ink">{children}</div>
     </div>
   );
 }
 
 /**
- * RPG Status HUD with animated glowing progress bars
+ * RPG Status HUD with flat meter bars.
  */
 function RoleplayStatusHud({ raw }: { raw: string }) {
   // Parse attributes like: hp="85/100" mp="40/50" gold="120"
@@ -223,35 +224,24 @@ function RoleplayStatusHud({ raw }: { raw: string }) {
 
   if (!stats.length) {
     return (
-      <div className="my-2 p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.08] text-xs font-mono">
-        <span className="font-bold text-accent">STATUS: </span>
+      <div className="well type-code my-2 select-text px-2.5 py-2 text-ink-2">
+        <span className="text-accent-text">Status: </span>
         {raw}
       </div>
     );
   }
 
   return (
-    <div className="my-3 p-3 sm:p-4 rounded-2xl glass-card border border-black/10 dark:border-white/10 shadow-xs space-y-2.5">
-      <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-        <span className="flex items-center gap-1.5">
-          <Shield className="w-3.5 h-3.5 text-accent" /> Character Vitals
-        </span>
-      </div>
+    <div className="surface my-3 space-y-2.5 rounded-lg p-3 sm:p-4">
+      <span className="type-sec">Status</span>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         {stats.map((stat, idx) => {
           if (stat.type === 'gold') {
             return (
-              <div
-                key={idx}
-                className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-medium"
-              >
-                <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                  <Coins className="w-3.5 h-3.5" /> Gold
-                </span>
-                <span className="font-mono font-bold text-amber-700 dark:text-amber-300">
-                  {stat.current} G
-                </span>
+              <div key={idx} className="flex items-center justify-between gap-2">
+                <span className="type-label">Gold</span>
+                <span className="chip chip-warn type-code">{stat.current} G</span>
               </div>
             );
           }
@@ -260,25 +250,24 @@ function RoleplayStatusHud({ raw }: { raw: string }) {
           const isHealth = stat.type === 'health';
 
           return (
-            <div
-              key={idx}
-              className="p-2.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.05] dark:border-white/[0.08] space-y-1.5"
-            >
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1 font-semibold text-foreground/90">
-                  {isHealth ? <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" /> : <Zap className="w-3.5 h-3.5 text-sky-500 fill-sky-500/20" />}
-                  {stat.label}
-                </span>
-                <span className="font-mono text-[11px] text-muted-foreground font-medium">
+            <div key={idx} className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="type-label">{stat.label}</span>
+                <span className="type-code tabular-nums text-ink-2">
                   {stat.current}/{stat.max}
                 </span>
               </div>
-              <div className="w-full h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden relative">
+              <div
+                role="progressbar"
+                aria-label={stat.label}
+                aria-valuenow={stat.current}
+                aria-valuemin={0}
+                aria-valuemax={stat.max}
+                className="h-[3px] w-full overflow-hidden rounded-full bg-sunken"
+              >
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    isHealth
-                      ? 'bg-gradient-to-r from-rose-500 to-red-400 shadow-[0_0_8px_rgba(244,63,94,0.4)]'
-                      : 'bg-gradient-to-r from-sky-500 to-blue-400 shadow-[0_0_8px_rgba(14,165,233,0.4)]'
+                  className={`h-full rounded-full transition-[width] duration-500 ${
+                    isHealth ? 'bg-danger' : 'bg-accent'
                   }`}
                   style={{ width: `${pct}%` }}
                 />
@@ -298,20 +287,22 @@ function ThoughtBlock({ children, charName }: { children: React.ReactNode; charN
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="my-2 rounded-xl overflow-hidden border border-purple-500/20 bg-purple-500/[0.03] dark:bg-purple-500/[0.06] transition-colors">
+    <div className="surface my-2 overflow-hidden rounded-lg">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-1.5 text-left text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-500/[0.06] transition-colors"
+        aria-expanded={open}
+        className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs font-medium text-ink-2 transition-colors hover:text-ink"
       >
         <span className="flex items-center gap-1.5">
-          <Brain className="w-3.5 h-3.5 opacity-80" />
-          <span>{charName ? `${charName}'s Inner Thoughts` : 'Inner Monologue'}</span>
+          <Brain aria-hidden className="h-3.5 w-3.5 text-ink-3" />
+          <span>{charName ? `${charName}'s inner thoughts` : 'Inner thoughts'}</span>
         </span>
-        {open ? <ChevronDown className="w-3.5 h-3.5 opacity-60" /> : <ChevronRight className="w-3.5 h-3.5 opacity-60" />}
+        {open ? <ChevronDown aria-hidden className="h-3.5 w-3.5 opacity-60" /> : <ChevronRight aria-hidden className="h-3.5 w-3.5 opacity-60" />}
       </button>
 
       {open && (
-        <div className="px-3.5 py-2.5 text-xs text-foreground/85 font-serif italic border-t border-purple-500/10 leading-relaxed animate-in fade-in duration-150">
+        <div className="animate-in fade-in border-t border-line px-3.5 py-2.5 font-serif text-xs italic leading-relaxed text-ink-2 duration-150">
           {children}
         </div>
       )}
@@ -320,31 +311,24 @@ function ThoughtBlock({ children, charName }: { children: React.ReactNode; charN
 }
 
 /**
- * Out-of-Character (OOC) Director Pill
+ * Out-of-Character (OOC) note
  */
 function OocBadge({ text }: { text: string }) {
   return (
-    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 my-1.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.1] text-xs font-mono text-muted-foreground select-text">
-      <span className="px-1 py-0.2 rounded text-[10px] font-bold bg-accent/15 text-accent uppercase tracking-wider">
-        OOC
-      </span>
+    <div className="chip my-1.5 select-text px-2.5 py-1 text-xs text-ink-2">
+      <span className="type-code text-ink-2">OOC</span>
       <span>{text}</span>
     </div>
   );
 }
 
 /**
- * Ornamental Roleplay Scene Divider
+ * Quiet Roleplay Scene Divider
  */
 function SceneDivider() {
   return (
-    <div className="relative my-6 flex items-center justify-center">
-      <div className="absolute inset-0 flex items-center">
-        <div className="w-full border-t border-black/10 dark:border-white/10" />
-      </div>
-      <div className="relative px-3 bg-card text-muted-foreground">
-        <Sparkles className="w-3.5 h-3.5 text-accent opacity-75" />
-      </div>
+    <div aria-hidden className="my-6 flex items-center">
+      <div className="w-full border-t border-line" />
     </div>
   );
 }
@@ -352,7 +336,16 @@ function SceneDivider() {
 /**
  * Main Roleplay Message Content Formatter
  */
-export function RoleplayMessageContent({
+/**
+ * Rendered roleplay prose.
+ *
+ * Memoised: during streaming the transcript re-renders on every token, and this
+ * component runs a regex transform plus a full Markdown parse. Without a memo
+ * every completed turn re-parses on each token (a 200-turn chat would parse 200
+ * documents per token). Completed turns hold stable props, so only the turn that
+ * is actually streaming re-renders.
+ */
+export const RoleplayMessageContent = React.memo(function RoleplayMessageContent({
   content,
   characterName = 'Character',
   userName = 'User',
@@ -470,9 +463,9 @@ export function RoleplayMessageContent({
         // Dialogue match
         elements.push(
           <span key={keyIdx++} className="rp-dialogue">
-            <span className="opacity-70 select-none">“</span>
+            <span className="select-none opacity-70">“</span>
             {inlineMatch[1]}
-            <span className="opacity-70 select-none">”</span>
+            <span className="select-none opacity-70">”</span>
           </span>
         );
       } else if (inlineMatch[2] !== undefined) {
@@ -501,7 +494,7 @@ export function RoleplayMessageContent({
   };
 
   return (
-    <div style={styleVars} className="roleplay-prose space-y-2 select-text">
+    <div style={styleVars} className="prose-rp select-text space-y-2">
       {blocks.map((block, idx) => {
         switch (block.type) {
           case 'card':
@@ -555,21 +548,20 @@ export function RoleplayMessageContent({
                     );
                   },
                   em: ({ children }) => (
-                    <em className="rp-action font-serif italic opacity-90">{children}</em>
+                    <em className="rp-action">{children}</em>
                   ),
                   strong: ({ children }) => (
-                    <strong className="font-semibold text-foreground">{children}</strong>
+                    <strong className="font-semibold text-ink">{children}</strong>
                   ),
                   blockquote: ({ children }) => (
-                    <blockquote className="my-2 pl-3.5 border-l-2 border-accent/40 italic text-foreground/80 font-serif">
+                    <blockquote
+                      style={{ borderColor: 'var(--rp-quote-rule)' }}
+                      className="my-2 border-l-2 pl-3.5 font-serif italic text-ink-2"
+                    >
                       {children}
                     </blockquote>
                   ),
-                  code: ({ children }) => (
-                    <code className="px-1.5 py-0.5 rounded-md bg-black/5 dark:bg-white/10 font-mono text-[11px] text-accent">
-                      {children}
-                    </code>
-                  ),
+                  code: ({ children }) => <code>{children}</code>,
                 }}
               >
                 {block.content}
@@ -578,9 +570,7 @@ export function RoleplayMessageContent({
         }
       })}
 
-      {isStreaming && (
-        <span className="inline-block w-1.5 h-4 ml-1 bg-accent animate-pulse align-middle" />
-      )}
+      {isStreaming && <span aria-hidden className="streaming-cursor" />}
     </div>
   );
-}
+});

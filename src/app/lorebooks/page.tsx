@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, BookOpen, Trash2, Key, Check } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Key } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Lorebook, LorebookEntry } from '@/lib/supabase/types';
@@ -188,51 +188,55 @@ export default function LorebooksPage() {
 
   return (
     <div className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
-      {/* Top Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-black/[0.06] dark:border-white/[0.08]">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 pb-4 border-b border-line">
         <div className="flex items-center gap-3">
           <Link
             href="/"
-            className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+            className="icon-btn"
+            aria-label="Back to explore"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-5 h-5" aria-hidden />
           </Link>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Lorebooks & World Info</h1>
-            <p className="text-xs text-muted-foreground">
-              Define worldbuilding, locations, factions, and items that trigger dynamically on keywords
+            <h1 className="type-page">Lorebooks and world info</h1>
+            <p className="type-meta mt-0.5">
+              Define worldbuilding, locations, factions, and items that trigger on keywords
             </p>
           </div>
         </div>
 
         <button
+          type="button"
           onClick={() => setBookModalOpen(true)}
-          className="px-4 py-2 rounded-full bg-accent text-white hover:bg-accent-hover text-xs font-semibold apple-button flex items-center gap-1.5 shadow-sm"
+          className="btn btn-primary flex items-center gap-1.5 shrink-0"
         >
-          <Plus className="w-3.5 h-3.5" />
-          New Lorebook
+          <Plus className="w-3.5 h-3.5" aria-hidden />
+          New lorebook
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left: Lorebooks list */}
+        {/* Left: books list */}
         <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <h2 className="type-sec">
             Books ({lorebooks.length})
-          </h3>
+          </h2>
           <div className="space-y-2">
             {lorebooks.map((book) => (
               <button
                 key={book.id}
+                type="button"
                 onClick={() => setSelectedBook(book)}
-                className={`w-full text-left p-3.5 rounded-2xl glass-card border transition-all ${
+                aria-pressed={selectedBook?.id === book.id}
+                className={`surface rounded-xl w-full text-left p-3.5 ${
                   selectedBook?.id === book.id
-                    ? 'border-accent bg-accent/10 shadow-xs'
-                    : 'border-black/[0.06] dark:border-white/[0.08]'
+                    ? 'border-accent-line bg-accent-wash'
+                    : ''
                 }`}
               >
-                <div className="font-semibold text-xs sm:text-sm">{book.name}</div>
-                <div className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
+                <div className="font-semibold text-xs sm:text-sm text-ink">{book.name}</div>
+                <div className="type-meta line-clamp-1 mt-0.5">
                   {book.description || 'No description'}
                 </div>
               </button>
@@ -240,20 +244,21 @@ export default function LorebooksPage() {
           </div>
         </div>
 
-        {/* Right: Entries in selected Lorebook */}
+        {/* Right: entries in selected book */}
         <div className="md:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {selectedBook ? `${selectedBook.name} Entries` : 'Select a Lorebook'}
-            </h3>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="type-sec">
+              {selectedBook ? `${selectedBook.name} entries` : 'Select a lorebook'}
+            </h2>
 
             {selectedBook && (
               <button
+                type="button"
                 onClick={() => setEntryModalOpen(true)}
-                className="px-3.5 py-1.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-xs font-medium apple-button flex items-center gap-1"
+                className="btn btn-quiet flex items-center gap-1"
               >
-                <Plus className="w-3.5 h-3.5" />
-                Add Entry
+                <Plus className="w-3.5 h-3.5" aria-hidden />
+                Add entry
               </button>
             )}
           </div>
@@ -262,133 +267,169 @@ export default function LorebooksPage() {
             {entries.map((entry) => (
               <div
                 key={entry.id}
-                className="p-4 rounded-3xl glass-card border border-black/[0.06] dark:border-white/[0.08] space-y-2"
+                className="surface rounded-lg p-4 space-y-2"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-xs sm:text-sm">{entry.title}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-xs sm:text-sm text-ink">{entry.title}</span>
                   {entry.constant && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-500 font-bold uppercase">
+                    <span className="chip chip-accent">
                       Constant
                     </span>
                   )}
                 </div>
 
-                {/* Activation Keys */}
-                <div className="flex flex-wrap items-center gap-1">
-                  <Key className="w-3 h-3 text-muted-foreground" />
-                  {entry.keys.map((k) => (
-                    <span
-                      key={k}
-                      className="px-2 py-0.5 rounded-md bg-accent/10 text-accent text-[10px] font-medium"
-                    >
-                      {k}
-                    </span>
-                  ))}
-                </div>
+                {!!entry.keys.length && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Key className="w-3 h-3 text-ink-3" aria-hidden />
+                    {entry.keys.map((k) => (
+                      <span key={k} className="chip type-code">
+                        {k}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
-                <p className="text-xs text-muted-foreground leading-relaxed pt-1">
+                <p className="text-xs font-serif text-ink-2 leading-relaxed pt-1">
                   {entry.content}
                 </p>
               </div>
             ))}
 
             {entries.length === 0 && (
-              <div className="p-8 text-center text-xs text-muted-foreground glass-card rounded-3xl">
-                No entries in this lorebook yet. Click "Add Entry" to define keywords and world information.
+              <div className="surface rounded-xl p-8 text-center">
+                <p className="type-sec">No entries yet</p>
+                <p className="type-meta mt-1">
+                  Add an entry to define keywords and world information for this book.
+                </p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Create Lorebook Modal */}
+      {/* Create lorebook modal */}
       {bookModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md glass-panel rounded-3xl p-6 space-y-4 shadow-2xl border border-white/10">
-            <h2 className="text-lg font-bold tracking-tight">Create Lorebook</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="panel rounded-2xl w-full max-w-md p-6 space-y-4">
+            <h2 className="type-sec text-base">Create lorebook</h2>
             <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Lorebook Name (e.g. Cyberpunk Slang & Factions)"
-                value={bookName}
-                onChange={(e) => setBookName(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <textarea
-                rows={2}
-                placeholder="Brief description of this world..."
-                value={bookDesc}
-                onChange={(e) => setBookDesc(e.target.value)}
-                className="w-full p-3 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              />
+              <div className="space-y-1.5">
+                <label htmlFor="lorebook-name" className="type-label">
+                  Name
+                </label>
+                <input
+                  id="lorebook-name"
+                  type="text"
+                  placeholder="e.g. Cyberpunk slang and factions…"
+                  value={bookName}
+                  onChange={(e) => setBookName(e.target.value)}
+                  className="field"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="lorebook-desc" className="type-label">
+                  Description
+                </label>
+                <textarea
+                  id="lorebook-desc"
+                  rows={2}
+                  placeholder="Brief description of this world…"
+                  value={bookDesc}
+                  onChange={(e) => setBookDesc(e.target.value)}
+                  className="field"
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
+                type="button"
                 onClick={() => setBookModalOpen(false)}
-                className="px-4 py-2 text-xs font-medium rounded-full hover:bg-black/5 dark:hover:bg-white/10 apple-button"
+                className="btn btn-quiet"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleCreateBook}
-                className="px-5 py-2 text-xs font-semibold rounded-full bg-accent text-white apple-button shadow-sm"
+                className="btn btn-primary"
               >
-                Create Book
+                Create lorebook
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Create Entry Modal */}
+      {/* Create entry modal */}
       {entryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg glass-panel rounded-3xl p-6 space-y-4 shadow-2xl border border-white/10">
-            <h2 className="text-lg font-bold tracking-tight">Add World Info Entry</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="panel rounded-2xl w-full max-w-lg p-6 space-y-4">
+            <h2 className="type-sec text-base">Add world info entry</h2>
             <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Title (e.g. Arasaka Corporation)"
-                value={entryTitle}
-                onChange={(e) => setEntryTitle(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <input
-                type="text"
-                placeholder="Activation Keywords (comma-separated, e.g. arasaka, megacorp, saburo)"
-                value={entryKeys}
-                onChange={(e) => setEntryKeys(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <textarea
-                rows={4}
-                placeholder="World information injected into the LLM prompt when keywords appear..."
-                value={entryContent}
-                onChange={(e) => setEntryContent(e.target.value)}
-                className="w-full p-3 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <div className="space-y-1.5">
+                <label htmlFor="lore-entry-title" className="type-label">
+                  Title
+                </label>
+                <input
+                  id="lore-entry-title"
+                  type="text"
+                  placeholder="e.g. Arasaka Corporation…"
+                  value={entryTitle}
+                  onChange={(e) => setEntryTitle(e.target.value)}
+                  className="field"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="lore-entry-keys" className="type-label">
+                  Activation keywords
+                </label>
+                <input
+                  id="lore-entry-keys"
+                  type="text"
+                  placeholder="e.g. arasaka, megacorp, saburo…"
+                  value={entryKeys}
+                  onChange={(e) => setEntryKeys(e.target.value)}
+                  className="field"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="lore-entry-content" className="type-label">
+                  Content
+                </label>
+                <textarea
+                  id="lore-entry-content"
+                  rows={4}
+                  placeholder="World information added to the prompt when keywords appear…"
+                  value={entryContent}
+                  onChange={(e) => setEntryContent(e.target.value)}
+                  className="field"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-ink-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={entryConstant}
                   onChange={(e) => setEntryConstant(e.target.checked)}
-                  className="rounded text-accent focus:ring-accent"
+                  className="rounded"
                 />
-                Always insert (constant entry, ignores keywords)
+                Always include this entry, even without keyword matches
               </label>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
+                type="button"
                 onClick={() => setEntryModalOpen(false)}
-                className="px-4 py-2 text-xs font-medium rounded-full hover:bg-black/5 dark:hover:bg-white/10 apple-button"
+                className="btn btn-quiet"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleCreateEntry}
-                className="px-5 py-2 text-xs font-semibold rounded-full bg-accent text-white apple-button shadow-sm"
+                className="btn btn-primary"
               >
-                Add Entry
+                Add entry
               </button>
             </div>
           </div>

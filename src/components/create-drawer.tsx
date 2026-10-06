@@ -3,7 +3,7 @@
 import React, { useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { UserPlus, Upload, Sparkles, X, BookOpen, ChevronRight } from 'lucide-react';
+import { UserPlus, Upload, X, BookOpen, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface CreateDrawerProps {
@@ -20,78 +20,74 @@ export function CreateDrawer({ open, onClose, onImportFile, onOpenImportGuide }:
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-background/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="absolute inset-0" onClick={onClose} />
 
       <div
-        className="relative z-10 w-full max-w-md bg-[#18181b] dark:bg-[#121214] text-white rounded-t-[2.25rem] border-t border-white/[0.12] shadow-2xl p-6 space-y-4 animate-in slide-in-from-bottom duration-300 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]"
+        className="panel bg-raised relative z-10 w-full max-w-md space-y-4 rounded-t-3xl rounded-b-none border-x-0 border-b-0 border-t border-line p-6 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] animate-in slide-in-from-bottom"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="w-12 h-1.5 rounded-full bg-zinc-600/60 mx-auto -mt-2" />
+        <div className="bg-line-strong mx-auto -mt-2 h-1.5 w-12 rounded-full" />
 
         <div className="flex items-center justify-between pb-1">
           <div>
-            <h3 className="font-bold text-base tracking-tight">Create or Import</h3>
-            <p className="text-xs text-zinc-400">Add a new partner to your roleplay universe</p>
+            <h3 className="type-sec text-base">Create or import</h3>
+            <p className="mt-0.5 text-xs text-ink-2">Add a new character to your library</p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
+          <button onClick={onClose} aria-label="Close" className="icon-btn">
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="space-y-2.5">
+        <div className="divide-y divide-line overflow-hidden rounded-xl border border-line">
           {/* Action 1: Create Character from scratch */}
           <Link
             href="/c/new"
             onClick={onClose}
-            className="group flex items-center justify-between p-4 rounded-2xl bg-zinc-800/60 hover:bg-zinc-800 border border-white/[0.06] transition-all apple-button"
+            className="group flex items-center justify-between gap-3 p-4 transition-colors hover:bg-[color-mix(in_oklab,var(--ink)_4%,transparent)]"
           >
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-purple-600/20 text-purple-400 flex items-center justify-center border border-purple-500/25 shrink-0 group-hover:scale-105 transition-transform">
-                <UserPlus className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-sm text-zinc-100 group-hover:text-purple-300 transition-colors">
-                  Create Character
-                </h4>
-                <p className="text-xs text-zinc-400">
-                  Full custom studio with personality, scenario & greeting
+            <div className="flex min-w-0 items-center gap-3.5">
+              <UserPlus className="h-5 w-5 shrink-0 text-ink-2" aria-hidden="true" />
+              <div className="min-w-0">
+                <h4 className="text-sm font-medium text-ink">Create character</h4>
+                <p className="mt-0.5 text-xs text-ink-2">
+                  Design a personality, scenario and first message from scratch
                 </p>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+            <ChevronRight
+              className="h-4 w-4 shrink-0 text-ink-3 transition-transform duration-150 group-hover:translate-x-0.5"
+              aria-hidden="true"
+            />
           </Link>
 
-          {/* Action 2: Import Janitor / Chub card */}
+          {/* Action 2: Import character card */}
           <button
             onClick={() => {
               fileInputRef.current?.click();
             }}
-            className="w-full group flex items-center justify-between p-4 rounded-2xl bg-zinc-800/60 hover:bg-zinc-800 border border-white/[0.06] transition-all text-left apple-button"
+            className="group flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-[color-mix(in_oklab,var(--ink)_4%,transparent)]"
           >
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/25 shrink-0 group-hover:scale-105 transition-transform">
-                <Upload className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-sm text-zinc-100 group-hover:text-blue-300 transition-colors">
-                  Import Card (PNG / JSON)
-                </h4>
-                <p className="text-xs text-zinc-400">
-                  Directly drop Janitor AI, Chub AI or Tavern cards
+            <div className="flex min-w-0 items-center gap-3.5">
+              <Upload className="h-5 w-5 shrink-0 text-ink-2" aria-hidden="true" />
+              <div className="min-w-0">
+                <h4 className="text-sm font-medium text-ink">Import card (PNG or JSON)</h4>
+                <p className="mt-0.5 text-xs text-ink-2">
+                  Bring a character file you already have
                 </p>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+            <ChevronRight
+              className="h-4 w-4 shrink-0 text-ink-3 transition-transform duration-150 group-hover:translate-x-0.5"
+              aria-hidden="true"
+            />
           </button>
 
           <input
             ref={fileInputRef}
             type="file"
             accept=".json, .png, image/png, application/json"
+            aria-label="Choose a character card file"
             onChange={(e) => {
               onImportFile(e);
               onClose();
@@ -108,10 +104,10 @@ export function CreateDrawer({ open, onClose, onImportFile, onOpenImportGuide }:
                 onClose();
                 onOpenImportGuide();
               }}
-              className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-purple-300 transition-colors"
+              className="btn btn-quiet text-xs text-ink-2"
             >
-              <BookOpen className="w-3.5 h-3.5" />
-              How do I export cards from Janitor AI?
+              <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              How do I export a card?
             </button>
           </div>
         )}

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   X,
@@ -9,11 +8,9 @@ import {
   Trash2,
   MoreVertical,
   MessageSquare,
-  Clock,
   Layers,
   ArrowUpDown,
   ExternalLink,
-  ChevronRight,
   AlertTriangle,
 } from 'lucide-react';
 import { CharacterAvatar } from '@/components/character-avatar';
@@ -40,7 +37,6 @@ export function CharacterChatsDrawer({
   onChatDeleted,
   onCharacterDeleted,
 }: CharacterChatsDrawerProps) {
-  const router = useRouter();
   const [sortOrder, setSortOrder] = useState<'latest' | 'oldest'>('latest');
   const [menuOpen, setMenuOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -118,24 +114,32 @@ export function CharacterChatsDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+    >
       {/* Backdrop overlay */}
       <div className="absolute inset-0" onClick={onClose} />
 
-      {/* JanitorAI Style Bottom Sheet */}
+      {/* Bottom Sheet */}
       <div
-        className="relative z-10 w-full max-w-lg bg-[#18181b] dark:bg-[#121214] text-zinc-100 rounded-t-[2.25rem] border-t border-white/[0.09] shadow-2xl flex flex-col max-h-[88vh] overflow-hidden animate-in slide-in-from-bottom duration-300 pb-[env(safe-area-inset-bottom)]"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Chats with ${character.name}`}
         onClick={(e) => e.stopPropagation()}
+        className="panel relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[88vh] overflow-hidden animate-in slide-in-from-bottom duration-200 pb-[env(safe-area-inset-bottom)]"
       >
         {/* Handle bar on top */}
-        <div className="w-full flex items-center justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing">
-          <div className="w-12 h-1.5 rounded-full bg-zinc-600/60" />
+        <div className="w-full flex items-center justify-center pt-3 pb-2">
+          <div className="w-8 h-1 rounded-full bg-line-strong" aria-hidden />
         </div>
 
         {/* Header: Character thumbnail + Name + "X chats" pill + 3-dots */}
-        <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
-          <div className="flex items-center gap-3.5 min-w-0">
-            <div className="w-13 h-13 rounded-2xl overflow-hidden bg-zinc-800 shrink-0 border border-white/10 shadow-sm relative">
+        <div className="px-5 py-3 flex items-center justify-between gap-2 border-b border-line">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-12 h-12 rounded-lg overflow-hidden bg-sunken shrink-0 border border-line relative">
               <CharacterAvatar
                 name={character.name}
                 avatarUrl={character.avatar_url}
@@ -145,51 +149,46 @@ export function CharacterChatsDrawer({
             </div>
 
             <div className="min-w-0">
-              <h2 className="font-bold text-base sm:text-lg tracking-tight text-white truncate">
-                {character.name}
-              </h2>
+              <h2 className="font-serif text-lg font-medium text-ink truncate">{character.name}</h2>
               <div className="flex items-center gap-2 mt-1">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/25 text-purple-300 font-semibold text-xs border border-purple-500/20">
-                  <Layers className="w-3 h-3" />
+                <span className="chip">
+                  <Layers className="w-3 h-3" aria-hidden />
                   {chats.length} {chats.length === 1 ? 'chat' : 'chats'}
                 </span>
-                {character.content_rating !== 'sfw' && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">
-                    18+
-                  </span>
-                )}
+                {character.content_rating !== 'sfw' && <span className="chip-danger chip">18+</span>}
               </div>
             </div>
           </div>
 
           {/* Right Action Menu */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors apple-button"
+              className="icon-btn"
               aria-label="More options"
+              aria-expanded={menuOpen}
             >
-              <MoreVertical className="w-5 h-5" />
+              <MoreVertical className="w-5 h-5" aria-hidden />
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-56 rounded-2xl bg-[#202024] border border-white/10 shadow-2xl p-1.5 z-30 animate-in fade-in duration-150">
+              <div className="panel absolute right-0 top-full mt-1 w-56 rounded-xl bg-raised shadow-float p-1.5 z-30 animate-in fade-in duration-150">
                 <Link
                   href={`/c/${character.id}`}
                   onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2.5 text-xs text-zinc-200 hover:bg-white/5 rounded-xl transition-colors"
+                  className="flex items-center gap-2.5 px-3 py-2.5 text-xs text-ink-2 rounded-lg hover:text-ink"
                 >
-                  <ExternalLink className="w-4 h-4 text-zinc-400" />
-                  View Character Profile
+                  <ExternalLink className="w-4 h-4 text-ink-3" aria-hidden />
+                  View character profile
                 </Link>
                 <button
                   onClick={() => {
                     setConfirmDeleteAll(true);
                     setMenuOpen(false);
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 rounded-xl transition-colors text-left"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-danger rounded-lg text-left"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-4 h-4" aria-hidden />
                   Delete all chats with {character.name}
                 </button>
                 <button
@@ -197,10 +196,10 @@ export function CharacterChatsDrawer({
                     setConfirmDeleteCharacter(true);
                     setMenuOpen(false);
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-red-500 hover:bg-red-500/15 rounded-xl transition-colors text-left font-semibold border-t border-white/[0.04] mt-1 pt-2"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-danger rounded-lg text-left font-semibold border-t border-line mt-1 pt-2"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Delete Character from Roster
+                  <Trash2 className="w-4 h-4" aria-hidden />
+                  Delete character from roster
                 </button>
               </div>
             )}
@@ -209,27 +208,21 @@ export function CharacterChatsDrawer({
 
         {/* Delete Character Confirmation Dialog */}
         {confirmDeleteCharacter && (
-          <div className="mx-5 my-3 p-4 rounded-2xl bg-red-600/15 border border-red-500/40 text-xs text-red-100 space-y-3 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 font-bold text-red-300">
-              <AlertTriangle className="w-4 h-4" />
-              Delete &ldquo;{character.name}&rdquo; from Roster?
+          <div className="mx-5 my-3 p-4 rounded-lg border border-danger-line bg-danger-wash text-xs space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 font-semibold text-danger">
+              <AlertTriangle className="w-4 h-4" aria-hidden />
+              Delete &ldquo;{character.name}&rdquo; from your roster?
             </div>
-            <p className="text-zinc-200">
-              This will permanently delete this character and all chat histories with them. This action cannot be undone.
+            <p className="text-ink-2 leading-relaxed">
+              This removes this character and all of your chats with them. You cannot undo this.
             </p>
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                onClick={() => setConfirmDeleteCharacter(false)}
-                className="px-3.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
-              >
+              <button onClick={() => setConfirmDeleteCharacter(false)} className="btn btn-quiet">
                 Cancel
               </button>
-              <button
-                onClick={handleDeleteCharacterFromRoster}
-                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Yes, Delete Character
+              <button onClick={handleDeleteCharacterFromRoster} className="btn btn-danger">
+                <Trash2 className="w-3.5 h-3.5" aria-hidden />
+                Delete character
               </button>
             </div>
           </div>
@@ -237,150 +230,145 @@ export function CharacterChatsDrawer({
 
         {/* Delete All Chats Confirmation Dialog */}
         {confirmDeleteAll && (
-          <div className="mx-5 my-3 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs text-red-200 space-y-3 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 font-semibold text-red-300">
-              <AlertTriangle className="w-4 h-4" />
-              Delete all {chats.length} chat conversations?
+          <div className="mx-5 my-3 p-4 rounded-lg border border-danger-line bg-danger-wash text-xs space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 font-semibold text-danger">
+              <AlertTriangle className="w-4 h-4" aria-hidden />
+              Delete all {chats.length} chats?
             </div>
-            <p className="text-zinc-300">
-              This will permanently remove all messages and memories with {character.name}. This action cannot be undone.
+            <p className="text-ink-2 leading-relaxed">
+              This removes every message with {character.name}. You cannot undo this.
             </p>
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                onClick={() => setConfirmDeleteAll(false)}
-                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
-              >
+              <button onClick={() => setConfirmDeleteAll(false)} className="btn btn-quiet">
                 Cancel
               </button>
-              <button
-                onClick={handleDeleteAllChats}
-                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Yes, Delete All
+              <button onClick={handleDeleteAllChats} className="btn btn-danger">
+                <Trash2 className="w-3.5 h-3.5" aria-hidden />
+                Delete all
               </button>
             </div>
           </div>
         )}
 
-        {/* Segmented Sort Pills: Oldest | Latest (Matches JanitorAI Image 4) */}
+        {/* Segmented Sort: Oldest | Latest */}
         <div className="px-5 pt-3.5 pb-2">
-          <div className="grid grid-cols-2 p-1 rounded-2xl bg-[#202024] border border-white/[0.05]">
-            <button
-              onClick={() => setSortOrder('oldest')}
-              className={`py-2 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all apple-button ${
-                sortOrder === 'oldest'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              Oldest
-            </button>
-            <button
-              onClick={() => setSortOrder('latest')}
-              className={`py-2 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all apple-button ${
-                sortOrder === 'latest'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              Latest
-            </button>
+          <div
+            role="group"
+            aria-label="Sort chats"
+            className="grid grid-cols-2 p-1 rounded-full border border-line"
+          >
+            {(['oldest', 'latest'] as const).map((order) => (
+              <button
+                key={order}
+                onClick={() => setSortOrder(order)}
+                aria-pressed={sortOrder === order}
+                className={`py-2 text-xs font-medium rounded-full flex items-center justify-center gap-1.5 capitalize ${
+                  sortOrder === order ? 'bg-accent-wash text-accent-text' : 'text-ink-3'
+                }`}
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" aria-hidden />
+                {order}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Chat Sessions List (Matches JanitorAI Images 4 & 5) */}
-        <div className="flex-1 overflow-y-auto px-5 py-2 space-y-2.5 divide-y divide-white/[0.04]">
+        {/* Chat Sessions List */}
+        <div className="flex-1 overflow-y-auto px-5 py-2">
           {sortedChats.length === 0 ? (
-            <div className="py-12 text-center space-y-2 text-zinc-400">
-              <MessageSquare className="w-8 h-8 mx-auto opacity-40 text-purple-400" />
-              <p className="text-sm">No active chats with {character.name}.</p>
+            <div className="py-12 text-center space-y-2">
+              <MessageSquare className="w-8 h-8 mx-auto text-ink-3" aria-hidden />
+              <p className="type-meta">No chats with {character.name} yet.</p>
             </div>
           ) : (
-            sortedChats.map((chat) => {
-              const snippet =
-                chat.title?.replace(/^Chat with\s+/i, '') !== character.name
-                  ? chat.title
-                  : character.first_message || 'Start the story...';
+            <div className="divide-y divide-line">
+              {sortedChats.map((chat) => {
+                const snippet =
+                  chat.title?.replace(/^Chat with\s+/i, '') !== character.name
+                    ? chat.title
+                    : character.first_message || 'Start the story…';
 
-              const cleanTimestamp = formatChatTimestamp(chat.last_message_at || chat.created_at);
-              const messageCount = chat.message_count || 1;
+                const cleanTimestamp = formatChatTimestamp(chat.last_message_at || chat.created_at);
+                const messageCount = chat.message_count || 1;
+                const charIdentifier = character.id || character.name;
+                const chatHref = `/chat/${chat.id}${
+                  charIdentifier ? `?charId=${encodeURIComponent(charIdentifier)}` : ''
+                }`;
 
-              return (
-                <div
-                  key={chat.id}
-                  onClick={() => {
-                    onClose();
-                    const charIdentifier = character.id || character.name;
-                    const queryParam = charIdentifier ? `?charId=${encodeURIComponent(charIdentifier)}` : '';
-                    router.push(`/chat/${chat.id}${queryParam}`);
-                  }}
-                  className="group relative pt-2.5 flex items-center justify-between gap-3 p-2.5 -mx-2 rounded-2xl hover:bg-white/[0.04] active:bg-white/[0.08] cursor-pointer transition-colors"
-                >
-                  {/* Left: Thumbnail */}
-                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 shrink-0 border border-white/10 relative">
-                    <CharacterAvatar
-                      name={character.name}
-                      avatarUrl={character.avatar_url}
-                      accentColor={character.accent_color}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-
-                  {/* Middle: Title & preview snippet */}
-                  <div className="flex-1 min-w-0 pr-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-xs sm:text-sm text-zinc-100 truncate group-hover:text-purple-300 transition-colors">
-                        {character.name}
-                      </span>
-                      <span className="text-[11px] text-zinc-400 font-medium shrink-0">
-                        {cleanTimestamp}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] sm:text-xs text-zinc-400 line-clamp-2 mt-0.5 leading-snug">
-                      {snippet}
-                    </p>
-
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500 font-medium">
-                        <MessageSquare className="w-3 h-3" />
-                        {messageCount}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Right: Red Delete Button (Matches JanitorAI Image 5) */}
-                  <div className="shrink-0 flex items-center">
-                    <button
-                      onClick={(e) => handleDeleteSingleChat(e, chat.id)}
-                      disabled={deletingId === chat.id}
-                      className="w-10 h-10 rounded-xl bg-red-600/90 hover:bg-red-500 active:scale-95 text-white flex items-center justify-center shadow-md transition-all apple-button"
-                      title="Delete this chat session"
-                      aria-label="Delete chat"
+                return (
+                  <div
+                    key={chat.id}
+                    className="group relative flex items-center justify-between gap-3 py-2.5"
+                  >
+                    {/* Whole row body is a real link — keyboard, middle-click and
+                        Cmd/Ctrl-click all work. Delete is a sibling, never nested. */}
+                    <Link
+                      href={chatHref}
+                      onClick={onClose}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Left: Thumbnail */}
+                    <div className="w-11 h-11 rounded-md overflow-hidden bg-sunken shrink-0 border border-line relative">
+                      <CharacterAvatar
+                        name={character.name}
+                        avatarUrl={character.avatar_url}
+                        accentColor={character.accent_color}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+
+                    {/* Middle: Title & preview snippet */}
+                    <div className="flex-1 min-w-0 pr-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-serif text-[0.9rem] font-medium text-ink truncate">
+                          {character.name}
+                        </span>
+                        <span className="type-meta shrink-0">{cleanTimestamp}</span>
+                      </div>
+
+                      <p className="type-meta line-clamp-2 mt-0.5 leading-snug">{snippet}</p>
+
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="inline-flex items-center gap-1 type-meta">
+                          <MessageSquare className="w-3 h-3" aria-hidden />
+                          {messageCount}
+                        </span>
+                      </div>
+                    </div>
+                    </Link>
+
+                    {/* Right: quiet delete */}
+                    <div className="shrink-0 flex items-center">
+                      <button
+                        onClick={(e) => handleDeleteSingleChat(e, chat.id)}
+                        disabled={deletingId === chat.id}
+                        className="icon-btn opacity-70 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 hover:text-danger focus-visible:text-danger"
+                        aria-label="Delete this chat"
+                      >
+                        <Trash2 className="w-4 h-4" aria-hidden />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </div>
 
-        {/* Bottom Full-Width Action: "Start new chat" (Matches JanitorAI Image 4) */}
-        <div className="p-4 sm:p-5 border-t border-white/[0.06] bg-[#161618]">
+        {/* Bottom Full-Width Action: "Start new chat" */}
+        <div className="p-4 sm:p-5 border-t border-line">
           <button
             onClick={() => {
               onClose();
               onStartNewChat(character);
             }}
-            className="w-full py-3.5 px-4 rounded-2xl bg-zinc-700/80 hover:bg-zinc-600 active:bg-zinc-800 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all apple-button shadow-md"
+            className="btn btn-ghost w-full py-3"
           >
-            <Plus className="w-4 h-4 text-purple-300" />
+            <Plus className="w-4 h-4 text-accent-text" aria-hidden />
             Start new chat
+          </button>
+          <button onClick={onClose} className="sr-only" aria-label="Close chats">
+            <X className="w-4 h-4" aria-hidden />
           </button>
         </div>
       </div>

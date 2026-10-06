@@ -7,12 +7,7 @@ import {
   ArrowLeft,
   MessageSquare,
   Download,
-  Share2,
   Flame,
-  Sparkles,
-  Edit,
-  Tag,
-  BookOpen,
   Trash2,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -70,13 +65,13 @@ export default function CharacterProfilePage() {
   if (notFound) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-4 text-center">
-        <h2 className="text-xl font-bold">Character Not Found</h2>
-        <p className="text-sm text-muted-foreground">This character does not exist in your roster or has been removed.</p>
+        <h2 className="type-page">Character not found</h2>
+        <p className="type-meta">This character is not in your roster, or it was removed.</p>
         <Link
           href="/"
-          className="px-4 py-2 rounded-full bg-accent text-white text-xs font-medium apple-button"
+          className="btn btn-primary"
         >
-          Return to Explore
+          Back to explore
         </Link>
       </div>
     );
@@ -219,39 +214,41 @@ export default function CharacterProfilePage() {
 
   return (
     <div className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
-      {/* Top Navigation */}
+      {/* Top navigation */}
       <div className="flex items-center justify-between">
         <Link
           href="/"
-          className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+          className="icon-btn"
+          aria-label="Back to explore"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-5 h-5" aria-hidden />
         </Link>
 
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={handleExportCard}
-            className="px-3.5 py-1.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-xs font-medium apple-button flex items-center gap-1.5"
+            className="btn btn-ghost flex items-center gap-1.5"
           >
-            <Download className="w-3.5 h-3.5" />
-            Export Card V2
+            <Download className="w-3.5 h-3.5" aria-hidden />
+            Export card V2
           </button>
           <button
+            type="button"
             onClick={handleDeleteCharacter}
-            className="px-3.5 py-1.5 rounded-full bg-red-600/15 hover:bg-red-600/25 text-red-500 hover:text-red-400 border border-red-500/20 text-xs font-medium apple-button flex items-center gap-1.5 transition-colors"
+            className="btn btn-danger flex items-center gap-1.5"
             title="Delete this character"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            Delete Character
+            <Trash2 className="w-3.5 h-3.5" aria-hidden />
+            Delete character
           </button>
         </div>
       </div>
 
-      {/* Hero Banner & Details */}
-      <div className="glass-card rounded-3xl p-6 sm:p-8 space-y-6">
+      {/* Hero */}
+      <div className="surface rounded-xl p-6 sm:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          {/* Avatar */}
-          <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-3xl overflow-hidden bg-black/10 shrink-0 border border-white/20 shadow-md">
+          <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-xl overflow-hidden shrink-0 border border-line" style={{ width: 160, height: 160 }}>
             <CharacterAvatar
               name={character.name}
               avatarUrl={character.avatar_url}
@@ -260,93 +257,91 @@ export default function CharacterProfilePage() {
             />
           </div>
 
-          {/* Info */}
-          <div className="flex-1 text-center sm:text-left space-y-2">
+          <div className="flex-1 text-center sm:text-left space-y-2 min-w-0">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+              <h1 className="type-page font-serif">
                 {character.name}
               </h1>
               {character.content_rating !== 'sfw' && (
-                <span className="px-2 py-0.5 rounded-full bg-red-500/15 text-red-500 text-xs font-bold uppercase tracking-wider flex items-center gap-1">
-                  <Flame className="w-3 h-3" />
+                <span className="chip chip-danger flex items-center gap-1">
+                  <Flame className="w-3 h-3" aria-hidden />
                   18+
                 </span>
               )}
             </div>
 
-            <p className="text-sm font-medium text-accent">
-              {character.tagline}
-            </p>
+            {character.tagline && (
+              <p className="text-accent-text type-sec">
+                {character.tagline}
+              </p>
+            )}
 
-            <p className="text-xs text-muted-foreground leading-relaxed pt-1">
-              {character.description}
-            </p>
-
-            {/* Tags */}
-            <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
-              {character.tags?.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-2.5 py-1 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-xs text-muted-foreground"
-                >
-                  {tag}
-                </span>
-              ))}
+            <div className="prose-rp !text-[0.95rem]">
+              {character.description || 'No description yet.'}
             </div>
 
-            {/* Start Chat Button */}
+            {!!character.tags?.length && (
+              <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
+                {character.tags?.map((tag) => (
+                  <span key={tag} className="chip">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+
             <div className="pt-4">
               <button
+                type="button"
                 onClick={handleStartChat}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-accent text-white hover:bg-accent-hover font-semibold text-sm apple-button flex items-center justify-center gap-2 shadow-sm"
+                className="btn btn-primary w-full sm:w-auto flex items-center justify-center gap-2"
               >
-                <MessageSquare className="w-4 h-4" />
-                Start Roleplay
+                <MessageSquare className="w-4 h-4" aria-hidden />
+                Start roleplay
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Personality & Scenario */}
+      {/* Personality and scenario */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="glass-card p-6 rounded-3xl space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Personality & Psychology
+        <div className="surface rounded-xl p-6 space-y-2">
+          <h3 className="type-sec">
+            Personality
           </h3>
-          <p className="text-xs sm:text-sm text-foreground/90 leading-relaxed">
+          <p className="text-sm text-ink leading-relaxed">
             {character.personality || 'No custom personality defined.'}
           </p>
         </div>
 
-        <div className="glass-card p-6 rounded-3xl space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Starting Scenario
+        <div className="surface rounded-xl p-6 space-y-2">
+          <h3 className="type-sec">
+            Starting scenario
           </h3>
-          <p className="text-xs sm:text-sm text-foreground/90 leading-relaxed">
+          <p className="text-sm text-ink leading-relaxed">
             {character.scenario || 'No custom scenario defined.'}
           </p>
         </div>
       </div>
 
-      {/* Opening Greetings Preview */}
-      <div className="glass-card p-6 sm:p-8 rounded-3xl space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Opening Greetings ({greetings.length})
+      {/* Opening greetings preview */}
+      <div className="surface rounded-xl p-6 sm:p-8 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="type-sec">
+            Opening greetings ({greetings.length})
           </h3>
 
           {greetings.length > 1 && (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5" role="group" aria-label="Choose greeting">
               {greetings.map((_, i) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => setSelectedGreetingIndex(i)}
-                  className={`w-6 h-6 rounded-full text-xs font-medium flex items-center justify-center transition-colors ${
-                    selectedGreetingIndex === i
-                      ? 'bg-accent text-white'
-                      : 'hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground'
-                  }`}
+                  className={selectedGreetingIndex === i ? 'chip chip-accent' : 'chip'}
+                  aria-pressed={selectedGreetingIndex === i}
+                  aria-label={`Show greeting ${i + 1}`}
                 >
                   {i + 1}
                 </button>
@@ -355,7 +350,7 @@ export default function CharacterProfilePage() {
           )}
         </div>
 
-        <div className="p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.06] text-xs sm:text-sm leading-relaxed whitespace-pre-wrap roleplay-prose">
+        <div className="well p-4 whitespace-pre-wrap prose-rp roleplay-prose">
           {greetings[selectedGreetingIndex]}
         </div>
       </div>

@@ -2106,20 +2106,21 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-background select-none">
       {/* Mobile-First Immersive Top Header */}
-      <header className="pt-safe px-3 sm:px-6 border-b border-black/[0.06] dark:border-white/[0.08] glass-panel shrink-0 z-30">
+      <header className="pt-safe px-3 sm:px-6 bg-background border-b border-line shrink-0 z-30">
         <div className="h-14 flex items-center justify-between">
           {/* Left: Back & Character Identity */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link
             href="/"
-            className="p-2 -ml-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors shrink-0"
-            title="Back to Roster"
+            className="icon-btn shrink-0"
+            title="Back to roster"
+            aria-label="Back to roster"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-5 h-5" aria-hidden />
           </Link>
 
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-2xl overflow-hidden bg-black/10 shrink-0 border border-white/20 shadow-xs relative">
+            <div className="w-8 h-8 rounded-md overflow-hidden shrink-0 border border-line relative">
               <CharacterAvatar
                 name={character?.name || 'Character'}
                 avatarUrl={character?.avatar_url}
@@ -2134,12 +2135,12 @@ export default function ChatPage() {
                   {character?.name}
                 </span>
                 {character?.content_rating !== 'sfw' && (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-red-500/15 text-red-500 font-bold shrink-0">
+                  <span className="chip-danger shrink-0">
                     18+
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-muted-foreground truncate hidden xs:block">
+              <p className="type-meta truncate hidden sm:block">
                 {character?.tagline}
               </p>
             </div>
@@ -2151,10 +2152,10 @@ export default function ChatPage() {
           {/* Active Persona Switcher Pill */}
           <button
             onClick={() => setPersonaModalOpen(true)}
-            className="px-2.5 py-1.5 rounded-full bg-accent/10 hover:bg-accent/20 text-accent text-xs font-semibold apple-button flex items-center gap-1.5 border border-accent/20 transition-all max-w-[140px] sm:max-w-[200px]"
-            title="Click to change your roleplay persona"
+            className="btn btn-ghost px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 max-w-[140px] sm:max-w-[200px]"
+            title="Change your roleplay persona"
           >
-            <User className="w-3.5 h-3.5 shrink-0" />
+            <User className="w-3.5 h-3.5 shrink-0" aria-hidden />
             <span className="truncate">
               {activePersona?.name || 'Set Persona'}
             </span>
@@ -2163,29 +2164,25 @@ export default function ChatPage() {
           {/* Regex Scripts & Output Formatters Studio Button */}
           <button
             onClick={() => setRegexModalOpen(true)}
-            className={`p-2 rounded-full apple-button flex items-center justify-center border transition-all ${
-              regexModalOpen
-                ? 'bg-accent/15 border-accent text-accent'
-                : 'border-black/[0.06] dark:border-white/[0.08] hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground'
-            }`}
-            title={`Regex Scripts & Output Formatters (${regexActiveCount} Active)`}
+            aria-label={`Regex scripts and output formatters, ${regexActiveCount} active`}
+            aria-pressed={regexModalOpen}
+            className="icon-btn relative"
+            title={`Regex scripts and output formatters (${regexActiveCount} active)`}
           >
-            <Sparkles className="w-4 h-4 text-accent" />
+            <Sparkles className="w-4 h-4" aria-hidden />
           </button>
 
           {/* Memory Inspector Button */}
           <button
             onClick={() => setInspectorOpen(!inspectorOpen)}
-            className={`p-2 rounded-full apple-button flex items-center justify-center border transition-all ${
-              inspectorOpen
-                ? 'bg-accent/15 border-accent text-accent'
-                : 'border-black/[0.06] dark:border-white/[0.08] hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground'
-            }`}
-            title="Inspect story facts & memories"
+            aria-label="Inspect story facts and memories"
+            aria-pressed={inspectorOpen}
+            className="icon-btn relative"
+            title="Inspect story facts and memories"
           >
-            <Brain className="w-4 h-4" />
+            <Brain className="w-4 h-4" aria-hidden />
             {memories.length > 0 && (
-              <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent" aria-hidden />
             )}
           </button>
 
@@ -2193,22 +2190,24 @@ export default function ChatPage() {
           <div className="relative">
             <button
               onClick={() => setHeaderMenuOpen(!headerMenuOpen)}
-              className="p-2 rounded-full border border-black/[0.06] dark:border-white/[0.08] hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground apple-button"
+              className="icon-btn"
               title="More options"
+              aria-label="More options"
+              aria-expanded={headerMenuOpen}
             >
-              <MoreVertical className="w-4 h-4" />
+              <MoreVertical className="w-4 h-4" aria-hidden />
             </button>
 
             {headerMenuOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-52 rounded-2xl bg-[#202024] border border-white/10 shadow-2xl p-1.5 z-40 animate-in fade-in duration-150">
+              <div className="panel absolute right-0 top-full mt-1.5 w-52 rounded-xl bg-raised border-line shadow-float p-1.5 z-40 animate-in fade-in duration-150">
                 {character?.id && (
                   <Link
                     href={`/c/${character.id}`}
                     onClick={() => setHeaderMenuOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5 rounded-xl transition-colors"
+                    className="btn btn-quiet w-full justify-start px-3 py-2 text-xs rounded-lg"
                   >
-                    <ExternalLink className="w-4 h-4 text-zinc-400" />
-                    Character Profile
+                    <ExternalLink className="w-4 h-4" aria-hidden />
+                    Character profile
                   </Link>
                 )}
                 <button
@@ -2216,10 +2215,10 @@ export default function ChatPage() {
                     setHeaderMenuOpen(false);
                     handleDeleteCurrentChat();
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-xl transition-colors text-left"
+                  className="btn btn-quiet w-full justify-start px-3 py-2 text-xs rounded-lg text-danger border-t border-line mt-1 pt-2"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Delete This Chat
+                  <Trash2 className="w-4 h-4" aria-hidden />
+                  Delete this chat
                 </button>
               </div>
             )}
@@ -2230,12 +2229,14 @@ export default function ChatPage() {
 
       {/* Main Chat Canvas with Messages Timeline */}
       <div className="flex-1 flex overflow-hidden relative">
-        <main
+        <div
           ref={chatContainerRef}
           onScroll={handleChatScroll}
+          role="log"
+          aria-label="Conversation"
           className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5 scroll-smooth"
         >
-          <div className="max-w-3xl mx-auto space-y-5 pb-6">
+          <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end space-y-5 pb-6">
             {messages.map((message, index) => {
               const isAssistant = message.role === 'assistant';
               const swipes = message.meta?.swipes || [message.content];
@@ -2249,7 +2250,7 @@ export default function ChatPage() {
               return (
                 <div
                   key={message.id || index}
-                  className={`flex flex-col group ${isAssistant ? 'items-start' : 'items-end'}`}
+                  className={`msg-row flex flex-col group ${isAssistant ? 'items-start' : 'items-end'}`}
                 >
                   {isAssistant ? (
                     /* Assistant Roleplay Prose (Spacious & Mobile-Optimized) */
@@ -2257,7 +2258,7 @@ export default function ChatPage() {
                       {/* Author Line & Swipes */}
                       <div className="flex items-center justify-between px-1">
                         <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg overflow-hidden bg-black/10 shrink-0 border border-white/10">
+                          <div className="w-6 h-6 rounded-md overflow-hidden shrink-0 border border-line">
                             <CharacterAvatar
                               name={character?.name || 'Character'}
                               avatarUrl={character?.avatar_url}
@@ -2265,20 +2266,21 @@ export default function ChatPage() {
                               className="w-full h-full"
                             />
                           </div>
-                          <span className="text-xs font-semibold tracking-tight text-foreground/90">
+                          <span className="text-xs font-medium text-ink-2">
                             {character?.name}
                           </span>
                         </div>
 
                         {/* Swipes Controller */}
                         {swipes.length > 1 && (
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] text-[11px] text-muted-foreground font-mono">
+                          <div className="chip font-mono">
                             <button
                               onClick={() => handleSwipe(index, 'prev')}
                               disabled={swipeIndex === 0}
-                              className="disabled:opacity-30 hover:text-foreground p-0.5"
+                              aria-label="Previous version"
+                              className="icon-btn w-6 h-6 disabled:opacity-30"
                             >
-                              <ChevronLeft className="w-3 h-3" />
+                              <ChevronLeft className="w-3 h-3" aria-hidden />
                             </button>
                             <span>
                               {swipeIndex + 1}/{swipes.length}
@@ -2286,9 +2288,10 @@ export default function ChatPage() {
                             <button
                               onClick={() => handleSwipe(index, 'next')}
                               disabled={swipeIndex === swipes.length - 1}
-                              className="disabled:opacity-30 hover:text-foreground p-0.5"
+                              aria-label="Next version"
+                              className="icon-btn w-6 h-6 disabled:opacity-30"
                             >
-                              <ChevronRight className="w-3 h-3" />
+                              <ChevronRight className="w-3 h-3" aria-hidden />
                             </button>
                           </div>
                         )}
@@ -2296,7 +2299,7 @@ export default function ChatPage() {
 
                       {/* Narrative Bubble or Inline Editor */}
                       {editingMsgId === message.id ? (
-                        <div className="w-full space-y-2 p-3 sm:p-4 rounded-2xl glass-card border border-accent/40 shadow-xs animate-in fade-in zoom-in-[0.98] duration-150 ease-out">
+                        <div className="surface w-full space-y-2 p-3 sm:p-4 border-accent-line animate-in fade-in duration-150">
                           <textarea
                             value={editingText}
                             onChange={(e) => setEditingText(e.target.value)}
@@ -2305,26 +2308,26 @@ export default function ChatPage() {
                               else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit();
                             }}
                             rows={4}
-                            className="w-full p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-accent resize-y font-normal leading-relaxed"
-                            placeholder="Edit character response..."
+                            className="field resize-y text-xs sm:text-sm leading-relaxed"
+                            placeholder="Edit character response…"
                             autoFocus
                           />
-                          <p className="text-[11px] text-muted-foreground px-0.5">
+                          <p className="type-meta px-0.5">
                             Edits only this response — messages after it stay untouched.
                           </p>
-                          <div className="flex items-center justify-end gap-2 text-xs">
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={handleCancelEdit}
-                              className="px-3 py-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground transition-colors apple-button"
+                              className="btn btn-quiet"
                             >
                               Cancel
                             </button>
                             <button
                               onClick={handleSaveEdit}
                               disabled={isGenerating || !editingText.trim()}
-                              className="px-3 py-1 rounded-xl bg-accent text-white font-semibold flex items-center gap-1.5 hover:opacity-90 transition-[transform,opacity] duration-150 ease-out active:scale-[0.97] apple-button disabled:opacity-40"
+                              className="btn btn-primary"
                             >
-                              <Check className="w-3.5 h-3.5" /> Save
+                              <Check className="w-3.5 h-3.5" aria-hidden /> Save
                             </button>
                           </div>
                         </div>
@@ -2341,7 +2344,7 @@ export default function ChatPage() {
 
                           {/* Roleplay Prose Bubble */}
                           {(message.content || (!message.reasoning && message.status !== 'streaming')) ? (
-                            <div className="p-4 sm:p-5 rounded-2xl rounded-tl-sm glass-card text-xs sm:text-sm text-foreground/95 leading-relaxed roleplay-prose shadow-xs border border-black/[0.05] dark:border-white/[0.07] select-text">
+                            <div className="prose-rp w-full max-w-[62ch] border-t border-line pt-3 select-text">
                               <RoleplayMessageContent
                                 content={message.content}
                                 characterName={character?.name || 'Character'}
@@ -2355,18 +2358,18 @@ export default function ChatPage() {
                           ) : (
                             /* Fallback if a previous response ended with reasoning but empty text */
                             !message.content && message.reasoning && message.status !== 'streaming' && (
-                              <div className="p-3.5 sm:p-4 rounded-2xl rounded-tl-sm bg-amber-500/[0.06] dark:bg-amber-500/[0.09] border border-amber-500/25 text-xs text-foreground/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                              <div className="surface border-warn-line bg-warn-wash p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                                 <div>
-                                  <p className="font-semibold text-amber-600 dark:text-amber-400">Response stopped after reasoning</p>
-                                  <p className="text-[11px] text-muted-foreground mt-0.5">The model finished its thoughts without outputting prose.</p>
+                                  <p className="text-xs font-semibold text-warn">Response stopped after reasoning</p>
+                                  <p className="type-meta mt-0.5">The model finished thinking without writing any prose.</p>
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => handleRegenerate(index)}
-                                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 dark:text-amber-300 font-medium text-xs transition-colors self-start sm:self-auto flex items-center gap-1.5 apple-button"
+                                  className="btn btn-ghost self-start sm:self-auto"
                                 >
-                                  <RotateCcw className="w-3.5 h-3.5" />
-                                  <span>Regenerate Response</span>
+                                  <RotateCcw className="w-3.5 h-3.5" aria-hidden />
+                                  <span>Regenerate</span>
                                 </button>
                               </div>
                             )
@@ -2376,75 +2379,79 @@ export default function ChatPage() {
 
                       {/* Action Bar (Copy, Edit, Regenerate, Delete from here) */}
                       {deleteConfirmId === message.id ? (
-                        <div className="flex flex-wrap items-center gap-2 px-2.5 py-1.5 mt-1 rounded-xl bg-red-500/10 border border-red-500/25 text-[11px] text-red-600 dark:text-red-400 animate-in fade-in slide-in-from-top-1 duration-150 ease-out">
-                          <span className="font-medium">
+                        <div className="flex flex-wrap items-center gap-2 px-2.5 py-1.5 mt-1 rounded-xl border border-danger-line bg-danger-wash text-danger animate-in fade-in slide-in-from-top-1 duration-150">
+                          <span className="type-meta text-danger font-medium">
                             {messages.length - index - 1 > 0
                               ? `Delete this and the ${messages.length - index - 1} after it?`
                               : 'Delete this response?'}
                           </span>
                           <button
                             onClick={() => handleDeleteMessage(message.id)}
-                            className="px-2.5 py-1 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 transition-[transform,background-color] duration-150 ease-out active:scale-[0.97] apple-button"
+                            className="btn btn-danger px-2.5 py-1 text-[11px]"
                           >
                             Delete
                           </button>
                           <button
                             onClick={handleCancelDelete}
-                            className="px-2.5 py-1 rounded-lg hover:bg-red-500/10 transition-colors apple-button"
+                            className="btn btn-quiet px-2.5 py-1 text-[11px]"
                           >
                             Keep
                           </button>
                         </div>
                       ) : (
-                      <div className="flex items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 px-1 pt-1 mt-1 border-t border-line opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-[opacity] duration-150">
                         {message.content && (
-                          <span className="text-[10px] text-muted-foreground/60 mr-auto select-none pl-1 font-mono">
+                          <span className="type-meta mr-auto select-none pl-1">
                             {message.content.trim().split(/\s+/).filter(Boolean).length} words
                           </span>
                         )}
                         <button
                           onClick={() => handleCopyMessage(formattedContent)}
-                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] flex items-center gap-1 transition-colors"
+                          className="icon-btn w-7 h-7"
                           title="Copy message"
+                          aria-label="Copy message"
                         >
-                          <Copy className="w-3.5 h-3.5" />
+                          <Copy className="w-3.5 h-3.5" aria-hidden />
                         </button>
                         <button
                           onClick={() => handleStartEdit(message)}
                           disabled={isGenerating}
-                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40"
+                          className="icon-btn w-7 h-7 disabled:opacity-40"
                           title="Edit response"
+                          aria-label="Edit response"
                         >
-                          <Edit2 className="w-3.5 h-3.5" />
+                          <Edit2 className="w-3.5 h-3.5" aria-hidden />
                         </button>
                         <button
                           onClick={() => handleRegenerate(index)}
                           disabled={isGenerating}
-                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-accent text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40"
-                          title="Regenerate alternate response (Reroll)"
+                          className="icon-btn w-7 h-7 disabled:opacity-40"
+                          title="Regenerate response"
+                          aria-label="Regenerate response"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                          <RotateCcw className="w-3.5 h-3.5" aria-hidden />
                         </button>
                         <button
                           onClick={() => handleDeleteMessage(message.id)}
                           disabled={isGenerating}
-                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40"
+                          className="icon-btn w-7 h-7 hover:text-danger disabled:opacity-40"
                           title="Delete from here — removes this and everything after it"
+                          aria-label="Delete from here — removes this and everything after it"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5" aria-hidden />
                         </button>
                       </div>
                       )}
                     </div>
                   ) : (
                     /* User Response Bubble */
-                    <div className="max-w-[85%] sm:max-w-[75%] space-y-1">
+                    <div className="max-w-[85%] sm:max-w-[72%] space-y-1">
                       {/* Persona Name & Monogram */}
                       <div className="flex items-center justify-end gap-1.5 px-1">
-                        <span className="text-[11px] font-semibold text-muted-foreground">
+                        <span className="type-meta">
                           {activePersona?.name || 'You'}
                         </span>
-                        <div className="w-5 h-5 rounded-md overflow-hidden shrink-0 border border-white/10">
+                        <div className="w-5 h-5 rounded-md overflow-hidden shrink-0 border border-line">
                           <CharacterAvatar
                             name={activePersona?.name || 'User'}
                             avatarUrl={activePersona?.avatar_url}
@@ -2455,12 +2462,12 @@ export default function ChatPage() {
 
                       {/* User Message Card or Inline Editor */}
                       {editingMsgId === message.id ? (
-                        <div className="w-full space-y-2 p-3 rounded-2xl bg-accent text-white shadow-sm border border-white/20 animate-in fade-in zoom-in-[0.98] duration-150 ease-out">
+                        <div className="surface w-full space-y-2 p-3 border-accent-line animate-in fade-in duration-150">
                           {messages.length - index - 1 > 0 && (
-                            <div className="flex items-start gap-1.5 px-1 pt-0.5 text-[11px] leading-snug text-white/90">
-                              <GitBranch className="w-3.5 h-3.5 mt-px shrink-0" />
+                            <div className="flex items-start gap-1.5 px-1 pt-0.5 type-meta">
+                              <GitBranch className="w-3.5 h-3.5 mt-px shrink-0" aria-hidden />
                               <span>
-                                Saving deletes the {messages.length - index - 1} message{messages.length - index - 1 === 1 ? '' : 's'} after this and generates a new reply.
+                                Saving deletes the {messages.length - index - 1} message{messages.length - index - 1 === 1 ? '' : 's'} after this and writes a new reply.
                               </span>
                             </div>
                           )}
@@ -2472,33 +2479,35 @@ export default function ChatPage() {
                               else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit();
                             }}
                             rows={3}
-                            className="w-full p-2.5 rounded-xl bg-black/20 text-white placeholder-white/60 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-white/40 resize-y"
+                            className="field resize-y text-xs sm:text-sm"
+                            placeholder="Edit your message…"
+                            aria-label="Edit your message"
                             autoFocus
                           />
-                          <div className="flex items-center justify-between gap-2 text-xs px-0.5">
-                            <span className="text-[11px] text-white/60 hidden sm:inline">
-                              Ctrl + Enter to send
+                          <div className="flex items-center justify-between gap-2 px-0.5">
+                            <span className="type-meta hidden sm:inline">
+                              Ctrl + Enter to save…
                             </span>
                             <div className="flex items-center gap-2 ml-auto">
                               <button
                                 onClick={handleCancelEdit}
-                                className="px-2.5 py-1 rounded-lg text-white/80 hover:bg-white/10 transition-colors apple-button"
+                                className="btn btn-quiet"
                               >
                                 Cancel
                               </button>
                               <button
                                 onClick={handleSaveEdit}
                                 disabled={isGenerating || !editingText.trim()}
-                                className="px-3 py-1 rounded-lg bg-white text-accent font-semibold flex items-center gap-1 shadow-xs apple-button transition-[transform,background-color] duration-150 ease-out active:scale-[0.97] disabled:opacity-50"
+                                className="btn btn-primary"
                               >
-                                <Send className="w-3.5 h-3.5" />
-                                {messages.length - index - 1 > 0 ? 'Save & Regenerate' : 'Save & Send'}
+                                <Send className="w-3.5 h-3.5" aria-hidden />
+                                {messages.length - index - 1 > 0 ? 'Save and regenerate' : 'Save'}
                               </button>
                             </div>
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3.5 sm:p-4 rounded-2xl rounded-tr-sm rp-user-bubble text-white text-xs sm:text-sm leading-relaxed select-text">
+                        <div className="rp-user-bubble prose-rp rounded-xl rounded-tr-sm px-3.5 py-3 sm:px-4 text-[0.95rem] leading-[1.7] select-text">
                           <RoleplayMessageContent
                             content={message.content}
                             characterName={character?.name || 'Character'}
@@ -2510,54 +2519,57 @@ export default function ChatPage() {
                       )}
 
                       {deleteConfirmId === message.id ? (
-                        <div className="flex flex-wrap justify-end items-center gap-2 px-2.5 py-1.5 mt-1 rounded-xl bg-red-500/10 border border-red-500/25 text-[11px] text-red-600 dark:text-red-400 animate-in fade-in slide-in-from-top-1 duration-150 ease-out">
-                          <span className="font-medium">
+                        <div className="flex flex-wrap justify-end items-center gap-2 px-2.5 py-1.5 mt-1 rounded-xl border border-danger-line bg-danger-wash text-danger animate-in fade-in slide-in-from-top-1 duration-150">
+                          <span className="type-meta text-danger font-medium">
                             {messages.length - index - 1 > 0
                               ? `Delete this and the ${messages.length - index - 1} after it?`
                               : 'Delete this message?'}
                           </span>
                           <button
                             onClick={() => handleDeleteMessage(message.id)}
-                            className="px-2.5 py-1 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 transition-[transform,background-color] duration-150 ease-out active:scale-[0.97] apple-button"
+                            className="btn btn-danger px-2.5 py-1 text-[11px]"
                           >
                             Delete
                           </button>
                           <button
                             onClick={handleCancelDelete}
-                            className="px-2.5 py-1 rounded-lg hover:bg-red-500/10 text-muted-foreground transition-colors apple-button"
+                            className="btn btn-quiet px-2.5 py-1 text-[11px]"
                           >
                             Keep
                           </button>
                         </div>
                       ) : (
-                      <div className="flex justify-end items-center gap-1 px-1 pt-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                      <div className="flex justify-end items-center gap-1 px-1 pt-1 mt-1 border-t border-line opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-[opacity] duration-150">
                         {message.content && (
-                          <span className="text-[10px] text-muted-foreground/60 mr-auto select-none pl-1 font-mono">
+                          <span className="type-meta mr-auto select-none pl-1">
                             {message.content.trim().split(/\s+/).filter(Boolean).length} words
                           </span>
                         )}
                         <button
                           onClick={() => handleCopyMessage(formattedContent)}
-                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors"
+                          className="icon-btn w-7 h-7"
                           title="Copy"
+                          aria-label="Copy message"
                         >
-                          <Copy className="w-3 h-3" />
+                          <Copy className="w-3 h-3" aria-hidden />
                         </button>
                         <button
                           onClick={() => handleStartEdit(message)}
                           disabled={isGenerating}
-                          className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground text-[11px] transition-colors disabled:opacity-40"
+                          className="icon-btn w-7 h-7 disabled:opacity-40"
                           title="Edit and regenerate from here"
+                          aria-label="Edit and regenerate from here"
                         >
-                          <Edit2 className="w-3 h-3" />
+                          <Edit2 className="w-3 h-3" aria-hidden />
                         </button>
                         <button
                           onClick={() => handleDeleteMessage(message.id)}
                           disabled={isGenerating}
-                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 text-[11px] transition-colors disabled:opacity-40"
+                          className="icon-btn w-7 h-7 hover:text-danger disabled:opacity-40"
                           title="Delete from here — removes this and everything after it"
+                          aria-label="Delete from here — removes this and everything after it"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-3 h-3" aria-hidden />
                         </button>
                       </div>
                       )}
@@ -2568,23 +2580,21 @@ export default function ChatPage() {
             })}
             <div ref={messagesEndRef} />
           </div>
-        </main>
+        </div>
 
         {/* Floating Jump to Bottom Button */}
         {!isAtBottom && messages.length > 2 && (
           <button
             onClick={() => scrollToBottom(true)}
-            className="absolute bottom-4 right-4 sm:right-8 z-30 px-3.5 py-1.5 rounded-full glass-panel border border-black/10 dark:border-white/15 shadow-xl flex items-center gap-2 text-xs font-semibold text-foreground hover:scale-105 active:scale-95 transition-all apple-button animate-in fade-in zoom-in-95 duration-200"
+            aria-label="Jump to latest message"
+            className="panel absolute bottom-4 right-4 sm:right-8 z-30 px-3.5 py-1.5 rounded-full bg-raised border-line shadow-raised flex items-center gap-2 text-xs font-semibold text-ink animate-in fade-in duration-150"
             title="Jump to latest message"
           >
             {isGenerating && (
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
-              </span>
+              <span className="h-2 w-2 rounded-full bg-accent pulse-soft" aria-hidden />
             )}
             <span>Jump to latest</span>
-            <ChevronDown className="w-3.5 h-3.5 text-accent" />
+            <ChevronDown className="w-3.5 h-3.5" aria-hidden />
           </button>
         )}
 
@@ -2636,7 +2646,7 @@ export default function ChatPage() {
       </div>
 
       {/* Mobile-First Reachable Bottom Input Composer */}
-      <footer className="p-2 sm:p-4 border-t border-black/[0.06] dark:border-white/[0.08] glass-panel shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
+      <footer className="p-2 sm:p-4 bg-background border-t border-line shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
         <div className="max-w-3xl mx-auto space-y-2">
           {/* SillyTavern Quick Action Chips */}
           <SillyTavernQuickActions
@@ -2684,14 +2694,18 @@ export default function ChatPage() {
 
           {/* Author's Note Quick Drawer */}
           {showAuthorsNote && (
-            <div className="p-3 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.06] dark:border-white/[0.08] space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                <span className="font-semibold text-accent flex items-center gap-1.5">
-                  <Bookmark className="w-3.5 h-3.5" />
-                  Author's Note (Injected at Depth {authorsNote.depth})
+            <div className="surface p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="type-meta font-semibold text-ink-2 flex items-center gap-1.5">
+                  <Bookmark className="w-3.5 h-3.5" aria-hidden />
+                  Author’s note (depth {authorsNote.depth})
                 </span>
-                <button onClick={() => setShowAuthorsNote(false)} className="hover:text-foreground">
-                  <X className="w-3.5 h-3.5" />
+                <button
+                  onClick={() => setShowAuthorsNote(false)}
+                  className="icon-btn w-6 h-6"
+                  aria-label="Close author’s note"
+                >
+                  <X className="w-3.5 h-3.5" aria-hidden />
                 </button>
               </div>
               <textarea
@@ -2702,8 +2716,9 @@ export default function ChatPage() {
                   saveLocalAuthorsNote(chatId, updated);
                 }}
                 rows={2}
-                placeholder="Direct the scene (e.g. Focus on intimate tension, pouring rain, slow pacing)..."
-                className="w-full px-3 py-2 rounded-xl bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs focus:outline-none focus:ring-1 focus:ring-accent resize-none leading-relaxed"
+                placeholder="Direct the scene, for example slow pacing in the rain…"
+                aria-label="Author’s note"
+                className="field resize-none text-xs leading-relaxed"
               />
             </div>
           )}
@@ -2722,7 +2737,7 @@ export default function ChatPage() {
           />
 
           {/* Input Box with Big Thumb Send Button */}
-          <div className="relative flex items-end gap-2 p-1.5 sm:p-2 rounded-3xl glass-card border border-black/[0.08] dark:border-white/[0.1] focus-within:ring-2 focus-within:ring-accent/40 shadow-xs">
+          <div className="well relative flex items-end gap-2 p-1.5 sm:p-2 rounded-3xl">
             <textarea
               ref={textareaRef}
               rows={1}
@@ -2734,26 +2749,29 @@ export default function ChatPage() {
                   handleSendMessage();
                 }
               }}
-              placeholder={`Write your turn as ${activePersona?.name || 'User'}...`}
-              className="flex-1 bg-transparent px-3 py-2 text-xs sm:text-sm text-foreground focus:outline-none resize-none max-h-40 min-h-[40px] leading-relaxed"
+              placeholder={`Write your turn as ${activePersona?.name || 'you'}…`}
+              aria-label="Write your turn"
+              className="flex-1 bg-transparent px-3 py-2 text-xs sm:text-sm text-ink focus:outline-none resize-none max-h-40 min-h-[40px] leading-relaxed"
             />
 
             {isGenerating ? (
               <button
                 onClick={handleStop}
-                className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shrink-0 apple-button shadow-xs touch-manipulation"
-                title="Stop generation"
+                className="btn btn-danger w-10 h-10 p-0 shrink-0"
+                title="Stop generating"
+                aria-label="Stop generating"
               >
-                <Square className="w-4 h-4 fill-white" />
+                <Square className="w-4 h-4 fill-current" aria-hidden />
               </button>
             ) : (
               <button
                 onClick={() => handleSendMessage()}
                 disabled={!inputText.trim()}
-                className="w-10 h-10 rounded-full bg-accent hover:bg-accent-hover disabled:opacity-40 disabled:hover:bg-accent text-white flex items-center justify-center shrink-0 apple-button shadow-xs transition-colors touch-manipulation"
+                className="icon-btn w-10 h-10 bg-accent text-accent-ink hover:bg-accent-hover disabled:opacity-40 shrink-0"
                 title="Send message"
+                aria-label="Send message"
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-4 h-4" aria-hidden />
               </button>
             )}
           </div>

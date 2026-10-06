@@ -154,65 +154,72 @@ export default function ModelLogsPage() {
       <div className="flex items-center gap-2">
         <Link
           href="/profile"
-          className="apple-button rounded-full p-2 text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+          className="icon-btn"
           aria-label="Back to profile"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <ArrowLeft className="h-5 w-5" aria-hidden />
         </Link>
         <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-base font-bold tracking-tight">
-            <FlaskConical className="h-4 w-4 text-amber-300" />
+          <h1 className="type-page flex items-center gap-2">
+            <FlaskConical className="h-4 w-4 text-ink-3" aria-hidden />
             Model logs
-            <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+            <span className="chip chip-warn">
               Dev
             </span>
           </h1>
-          <p className="mt-0.5 text-[11px] text-zinc-400">
-            Complete prompt per turn — every injected block, params, and raw output. Logged from now
-            on{serverAvailable ? ' (device + account)' : ' (this device)'}.
+          <p className="type-meta mt-0.5">
+            Complete prompt per turn, every injected block, params, and raw output. Logged from now
+            on{serverAvailable ? ' (device and account)' : ' (this device)'}.
           </p>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <button
+            type="button"
             onClick={load}
-            className="apple-button rounded-full border border-white/10 p-2 text-zinc-400 hover:text-white"
+            className="icon-btn border border-line"
             title="Refresh logs"
             aria-label="Refresh logs"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
           </button>
           <button
+            type="button"
             onClick={handleClearDevice}
-            className="apple-button rounded-full border border-white/10 p-2 text-zinc-400 hover:text-red-400"
+            className="icon-btn border border-line"
             title="Clear device logs"
             aria-label="Clear device logs"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-4 w-4" aria-hidden />
           </button>
         </div>
       </div>
 
       {/* Filters */}
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <label className="flex flex-1 items-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
-          <Search className="h-4 w-4 shrink-0 text-zinc-500" />
+        <label className="flex flex-1 items-center gap-2 field !py-2">
+          <Search className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+          <span className="sr-only">Search logs</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search prompts, outputs, characters…"
-            className="w-full bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
+            className="w-full bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none"
           />
         </label>
+        <label className="sr-only" htmlFor="logs-chat-filter">
+          Filter by chat
+        </label>
         <select
+          id="logs-chat-filter"
           value={chatFilter}
           onChange={(e) => setChatFilter(e.target.value)}
-          className="rounded-2xl border border-white/[0.08] bg-[#151518] px-3 py-2 text-sm text-zinc-200 focus:outline-none"
+          className="field bg-sunken text-ink sm:w-auto"
           aria-label="Filter by chat"
         >
           <option value="">All chats ({merged.length})</option>
           {chatOptions.map(([id, label]) => (
             <option key={id} value={id}>
-              {label} · {id.slice(0, 8)}
+              {label} ({id.slice(0, 8)})
             </option>
           ))}
         </select>
@@ -220,13 +227,13 @@ export default function ModelLogsPage() {
 
       {/* Log list */}
       <div className="mt-4 space-y-2.5">
-        {loading && <p className="px-1 text-xs text-zinc-500">Loading logs…</p>}
+        {loading && <p className="type-meta px-1">Loading logs…</p>}
         {!loading && filtered.length === 0 && (
-          <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02] p-8 text-center">
-            <p className="text-sm font-semibold text-zinc-300">No logs yet</p>
-            <p className="mx-auto mt-1 max-w-sm text-xs text-zinc-500">
+          <div className="surface rounded-xl p-8 text-center">
+            <p className="type-page !text-lg">No logs yet</p>
+            <p className="type-meta mx-auto mt-1 max-w-sm">
               Send a chat message and the complete model input (system prompt, history,
-              turn_context with memories / lore / scene state) plus the raw output will appear here.
+              turn context with memories, lore, and scene state) plus the raw output will appear here.
             </p>
           </div>
         )}
@@ -235,39 +242,35 @@ export default function ModelLogsPage() {
           return (
             <article
               key={log.id}
-              className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#151518]/90"
+              className="surface rounded-lg overflow-hidden"
             >
               <button
+                type="button"
                 onClick={() => {
                   setExpandedId(open ? null : log.id);
                   setExpandedMsgIdx(null);
                 }}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                aria-expanded={open}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-[13px] font-bold text-white">
+                    <span className="truncate text-[13px] font-semibold text-ink">
                       {log.characterName || 'Unknown character'}
                     </span>
-                    <span
-                      className={`rounded-full border px-1.5 py-px text-[10px] font-bold ${
-                        log.kind === 'swipe'
-                          ? 'border-sky-400/25 bg-sky-500/10 text-sky-300'
-                          : 'border-white/10 bg-white/[0.05] text-zinc-300'
-                      }`}
-                    >
+                    <span className="chip type-code">
                       {log.kind}
                     </span>
                     {log.serverId != null && (
-                      <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-1.5 py-px text-[10px] font-bold text-emerald-300">
+                      <span className="chip chip-ok">
                         saved
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 line-clamp-1 text-xs text-zinc-400">
+                  <p className="mt-0.5 line-clamp-1 text-xs text-ink-2">
                     {log.userMessage || '(empty user message)'}
                   </p>
-                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] tabular-nums text-zinc-500">
+                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] tabular-nums text-ink-3">
                     <span>{formatTime(log.createdAt)}</span>
                     <span>
                       {log.usage.input.toLocaleString()} in / {log.usage.output.toLocaleString()}{' '}
@@ -278,26 +281,28 @@ export default function ModelLogsPage() {
                   </p>
                 </div>
                 <ChevronDown
-                  className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`}
+                  className={`h-4 w-4 shrink-0 text-ink-3 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+                  aria-hidden
                 />
               </button>
 
               {open && (
-                <div className="space-y-3 border-t border-white/[0.06] px-4 py-4">
+                <div className="space-y-3 border-t border-line px-4 py-4">
                   {/* Params */}
                   <section>
                     <div className="mb-1.5 flex items-center justify-between">
-                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      <h4 className="type-sec">
                         Request params
                       </h4>
                       <button
+                        type="button"
                         onClick={() => copyText(JSON.stringify(log.params, null, 2), 'Params')}
-                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-zinc-400 hover:text-white"
+                        className="btn btn-quiet inline-flex items-center gap-1 !text-[11px]"
                       >
-                        <Copy className="h-3 w-3" /> Copy
+                        <Copy className="h-3 w-3" aria-hidden /> Copy
                       </button>
                     </div>
-                    <pre className="overflow-x-auto rounded-xl border border-white/[0.06] bg-black/40 p-3 text-[11px] leading-relaxed text-zinc-300">
+                    <pre className="well type-code overflow-x-auto p-3 leading-relaxed text-ink-2">
                       {JSON.stringify(log.params, null, 2)}
                     </pre>
                   </section>
@@ -305,16 +310,17 @@ export default function ModelLogsPage() {
                   {/* Request messages — the complete prompt */}
                   <section>
                     <div className="mb-1.5 flex items-center justify-between">
-                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                        Complete prompt · {log.requestMessages.length} messages
+                      <h4 className="type-sec">
+                        Complete prompt ({log.requestMessages.length} messages)
                       </h4>
                       <button
+                        type="button"
                         onClick={() =>
                           copyText(JSON.stringify(log.requestMessages, null, 2), 'Prompt')
                         }
-                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-zinc-400 hover:text-white"
+                        className="btn btn-quiet inline-flex items-center gap-1 !text-[11px]"
                       >
-                        <Copy className="h-3 w-3" /> Copy all
+                        <Copy className="h-3 w-3" aria-hidden /> Copy all
                       </button>
                     </div>
                     <div className="space-y-1.5">
@@ -323,40 +329,37 @@ export default function ModelLogsPage() {
                         return (
                           <div
                             key={i}
-                            className="overflow-hidden rounded-xl border border-white/[0.06] bg-black/30"
+                            className="surface rounded-lg overflow-hidden"
                           >
                             <button
+                              type="button"
                               onClick={() => setExpandedMsgIdx(msgOpen ? null : i)}
                               className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                              aria-expanded={msgOpen}
                             >
                               <span
-                                className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase ${
-                                  m.role === 'system'
-                                    ? 'bg-purple-500/15 text-purple-300'
-                                    : m.role === 'assistant'
-                                      ? 'bg-emerald-500/15 text-emerald-300'
-                                      : 'bg-sky-500/15 text-sky-300'
-                                }`}
+                                className={m.role === 'system' ? 'chip chip-accent type-code' : 'chip type-code'}
                               >
                                 {m.role}
                               </span>
-                              <span className="truncate text-[11px] text-zinc-400">
+                              <span className="truncate text-[11px] text-ink-2">
                                 {m.content.slice(0, 120).replace(/\n/g, ' ')}
                               </span>
-                              <span className="ml-auto shrink-0 text-[10px] tabular-nums text-zinc-500">
+                              <span className="ml-auto shrink-0 text-[10px] tabular-nums text-ink-3">
                                 {m.content.length.toLocaleString()} chars
                               </span>
                             </button>
                             {msgOpen && (
-                              <div className="border-t border-white/[0.06] p-3">
-                                <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-200">
+                              <div className="border-t border-line p-3">
+                                <pre className="well type-code max-h-96 overflow-y-auto whitespace-pre-wrap break-words !text-[11px] !leading-relaxed text-ink-2 p-3">
                                   {m.content}
                                 </pre>
                                 <button
+                                  type="button"
                                   onClick={() => copyText(m.content, `${m.role} message`)}
-                                  className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-zinc-400 hover:text-white"
+                                  className="btn btn-quiet mt-2 inline-flex items-center gap-1 !text-[11px]"
                                 >
-                                  <Copy className="h-3 w-3" /> Copy message
+                                  <Copy className="h-3 w-3" aria-hidden /> Copy message
                                 </button>
                               </div>
                             )}
@@ -369,27 +372,28 @@ export default function ModelLogsPage() {
                   {/* Output */}
                   <section>
                     <div className="mb-1.5 flex items-center justify-between">
-                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      <h4 className="type-sec">
                         Model output
                       </h4>
                       <button
+                        type="button"
                         onClick={() => copyText(log.output, 'Output')}
-                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-zinc-400 hover:text-white"
+                        className="btn btn-quiet inline-flex items-center gap-1 !text-[11px]"
                       >
-                        <Copy className="h-3 w-3" /> Copy
+                        <Copy className="h-3 w-3" aria-hidden /> Copy
                       </button>
                     </div>
-                    <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-white/[0.06] bg-black/40 p-3 text-[11px] leading-relaxed text-zinc-200">
+                    <pre className="well type-code max-h-96 overflow-y-auto whitespace-pre-wrap break-words !text-[11px] !leading-relaxed text-ink-2 p-3">
                       {log.output || '(empty)'}
                     </pre>
                   </section>
 
                   {log.reasoning && (
                     <section>
-                      <h4 className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                        Reasoning (thinking)
+                      <h4 className="type-sec mb-1.5">
+                        Reasoning
                       </h4>
-                      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-white/[0.06] bg-black/40 p-3 text-[11px] leading-relaxed text-amber-100/80">
+                      <pre className="well type-code max-h-64 overflow-y-auto whitespace-pre-wrap break-words !text-[11px] !leading-relaxed text-ink-2 p-3">
                         {log.reasoning}
                       </pre>
                     </section>

@@ -13,12 +13,10 @@ import {
   Flame,
   Brain,
   Sliders,
-  FileCode,
   Image as ImageIcon,
   Link2,
   X,
   ChevronDown,
-  ChevronUp,
   MessageSquare,
   BookOpen,
 } from 'lucide-react';
@@ -41,7 +39,7 @@ export default function CreateCharacterPage() {
   // Character Core State
   const [name, setName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [accentColor, setAccentColor] = useState('#8b5cf6');
+  const [accentColor, setAccentColor] = useState('');
   const [tagline, setTagline] = useState('');
   const [description, setDescription] = useState('');
   const [personality, setPersonality] = useState('');
@@ -312,39 +310,31 @@ export default function CreateCharacterPage() {
 
   return (
     <div className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 space-y-6">
-      {/* Studio Navigation Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-black/[0.06] dark:border-white/[0.08]">
+      {/* Studio header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
         <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-            title="Back to Roster"
-          >
-            <ArrowLeft className="w-5 h-5" />
+          <Link href="/" className="icon-btn" aria-label="Back to explore">
+            <ArrowLeft className="w-5 h-5" aria-hidden />
           </Link>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Character Studio</h1>
-              <span className="px-2 py-0.5 rounded-full bg-accent/10 text-accent text-[10px] font-semibold uppercase tracking-wider">
-                V2 Studio
-              </span>
+              <h1 className="type-page">Character studio</h1>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="type-meta mt-0.5">
               Design persona, sensory details, and opening narrative
             </p>
           </div>
         </div>
 
-        {/* Global Toolbar Actions */}
         <div className="flex items-center flex-wrap gap-2">
-          {/* Card Import */}
           <button
+            type="button"
             onClick={() => cardInputRef.current?.click()}
-            className="px-3.5 py-1.5 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-xs font-medium apple-button flex items-center gap-1.5"
-            title="Import Janitor AI, Chub AI, or Tavern Card"
+            className="btn btn-quiet flex items-center gap-1.5"
+            title="Import Janitor AI, Chub AI, or Tavern card"
           >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Import Card</span>
+            <Upload className="w-3.5 h-3.5" aria-hidden />
+            <span>Import card</span>
           </button>
           <input
             ref={cardInputRef}
@@ -352,73 +342,68 @@ export default function CreateCharacterPage() {
             accept=".json, .png, image/png, application/json"
             onChange={handleCardUpload}
             className="hidden"
+            aria-label="Import character card file"
           />
 
-          {/* AI Generator CTA */}
           <button
+            type="button"
             onClick={() => setAiModalOpen(true)}
-            className="px-3.5 py-1.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 text-xs font-medium apple-button flex items-center gap-1.5 border border-purple-500/20"
+            className="btn btn-ghost flex items-center gap-1.5"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkles className="w-3.5 h-3.5" aria-hidden />
             <span>Generate with AI</span>
           </button>
 
-          {/* Primary Save & Start Chat */}
           <button
+            type="button"
             onClick={handleSaveCharacter}
-            className="px-4 py-1.5 rounded-full bg-accent text-white hover:bg-accent-hover text-xs font-semibold apple-button flex items-center gap-1.5 shadow-sm"
+            className="btn btn-primary flex items-center gap-1.5"
           >
-            <Check className="w-3.5 h-3.5" />
-            <span>Save & Start</span>
+            <Check className="w-3.5 h-3.5" aria-hidden />
+            <span>Save and start</span>
           </button>
         </div>
       </div>
 
-      {/* 2-Column Responsive Studio Layout */}
+      {/* 2-column studio layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* LEFT COLUMN: Sticky Live Preview & Identity Card */}
+        {/* Left column: sticky live preview and identity */}
         <div className="lg:col-span-4 xl:col-span-4 space-y-6 lg:sticky lg:top-6">
-          {/* Live Card Preview */}
-          <div className="glass-card rounded-3xl overflow-hidden border border-black/[0.06] dark:border-white/[0.08] shadow-sm">
-            {/* Live Avatar Preview Container */}
-            <div className="relative h-64 sm:h-72 w-full overflow-hidden bg-black/10 flex items-center justify-center">
+          {/* Live preview plate */}
+          <div>
+            <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-line">
               <CharacterAvatar
                 name={name || 'Character'}
                 avatarUrl={avatarUrl}
                 accentColor={accentColor}
                 className="w-full h-full"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none" />
-
-              {/* Rating Badge */}
               {contentRating !== 'sfw' && (
-                <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-red-500/80 backdrop-blur-md text-[10px] font-bold text-white uppercase tracking-wider flex items-center gap-1 shadow-sm">
-                  <Flame className="w-3 h-3" />
-                  18+
+                <div className="absolute top-3 left-3">
+                  <span className="chip chip-danger flex items-center gap-1">
+                    <Flame className="w-3 h-3" aria-hidden />
+                    18+
+                  </span>
                 </div>
               )}
-
-              {/* Bottom Card Title Overlay */}
-              <div className="absolute bottom-4 left-4 right-4 text-white">
-                <h2 className="font-bold text-lg sm:text-xl tracking-tight line-clamp-1">
-                  {name || 'Character Name'}
-                </h2>
-                <p className="text-xs text-white/80 line-clamp-2 mt-0.5 leading-relaxed">
-                  {tagline || 'Your character tagline and hook will appear here...'}
-                </p>
-              </div>
             </div>
+            <h2 className="type-display text-xl mt-3 line-clamp-1">
+              {name || 'Character name'}
+            </h2>
+            <p className="type-meta mt-0.5 line-clamp-2 leading-relaxed">
+              {tagline || 'Your character tagline and hook will appear here…'}
+            </p>
 
-            {/* Avatar Controls Bar */}
-            <div className="p-3 bg-black/[0.02] dark:bg-white/[0.02] border-t border-black/[0.04] dark:border-white/[0.06] flex items-center justify-between gap-2">
+            {/* Avatar controls */}
+            <div className="mt-3 flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
-                  className="px-2.5 py-1.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-[11px] font-medium apple-button flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                  className="btn btn-quiet flex items-center gap-1"
                 >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  Upload Image
+                  <ImageIcon className="w-3.5 h-3.5" aria-hidden />
+                  Upload image
                 </button>
                 <input
                   ref={imageInputRef}
@@ -426,14 +411,14 @@ export default function CreateCharacterPage() {
                   accept="image/*"
                   onChange={handleAvatarFileUpload}
                   className="hidden"
+                  aria-label="Upload avatar image"
                 />
-
                 <button
                   type="button"
                   onClick={() => setShowUrlInput(!showUrlInput)}
-                  className="px-2.5 py-1.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-[11px] font-medium apple-button flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                  className="btn btn-quiet flex items-center gap-1"
                 >
-                  <Link2 className="w-3.5 h-3.5" />
+                  <Link2 className="w-3.5 h-3.5" aria-hidden />
                   Image URL
                 </button>
               </div>
@@ -442,101 +427,101 @@ export default function CreateCharacterPage() {
                 <button
                   type="button"
                   onClick={() => setAvatarUrl('')}
-                  className="px-2 py-1 rounded-xl text-red-500 hover:bg-red-500/10 text-[11px] font-medium transition-colors"
-                  title="Remove image and use procedural SVG"
+                  className="btn btn-quiet text-danger"
+                  title="Remove image and use procedural avatar"
                 >
-                  Clear Image
+                  Clear image
                 </button>
               )}
             </div>
 
-            {/* URL Input Drawer */}
             {showUrlInput && (
-              <div className="p-3 border-t border-black/[0.04] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02] space-y-2">
+              <div className="mt-2 space-y-2">
+                <label htmlFor="studio-avatar-url" className="type-label">
+                  Image URL
+                </label>
                 <input
+                  id="studio-avatar-url"
                   type="url"
-                  placeholder="https://example.com/character.png"
+                  placeholder="https://example.com/character.png…"
                   value={avatarUrl}
                   onChange={(e) => setAvatarUrl(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-lg bg-background border border-black/[0.08] dark:border-white/[0.1] text-xs focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="field"
                 />
-                <p className="text-[10px] text-muted-foreground">
-                  Leave blank to use the high-fidelity SVG avatar with custom monogram.
+                <p className="type-meta">
+                  Leave blank to use the generated avatar with a custom monogram.
                 </p>
               </div>
             )}
           </div>
 
-          {/* Identity & Metadata Form Box */}
-          <div className="glass-card rounded-3xl p-5 space-y-4 border border-black/[0.06] dark:border-white/[0.08]">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Identity & Configuration
-            </h3>
+          {/* Identity and metadata */}
+          <div className="surface rounded-xl p-5 space-y-4">
+            <h3 className="type-sec">Identity and configuration</h3>
 
-            {/* Character Name */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground/90">
-                Name <span className="text-accent">*</span>
+              <label htmlFor="studio-name" className="type-label">
+                Name <span className="text-accent-text">*</span>
               </label>
               <input
+                id="studio-name"
                 type="text"
-                placeholder="e.g. Seraphina Vance"
+                placeholder="e.g. Seraphina Vance…"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-accent/40 font-medium"
+                className="field font-medium"
               />
             </div>
 
-            {/* Tagline */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground/90">
-                Tagline (Hook)
+              <label htmlFor="studio-tagline" className="type-label">
+                Tagline
               </label>
               <input
+                id="studio-tagline"
                 type="text"
-                placeholder="e.g. Ruthless spymaster in the gilded court."
+                placeholder="e.g. Ruthless spymaster in the gilded court…"
                 value={tagline}
                 onChange={(e) => setTagline(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+                className="field"
               />
             </div>
 
-            {/* Content Rating */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground/90">
-                Content Rating
+              <label htmlFor="studio-rating" className="type-label">
+                Content rating
               </label>
               <select
+                id="studio-rating"
                 value={contentRating}
                 onChange={(e) => setContentRating(e.target.value as any)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-accent/40 cursor-pointer"
+                className="field cursor-pointer"
               >
-                <option value="sfw">SFW (General Audiences)</option>
-                <option value="mature">Mature 18+ (Intense drama, adult themes)</option>
-                <option value="explicit">Explicit 18+ (Unrestricted fiction)</option>
+                <option value="sfw">SFW (general audiences)</option>
+                <option value="mature">Mature 18+ (intense drama, adult themes)</option>
+                <option value="explicit">Explicit 18+ (unrestricted fiction)</option>
               </select>
             </div>
 
-            {/* Tags */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground/90">
-                Tags (Comma-separated)
+              <label htmlFor="studio-tags" className="type-label">
+                Tags
               </label>
               <input
+                id="studio-tags"
                 type="text"
-                placeholder="Fantasy, Romance, Mystery"
+                placeholder="Fantasy, Romance, Mystery…"
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+                className="field"
               />
-              {/* Quick Tag Pills */}
-              <div className="flex flex-wrap gap-1 pt-1">
+              <div className="flex flex-wrap gap-1.5 pt-1">
                 {POPULAR_TAGS.map((tag) => (
                   <button
                     key={tag}
                     type="button"
                     onClick={() => handleAddTag(tag)}
-                    className="px-2 py-0.5 rounded-md bg-black/[0.03] dark:bg-white/[0.05] hover:bg-black/[0.06] dark:hover:bg-white/[0.1] text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                    className="chip"
                   >
                     +{tag}
                   </button>
@@ -546,59 +531,67 @@ export default function CreateCharacterPage() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Streamlined Canvas & Editor */}
+        {/* Right column: editor */}
         <div className="lg:col-span-8 xl:col-span-8 space-y-6">
-          {/* Section 1: Opening Scene (Most Critical) */}
-          <div className="glass-card rounded-3xl p-6 sm:p-7 space-y-4 border border-black/[0.06] dark:border-white/[0.08]">
-            <div className="flex items-center justify-between border-b border-black/[0.04] dark:border-white/[0.06] pb-3">
+          {/* First message */}
+          <div className="surface rounded-xl p-6 sm:p-7 space-y-4">
+            <div className="flex items-center justify-between border-b border-line pb-3">
               <div>
-                <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-accent" />
-                  First Message & Opening Scene
-                  <span className="text-accent">*</span>
+                <h2 className="type-sec flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-ink-3" aria-hidden />
+                  First message and opening scene
+                  <span className="text-accent-text">*</span>
                 </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  The initial greeting that kickstarts your roleplay session
+                <p className="type-meta mt-0.5">
+                  The initial greeting that starts your roleplay session
                 </p>
               </div>
-              <span className="text-[11px] text-muted-foreground hidden sm:inline">
-                *actions*, "dialogue"
+              <span className="type-code text-ink-3 hidden sm:inline">
+                *actions*, dialogue
               </span>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
+              <label htmlFor="studio-first-message" className="type-label">
+                Opening message
+              </label>
               <textarea
-                rows={7}
-                placeholder='*Rain lashes against the stained-glass window as she turns slowly to face you...*&#10;&#10;"You kept me waiting," she murmurs, her gaze piercing through the shadows. "I trust you brought what I asked for?"'
+                id="studio-first-message"
+                rows={9}
+                placeholder='*Rain lashes against the stained-glass window as she turns slowly to face you…*&#10;&#10;"You kept me waiting," she murmurs, her gaze piercing through the shadows. "I trust you brought what I asked for?"…'
                 value={firstMessage}
                 onChange={(e) => setFirstMessage(e.target.value)}
-                className="w-full p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-accent/40 font-normal"
+                className="field font-serif text-[0.95rem] leading-[1.7]"
               />
             </div>
 
-            {/* Alternate Greetings / Swipes */}
+            {/* Alternate greetings */}
             <div className="pt-2 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Alternate Greetings (Swipes)
+                <span className="type-label">
+                  Alternate greetings
                 </span>
                 <button
                   type="button"
                   onClick={() => setAlternateGreetings([...alternateGreetings, ''])}
-                  className="px-3 py-1 rounded-full bg-accent/10 text-accent hover:bg-accent/20 text-xs font-semibold apple-button flex items-center gap-1"
+                  className="btn btn-quiet flex items-center gap-1"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Swipe Option
+                  <Plus className="w-3.5 h-3.5" aria-hidden />
+                  Add greeting
                 </button>
               </div>
 
               {alternateGreetings.map((greeting, idx) => (
-                <div key={idx} className="flex gap-2 items-start">
-                  <div className="flex-1 space-y-1">
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      Swipe #{idx + 2}
+                <div key={idx} className="surface rounded-xl flex gap-2 items-start p-3">
+                  <div className="flex-1 space-y-1 min-w-0">
+                    <span className="type-code text-ink-3">
+                      Swipe {idx + 2}
                     </span>
+                    <label htmlFor={`studio-swipe-${idx}`} className="sr-only">
+                      Alternate greeting {idx + 2}
+                    </label>
                     <textarea
+                      id={`studio-swipe-${idx}`}
                       rows={3}
                       value={greeting}
                       onChange={(e) => {
@@ -606,8 +599,8 @@ export default function CreateCharacterPage() {
                         copy[idx] = e.target.value;
                         setAlternateGreetings(copy);
                       }}
-                      placeholder={`Alternate opening scenario #${idx + 2}...`}
-                      className="w-full p-3 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-xs focus:outline-none focus:ring-2 focus:ring-accent/40"
+                      placeholder={`Alternate opening scenario ${idx + 2}…`}
+                      className="field"
                     />
                   </div>
                   <button
@@ -615,241 +608,266 @@ export default function CreateCharacterPage() {
                     onClick={() =>
                       setAlternateGreetings(alternateGreetings.filter((_, i) => i !== idx))
                     }
-                    className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition-colors mt-5"
-                    title="Remove alternate greeting"
+                    className="icon-btn shrink-0"
+                    aria-label={`Remove alternate greeting ${idx + 2}`}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4" aria-hidden />
                   </button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Section 2: Personality & Psychology */}
-          <div className="glass-card rounded-3xl p-6 sm:p-7 space-y-4 border border-black/[0.06] dark:border-white/[0.08]">
-            <div className="border-b border-black/[0.04] dark:border-white/[0.06] pb-3">
-              <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                <Brain className="w-4 h-4 text-purple-500" />
-                Personality & Psychology
+          {/* Personality */}
+          <div className="surface rounded-xl p-6 sm:p-7 space-y-4">
+            <div className="border-b border-line pb-3">
+              <h2 className="type-sec flex items-center gap-2">
+                <Brain className="w-4 h-4 text-ink-3" aria-hidden />
+                Personality and psychology
               </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Core desires, internal conflicts, temperament, behavioral quirks, and relationship dynamics
+              <p className="type-meta mt-0.5">
+                Core desires, internal conflicts, temperament, quirks, and relationship dynamics
               </p>
             </div>
+            <label htmlFor="studio-personality" className="sr-only">
+              Personality and psychology
+            </label>
             <textarea
+              id="studio-personality"
               rows={5}
-              placeholder="e.g. Enigmatic, sharp-tongued, fiercely calculating. Distrusts easy intimacy due to past betrayals. Softens only when pushed to vulnerability..."
+              placeholder="e.g. Enigmatic, sharp-tongued, fiercely calculating. Distrusts easy intimacy after past betrayals…"
               value={personality}
               onChange={(e) => setPersonality(e.target.value)}
-              className="w-full p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-accent/40"
+              className="field leading-relaxed"
             />
           </div>
 
-          {/* Section 3: Scenario & Setting */}
-          <div className="glass-card rounded-3xl p-6 sm:p-7 space-y-4 border border-black/[0.06] dark:border-white/[0.08]">
-            <div className="border-b border-black/[0.04] dark:border-white/[0.06] pb-3">
-              <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-emerald-500" />
-                Scenario & Setting
+          {/* Scenario */}
+          <div className="surface rounded-xl p-6 sm:p-7 space-y-4">
+            <div className="border-b border-line pb-3">
+              <h2 className="type-sec flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-ink-3" aria-hidden />
+                Scenario and setting
               </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                The world setting, immediate environment, atmosphere, and the existing tension with the user
+              <p className="type-meta mt-0.5">
+                The world, the immediate environment, and the tension with you
               </p>
             </div>
+            <label htmlFor="studio-scenario" className="sr-only">
+              Scenario and setting
+            </label>
             <textarea
+              id="studio-scenario"
               rows={4}
-              placeholder="e.g. High above the smog of the neo-Victorian metropolis, inside a dimly lit clocktower library. A storm rages outside. You have arrived seeking forbidden trade secrets..."
+              placeholder="e.g. High above the smog of the neo-Victorian metropolis, inside a dimly lit clocktower library. A storm rages outside…"
               value={scenario}
               onChange={(e) => setScenario(e.target.value)}
-              className="w-full p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-accent/40"
+              className="field leading-relaxed"
             />
           </div>
 
-          {/* Section 4: Physical Presence & Appearance */}
-          <div className="glass-card rounded-3xl p-6 sm:p-7 space-y-4 border border-black/[0.06] dark:border-white/[0.08]">
-            <div className="border-b border-black/[0.04] dark:border-white/[0.06] pb-3">
-              <h2 className="text-base font-semibold tracking-tight">
-                Appearance & Sensory Presence
+          {/* Appearance */}
+          <div className="surface rounded-xl p-6 sm:p-7 space-y-4">
+            <div className="border-b border-line pb-3">
+              <h2 className="type-sec">
+                Appearance and sensory presence
               </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Physical features, attire, facial expressions, scent, posture, and sensory impact
+              <p className="type-meta mt-0.5">
+                Physical features, attire, expression, scent, posture, and sensory impact
               </p>
             </div>
+            <label htmlFor="studio-appearance" className="sr-only">
+              Appearance and sensory presence
+            </label>
             <textarea
+              id="studio-appearance"
               rows={4}
-              placeholder="e.g. Tall and slender with an effortless aristocratic posture. Raven-black hair pinned loosely with silver quills, piercing amber eyes, tailored velvet coat..."
+              placeholder="e.g. Tall and slender with an effortless aristocratic posture. Raven-black hair pinned loosely with silver quills…"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full p-4 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-accent/40"
+              className="field leading-relaxed"
             />
           </div>
 
-          {/* Section 5: Speech Style & Cadence */}
-          <div className="glass-card rounded-3xl p-6 sm:p-7 space-y-4 border border-black/[0.06] dark:border-white/[0.08]">
-            <div className="border-b border-black/[0.04] dark:border-white/[0.06] pb-3">
-              <h2 className="text-base font-semibold tracking-tight">
-                Speech Style & Voice Cadence
+          {/* Speech style */}
+          <div className="surface rounded-xl p-6 sm:p-7 space-y-4">
+            <div className="border-b border-line pb-3">
+              <h2 className="type-sec">
+                Speech style and voice cadence
               </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                How they speak: rhythm, formal vs casual, accents, catchphrases, and emotional tone
+              <p className="type-meta mt-0.5">
+                How they speak: rhythm, register, accent, catchphrases, and emotional tone
               </p>
             </div>
+            <label htmlFor="studio-speech" className="sr-only">
+              Speech style and voice cadence
+            </label>
             <input
+              id="studio-speech"
               type="text"
-              placeholder="e.g. Speaks in a low, measured cadence with razor-sharp wit and subtle dry irony."
+              placeholder="e.g. Speaks in a low, measured cadence with razor-sharp wit and dry irony…"
               value={speechStyle}
               onChange={(e) => setSpeechStyle(e.target.value)}
-              className="w-full px-4 py-3 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+              className="field"
             />
           </div>
 
-          {/* Section 6: Advanced Directives (Collapsible Accordion) */}
-          <div className="glass-card rounded-3xl overflow-hidden border border-black/[0.06] dark:border-white/[0.08]">
+          {/* Advanced directives */}
+          <div className="surface rounded-xl overflow-hidden">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full p-6 text-left flex items-center justify-between hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+              className="w-full p-6 text-left flex items-center justify-between"
+              aria-expanded={showAdvanced}
             >
               <div className="flex items-center gap-2.5">
-                <Sliders className="w-4 h-4 text-muted-foreground" />
+                <Sliders className="w-4 h-4 text-ink-3" aria-hidden />
                 <div>
-                  <h3 className="text-sm font-semibold tracking-tight">
-                    Advanced Directives & Card V2 Definitions
+                  <h3 className="type-sec">
+                    Advanced directives
                   </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Example dialogues, custom system prompt overrides, and post-history directives
+                  <p className="type-meta">
+                    Example dialogue, system prompt overrides, and post-history directives
                   </p>
                 </div>
               </div>
-              {showAdvanced ? (
-                <ChevronUp className="w-4 h-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
-              )}
+              <ChevronDown
+                className={`w-4 h-4 text-ink-3 transition-transform duration-150 ${showAdvanced ? 'rotate-180' : ''}`}
+                aria-hidden
+              />
             </button>
 
             {showAdvanced && (
-              <div className="p-6 pt-0 space-y-5 border-t border-black/[0.04] dark:border-white/[0.06] animate-in fade-in duration-150">
-                {/* Example Dialogue */}
+              <div className="p-6 pt-0 space-y-5 border-t border-line animate-in fade-in duration-150">
                 <div className="space-y-1.5 pt-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Example Dialogue (Character Card V2 Style)
+                    <label htmlFor="studio-example-dialogue" className="type-label">
+                      Example dialogue
                     </label>
-                    <span className="text-[10px] font-mono text-muted-foreground">
-                      &lt;START&gt; &lt;USER&gt;: ... &lt;BOT&gt;: ...
+                    <span className="type-code text-ink-3">
+                      &lt;START&gt; &lt;USER&gt; … &lt;BOT&gt; …
                     </span>
                   </div>
                   <textarea
+                    id="studio-example-dialogue"
                     rows={5}
-                    placeholder={`<START>\n<USER>: "Do you really think you can get away with this?"\n<BOT>: *A slow, razor-edged smile touches her lips.* "My dear, I already have."`}
+                    placeholder={`<START>\n<USER>: "Do you really think you can get away with this?"\n<BOT>: *A slow, razor-edged smile touches her lips.* "My dear, I already have."…`}
                     value={exampleDialogue}
                     onChange={(e) => setExampleDialogue(e.target.value)}
-                    className="w-full p-3.5 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/40"
+                    className="field type-code !text-[0.8rem] !leading-relaxed"
                   />
                 </div>
 
-                {/* System Prompt Override */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Custom System Prompt Directives
+                  <label htmlFor="studio-system-prompt" className="type-label">
+                    Custom system prompt
                   </label>
                   <textarea
+                    id="studio-system-prompt"
                     rows={4}
-                    placeholder="Instructions injected directly into the system message (e.g. Always respond in first-person; prioritize sensory descriptions of the weather...)"
+                    placeholder="Instructions for the system message (e.g. Always respond in first person; linger on sensory detail…)…"
                     value={systemPrompt}
                     onChange={(e) => setSystemPrompt(e.target.value)}
-                    className="w-full p-3.5 rounded-2xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/40"
+                    className="field"
                   />
                 </div>
 
-                {/* Post History Steering */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Post-History Steering Instruction
+                  <label htmlFor="studio-post-history" className="type-label">
+                    Post-history steering
                   </label>
                   <input
+                    id="studio-post-history"
                     type="text"
-                    placeholder="e.g. [Write with atmospheric nuance. Never summarize or speak on behalf of {{user}}.]"
+                    placeholder="e.g. [Write with atmospheric nuance. Never speak on behalf of {{user}}.]…"
                     value={postHistory}
                     onChange={(e) => setPostHistory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+                    className="field"
                   />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Bottom Save Bar for convenience on mobile and desktop */}
-          <div className="flex items-center justify-between p-4 rounded-3xl glass-card border border-black/[0.06] dark:border-white/[0.08]">
-            <p className="text-xs text-muted-foreground">
-              Ready to roleplay? All 14 traits are saved to your roster.
+          {/* Bottom save bar */}
+          <div className="surface rounded-xl flex items-center justify-between gap-4 p-4">
+            <p className="type-meta">
+              Ready to roleplay? Your character saves to your roster.
             </p>
             <button
+              type="button"
               onClick={handleSaveCharacter}
-              className="px-6 py-2.5 rounded-full bg-accent text-white hover:bg-accent-hover text-xs sm:text-sm font-semibold apple-button flex items-center gap-2 shadow-md shadow-accent/20"
+              className="btn btn-primary flex items-center gap-2 shrink-0"
             >
-              <Check className="w-4 h-4" />
-              <span>Save & Start Roleplay</span>
+              <Check className="w-4 h-4" aria-hidden />
+              <span>Save and start roleplay</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* AI Generate Modal */}
+      {/* AI generator modal */}
       {aiModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-xl glass-panel rounded-3xl p-6 sm:p-7 space-y-4 shadow-2xl border border-white/15">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="panel rounded-2xl shadow-float w-full max-w-xl p-6 sm:p-7 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-purple-500 font-semibold text-sm">
-                <Sparkles className="w-4 h-4" />
-                <span>AI Character Generator</span>
+              <div className="flex items-center gap-2 type-sec">
+                <Sparkles className="w-4 h-4 text-ink-3" aria-hidden />
+                <span>AI character generator</span>
               </div>
               <button
+                type="button"
                 onClick={() => setAiModalOpen(false)}
-                className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
+                className="icon-btn"
+                aria-label="Close generator"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden />
               </button>
             </div>
 
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Describe your idea, <strong>or paste copied text/bio from Janitor AI or Character.AI</strong>. We will auto-generate all 14 traits: name, appearance, opening greeting, scenario, psychology, and speech style.
+            <p className="type-meta leading-relaxed">
+              Describe your idea, or paste a bio from another app. The generator fills in name, appearance, greeting, scenario, psychology, and speech style.
             </p>
 
+            <label htmlFor="studio-ai-prompt" className="sr-only">
+              Character idea
+            </label>
             <textarea
+              id="studio-ai-prompt"
               rows={6}
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="Enter a prompt (e.g. 'A stoic ex-knight who runs a secret apothecary in an enemy kingdom...') OR paste copied text from another character..."
-              className="w-full p-4 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40 leading-relaxed"
+              placeholder="e.g. A stoic ex-knight who runs a secret apothecary in an enemy kingdom…"
+              className="field leading-relaxed"
             />
 
             <div className="flex items-center justify-between pt-2">
-              <span className="text-[11px] text-muted-foreground hidden sm:inline">
-                Full 8,192 token output • Uncapped roleplay depth
+              <span className="type-meta hidden sm:inline">
+                Full output, uncapped roleplay depth
               </span>
               <div className="flex items-center gap-2 ml-auto">
                 <button
+                  type="button"
                   onClick={() => setAiModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium rounded-full hover:bg-black/5 dark:hover:bg-white/10 apple-button"
+                  className="btn btn-quiet"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleGenerateWithAI}
                   disabled={aiLoading || !aiPrompt.trim()}
-                  className="px-5 py-2 text-xs font-semibold rounded-full bg-purple-600 hover:bg-purple-700 text-white apple-button flex items-center gap-1.5 shadow-md shadow-purple-600/20 disabled:opacity-50"
+                  className="btn btn-primary flex items-center gap-1.5 disabled:opacity-50"
                 >
                   {aiLoading ? (
                     <>
-                      <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                      Generating Character...
+                      <Sparkles className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                      Generating character…
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Generate Character
+                      <Sparkles className="w-3.5 h-3.5" aria-hidden />
+                      Generate character
                     </>
                   )}
                 </button>

@@ -210,138 +210,150 @@ export function RegexManagerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/50 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl h-[90vh] max-h-[820px] glass-panel rounded-3xl shadow-2xl border border-white/10 flex flex-col overflow-hidden animate-in zoom-in-[0.98] duration-200">
+    <div className="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_oklab,var(--ink)_45%,transparent)] p-3 duration-200 sm:p-6">
+      <div className="panel animate-in fade-in relative flex h-[90vh] max-h-[820px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border-line bg-raised shadow-float duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-black/[0.06] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.02]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-accent/15 border border-accent/20 flex items-center justify-center text-accent">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight text-foreground">
-                  Regex Scripts & Output Formatters
+        <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <Sparkles aria-hidden className="h-5 w-5 shrink-0 text-accent-text" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="type-sec text-base">
+                  Regex scripts & formatters
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-accent/15 text-accent border border-accent/25">
-                  {activeCount} Active
+                <span className="chip chip-accent">
+                  {activeCount} active
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Client-side dialogue styling, model sanitizers, macros & SillyTavern regex transformations
+              <p className="type-meta mt-0.5">
+                Dialogue styling, model sanitizers, macros and SillyTavern regex transformations
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close regex manager"
+            className="icon-btn shrink-0"
+          >
+            <X aria-hidden className="h-5 w-5" />
+          </button>
         </div>
 
         {/* Tab & Toolbar Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-b border-black/[0.04] dark:border-white/[0.06] bg-black/[0.01] dark:bg-white/[0.01]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-3">
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-black/[0.04] dark:bg-white/[0.06]">
+          <div className="flex items-center gap-1 rounded-full border border-line p-1 text-xs" role="tablist">
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'rules'}
               onClick={() => setActiveTab('rules')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors ${
                 activeTab === 'rules'
-                  ? 'bg-background text-foreground shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-accent-wash font-semibold text-accent-text'
+                  : 'text-ink-2 hover:text-ink'
               }`}
             >
-              <Layers className="w-3.5 h-3.5" />
-              Rules & Formatters
+              <Layers aria-hidden className="h-3.5 w-3.5" />
+              Rules & formatters
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'sandbox'}
               onClick={() => setActiveTab('sandbox')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors ${
                 activeTab === 'sandbox'
-                  ? 'bg-background text-foreground shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-accent-wash font-semibold text-accent-text'
+                  : 'text-ink-2 hover:text-ink'
               }`}
             >
-              <Eye className="w-3.5 h-3.5" />
-              Live Sandbox Tester
+              <Eye aria-hidden className="h-3.5 w-3.5" />
+              Live sandbox
             </button>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-1.5 text-xs">
             <input
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
               accept=".json"
               className="hidden"
+              aria-hidden
+              tabIndex={-1}
             />
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-2.5 py-1.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-              title="Import SillyTavern JSON Regex Scripts"
+              className="btn btn-quiet"
+              title="Import SillyTavern JSON regex scripts"
             >
-              <Upload className="w-3.5 h-3.5" />
+              <Upload aria-hidden className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Import</span>
             </button>
             <button
+              type="button"
               onClick={handleExport}
-              className="px-2.5 py-1.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+              className="btn btn-quiet"
               title="Export JSON"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download aria-hidden className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Export</span>
             </button>
             <button
+              type="button"
               onClick={() => {
                 if (confirm('Reset all regex formatters to factory defaults?')) {
                   reset();
                   toast.success('Reset to default presets');
                 }
               }}
-              className="px-2.5 py-1.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-              title="Reset to Defaults"
+              className="btn btn-quiet"
+              title="Reset to defaults"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw aria-hidden className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Reset</span>
             </button>
             <button
+              type="button"
               onClick={handleCreateNew}
-              className="px-3 py-1.5 rounded-xl bg-accent text-white font-semibold flex items-center gap-1.5 hover:opacity-90 transition-all shadow-xs active:scale-95"
+              className="btn btn-primary"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>New Rule</span>
+              <Plus aria-hidden className="h-3.5 w-3.5" />
+              <span>New rule</span>
             </button>
           </div>
         </div>
 
         {/* Tab 1: Rules & Presets */}
         {activeTab === 'rules' && (
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex flex-1 flex-col overflow-hidden">
             {/* Filter and Search Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 border-b border-black/[0.04] dark:border-white/[0.06]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-2.5">
               {/* Category Pills */}
-              <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5 text-xs">
+              <div className="scrollbar-none flex items-center gap-1.5 overflow-x-auto py-0.5 text-xs">
                 {[
-                  { id: 'all', label: 'All Rules' },
-                  { id: 'dialogue', label: 'Dialogue & Prose' },
+                  { id: 'all', label: 'All rules' },
+                  { id: 'dialogue', label: 'Dialogue & prose' },
                   { id: 'sanitizer', label: 'Sanitizers' },
-                  { id: 'macro', label: 'Macros & Rolls' },
+                  { id: 'macro', label: 'Macros & rolls' },
                   { id: 'visual', label: 'Visual & RPG' },
                   { id: 'custom', label: 'Custom' },
                 ].map((cat) => (
                   <button
                     key={cat.id}
+                    type="button"
                     onClick={() => setSelectedCategory(cat.id)}
-                    className={`px-3 py-1 rounded-full whitespace-nowrap transition-all ${
+                    aria-pressed={selectedCategory === cat.id}
+                    className={
                       selectedCategory === cat.id
-                        ? 'bg-accent text-white font-semibold shadow-xs'
-                        : 'bg-black/[0.03] dark:bg-white/[0.05] text-muted-foreground hover:text-foreground'
-                    }`}
+                        ? 'whitespace-nowrap rounded-full bg-accent px-3 py-1 font-semibold text-accent-ink'
+                        : 'chip whitespace-nowrap'
+                    }
                   >
                     {cat.label}
                   </button>
@@ -350,90 +362,81 @@ export function RegexManagerModal({
 
               {/* Search */}
               <div className="relative w-48 sm:w-60">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Search aria-hidden className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search rules..."
-                  className="w-full pl-8 pr-3 py-1 text-xs rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.08] dark:border-white/[0.1] focus:outline-none focus:ring-1 focus:ring-accent"
+                  placeholder="Search rules, e.g. dialogue quotes…"
+                  aria-label="Search rules"
+                  className="field py-1.5 pl-8 text-xs"
                 />
               </div>
             </div>
 
             {/* Rules List */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+            <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
               {filteredScripts.length === 0 ? (
-                <div className="h-64 flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
-                  <Sliders className="w-8 h-8 opacity-40 mb-2" />
-                  <p className="font-semibold text-sm">No regex rules match your filter</p>
-                  <p className="text-xs opacity-75 mt-0.5">Try clearing your search or category filter</p>
+                <div className="flex h-64 flex-col items-center justify-center gap-1.5 p-6 text-center">
+                  <Sliders aria-hidden className="mb-1 h-6 w-6 text-ink-3" />
+                  <p className="type-sec">No rules match your filter</p>
+                  <p className="type-meta">Clear the search or pick a different category.</p>
                 </div>
               ) : (
                 filteredScripts.map((script) => (
                   <div
                     key={script.id}
-                    className={`p-4 rounded-2xl border transition-all duration-200 glass-card ${
-                      script.enabled
-                        ? 'border-black/10 dark:border-white/10 shadow-xs'
-                        : 'opacity-60 border-black/5 dark:border-white/5 bg-black/[0.01] dark:bg-white/[0.01]'
+                    className={`surface rounded-lg p-4 transition-[opacity] duration-150 ${
+                      script.enabled ? '' : 'opacity-50'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       {/* Left: Info & Badges */}
-                      <div className="space-y-1.5 flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold text-sm text-foreground">
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-medium text-ink">
                             {script.name}
                           </span>
 
                           {/* Category Badge */}
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              script.category === 'sanitizer'
-                                ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                                : script.category === 'dialogue'
-                                ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
-                                : script.category === 'macro'
-                                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                                : script.category === 'visual'
-                                ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
-                                : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                            }`}
+                            className={
+                              selectedCategory === script.category ? 'chip chip-accent' : 'chip'
+                            }
                           >
                             {script.category}
                           </span>
 
                           {/* Scope Badge */}
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground">
-                            Scope: {script.scope === 'display' ? 'Client Display' : script.scope === 'prompt' ? 'Prompt Time' : 'Both'}
+                          <span className="chip">
+                            Scope: {script.scope === 'display' ? 'Client display' : script.scope === 'prompt' ? 'Prompt time' : 'Both'}
                           </span>
 
                           {/* Target Badge */}
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground">
-                            Target: {script.target === 'all' ? 'All Roles' : script.target === 'assistant' ? 'AI Assistant' : 'User'}
+                          <span className="chip">
+                            Target: {script.target === 'all' ? 'All roles' : script.target === 'assistant' ? 'AI assistant' : 'User'}
                           </span>
 
                           {script.isPreset && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-500 uppercase">
+                            <span className="chip">
                               Preset
                             </span>
                           )}
                         </div>
 
-                        <p className="text-xs text-muted-foreground leading-relaxed">
+                        <p className="text-xs leading-relaxed text-ink-2">
                           {script.description}
                         </p>
 
                         {/* Regex Pattern details */}
-                        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono">
-                          <div className="px-2 py-1 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-foreground/80 max-w-full overflow-x-auto">
-                            <span className="text-muted-foreground select-none">Pattern: </span>
-                            <span className="text-accent">{script.findRegex}</span>
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <div className="well type-code max-w-full overflow-x-auto px-2 py-1 text-ink-2">
+                            <span className="select-none">Pattern: </span>
+                            <span className="text-accent-text">{script.findRegex}</span>
                           </div>
                           {script.replaceString && (
-                            <div className="px-2 py-1 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-foreground/80 max-w-full overflow-x-auto">
-                              <span className="text-muted-foreground select-none">→ </span>
+                            <div className="well type-code max-w-full overflow-x-auto px-2 py-1 text-ink-2">
+                              <span aria-hidden className="select-none">→ </span>
                               <span>{script.replaceString}</span>
                             </div>
                           )}
@@ -441,39 +444,46 @@ export function RegexManagerModal({
                       </div>
 
                       {/* Right: Toggle Switch & Actions */}
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex shrink-0 items-center gap-1.5">
                         <button
+                          type="button"
                           onClick={() => handleEditRule(script)}
-                          className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-                          title="Edit Rule"
+                          aria-label={`Edit rule ${script.name}`}
+                          title="Edit rule"
+                          className="icon-btn"
+                          style={{ width: 28, height: 28 }}
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Edit2 aria-hidden className="h-4 w-4" />
                         </button>
 
                         {!script.isPreset && (
                           <button
+                            type="button"
                             onClick={() => {
                               if (confirm(`Delete custom rule "${script.name}"?`)) {
                                 remove(script.id);
                                 toast.success('Rule deleted');
                               }
                             }}
-                            className="p-2 rounded-xl hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
-                            title="Delete Rule"
+                            aria-label={`Delete rule ${script.name}`}
+                            title="Delete rule"
+                            className="icon-btn"
+                            style={{ width: 28, height: 28 }}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 aria-hidden className="h-4 w-4" />
                           </button>
                         )}
 
                         {/* Switch */}
-                        <label className="relative inline-flex items-center cursor-pointer">
+                        <label className="relative inline-flex cursor-pointer items-center">
                           <input
                             type="checkbox"
                             checked={script.enabled}
                             onChange={() => toggle(script.id)}
-                            className="sr-only peer"
+                            aria-label={`Enable rule ${script.name}`}
+                            className="peer sr-only"
                           />
-                          <div className="w-11 h-6 bg-black/20 peer-focus:outline-none rounded-full peer dark:bg-white/20 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent" />
+                          <div aria-hidden className="h-6 w-11 rounded-full bg-line-strong transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--accent-line)] after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-ink after:transition-transform after:content-[''] peer-checked:after:translate-x-full peer-checked:after:bg-accent-ink" />
                         </label>
                       </div>
                     </div>
@@ -486,25 +496,27 @@ export function RegexManagerModal({
 
         {/* Tab 2: Live Sandbox Tester */}
         {activeTab === 'sandbox' && (
-          <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+          <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
             {/* Left: Input Text Editor */}
-            <div className="w-full md:w-1/2 p-4 md:p-6 border-b md:border-b-0 md:border-r border-black/[0.06] dark:border-white/[0.08] flex flex-col space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Sample Input Text
+            <div className="flex w-full flex-col space-y-3 border-b border-line p-4 md:w-1/2 md:border-b-0 md:border-r md:p-6">
+              <div className="flex items-center justify-between gap-2">
+                <span className="type-label">
+                  Sample input
                 </span>
                 <div className="flex items-center gap-1.5 text-xs">
                   <button
+                    type="button"
                     onClick={() => setSandboxText(SAMPLE_SCENES.roleplay)}
-                    className="px-2.5 py-1 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground transition-colors"
+                    className="btn btn-quiet"
                   >
-                    Roleplay Sample
+                    Roleplay sample
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSandboxText(SAMPLE_SCENES.artifacts)}
-                    className="px-2.5 py-1 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground transition-colors"
+                    className="btn btn-quiet"
                   >
-                    AI Artifacts Sample
+                    AI artifacts sample
                   </button>
                 </div>
               </div>
@@ -512,43 +524,50 @@ export function RegexManagerModal({
               <textarea
                 value={sandboxText}
                 onChange={(e) => setSandboxText(e.target.value)}
+                aria-label="Sandbox sample input"
                 rows={12}
-                className="flex-1 w-full p-3.5 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/10 dark:border-white/10 text-xs sm:text-sm font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-                placeholder="Type or paste sample roleplay prose, speech, or tags here..."
+                className="field w-full flex-1 resize-none font-mono text-[12px] leading-relaxed"
+                placeholder="Paste sample prose here, e.g. dialogue with {{roll::2d6}}…"
               />
             </div>
 
             {/* Right: Live Rendered Output */}
-            <div className="w-full md:w-1/2 p-4 md:p-6 flex flex-col space-y-3 overflow-hidden bg-black/[0.01] dark:bg-white/[0.01]">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Transformed Output
+            <div className="flex w-full flex-col space-y-3 overflow-hidden p-4 md:w-1/2 md:p-6">
+              <div className="flex items-center justify-between gap-2">
+                <span className="type-label">
+                  Transformed output
                 </span>
-                <div className="flex items-center gap-1 p-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-xs">
+                <div className="flex items-center gap-1 rounded-full border border-line p-0.5 text-xs" role="tablist">
                   <button
+                    type="button"
+                    role="tab"
+                    aria-selected={sandboxView === 'rendered'}
                     onClick={() => setSandboxView('rendered')}
-                    className={`px-2.5 py-0.5 rounded-md font-medium transition-all ${
+                    className={`rounded-full px-2.5 py-0.5 font-medium transition-colors ${
                       sandboxView === 'rendered'
-                        ? 'bg-background text-foreground shadow-xs'
-                        : 'text-muted-foreground'
+                        ? 'bg-accent-wash text-accent-text'
+                        : 'text-ink-2 hover:text-ink'
                     }`}
                   >
-                    Rendered Preview
+                    Rendered
                   </button>
                   <button
+                    type="button"
+                    role="tab"
+                    aria-selected={sandboxView === 'raw'}
                     onClick={() => setSandboxView('raw')}
-                    className={`px-2.5 py-0.5 rounded-md font-medium transition-all ${
+                    className={`rounded-full px-2.5 py-0.5 font-medium transition-colors ${
                       sandboxView === 'raw'
-                        ? 'bg-background text-foreground shadow-xs'
-                        : 'text-muted-foreground'
+                        ? 'bg-accent-wash text-accent-text'
+                        : 'text-ink-2 hover:text-ink'
                     }`}
                   >
-                    Raw Output
+                    Raw
                   </button>
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 rounded-2xl glass-card border border-black/10 dark:border-white/10 shadow-xs">
+              <div className="well flex-1 overflow-y-auto p-4">
                 {sandboxView === 'rendered' ? (
                   <RoleplayMessageContent
                     content={sandboxText}
@@ -559,7 +578,7 @@ export function RegexManagerModal({
                     scripts={scripts}
                   />
                 ) : (
-                  <pre className="text-xs font-mono whitespace-pre-wrap text-foreground/80 leading-relaxed">
+                  <pre className="type-code whitespace-pre-wrap leading-relaxed text-ink-2">
                     {sandboxText}
                   </pre>
                 )}
@@ -570,123 +589,133 @@ export function RegexManagerModal({
 
         {/* Modal: Rule Editor / Creator */}
         {isEditorOpen && editingRule && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-            <div className="relative w-full max-w-xl glass-panel rounded-3xl shadow-2xl border border-white/15 p-6 space-y-4 animate-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between border-b border-black/[0.06] dark:border-white/[0.08] pb-3">
-                <h3 className="font-bold text-base text-foreground">
-                  {editingRule.id ? 'Edit Regex Formatter' : 'Create Custom Regex Formatter'}
+          <div className="animate-in fade-in fixed inset-0 z-60 flex items-center justify-center bg-[color-mix(in_oklab,var(--ink)_45%,transparent)] p-4 duration-150">
+            <div className="panel animate-in fade-in w-full max-w-xl space-y-4 rounded-xl border-line bg-raised p-6 shadow-float duration-150">
+              <div className="flex items-center justify-between border-b border-line pb-3">
+                <h3 className="type-sec text-base">
+                  {editingRule.id ? 'Edit regex formatter' : 'New regex rule'}
                 </h3>
                 <button
+                  type="button"
                   onClick={() => setIsEditorOpen(false)}
-                  className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground"
+                  aria-label="Close rule editor"
+                  className="icon-btn"
+                  style={{ width: 28, height: 28 }}
                 >
-                  <X className="w-4 h-4" />
+                  <X aria-hidden className="h-4 w-4" />
                 </button>
               </div>
 
-              <div className="space-y-3.5 text-xs max-h-[65vh] overflow-y-auto pr-1">
+              <div className="max-h-[65vh] space-y-3.5 overflow-y-auto pr-1 text-xs">
                 {/* Rule Name */}
                 <div className="space-y-1">
-                  <label className="font-semibold text-foreground/90">Rule Name</label>
+                  <label className="type-label" htmlFor="regex-rule-name">Rule name</label>
                   <input
+                    id="regex-rule-name"
                     type="text"
                     value={editingRule.name || ''}
                     onChange={(e) => setEditingRule({ ...editingRule, name: e.target.value })}
-                    placeholder="e.g. Japanese Quote Highlighter or Custom Card Styler"
-                    className="w-full p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-accent"
+                    placeholder="E.g. dialogue quote highlighter…"
+                    className="field"
                   />
                 </div>
 
                 {/* Description */}
                 <div className="space-y-1">
-                  <label className="font-semibold text-foreground/90">Description</label>
+                  <label className="type-label" htmlFor="regex-rule-description">Description</label>
                   <input
+                    id="regex-rule-description"
                     type="text"
                     value={editingRule.description || ''}
                     onChange={(e) => setEditingRule({ ...editingRule, description: e.target.value })}
-                    placeholder="Brief description of what this rule does..."
-                    className="w-full p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-accent"
+                    placeholder="What this rule does, e.g. wraps quotes in dialogue tags…"
+                    className="field"
                   />
                 </div>
 
                 {/* Category & Scope */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="font-semibold text-foreground/90">Category</label>
+                    <label className="type-label" htmlFor="regex-rule-category">Category</label>
                     <select
+                      id="regex-rule-category"
                       value={editingRule.category || 'custom'}
                       onChange={(e) => setEditingRule({ ...editingRule, category: e.target.value as RegexCategory })}
-                      className="w-full p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-accent"
+                      className="field"
                     >
-                      <option value="dialogue">Dialogue & Prose</option>
+                      <option value="dialogue">Dialogue & prose</option>
                       <option value="sanitizer">Sanitizer</option>
-                      <option value="macro">Macro & Roll</option>
+                      <option value="macro">Macro & roll</option>
                       <option value="visual">Visual & RPG</option>
                       <option value="custom">Custom</option>
                     </select>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-semibold text-foreground/90">Scope</label>
+                    <label className="type-label" htmlFor="regex-rule-scope">Scope</label>
                     <select
+                      id="regex-rule-scope"
                       value={editingRule.scope || 'display'}
                       onChange={(e) => setEditingRule({ ...editingRule, scope: e.target.value as RegexScope })}
-                      className="w-full p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-accent"
+                      className="field"
                     >
-                      <option value="display">Client Display Only</option>
-                      <option value="prompt">Prompt-Time (Before Send)</option>
-                      <option value="both">Both (Display & Prompt)</option>
+                      <option value="display">Client display only</option>
+                      <option value="prompt">Prompt time (before send)</option>
+                      <option value="both">Both (display & prompt)</option>
                     </select>
                   </div>
                 </div>
 
                 {/* Target Role */}
                 <div className="space-y-1">
-                  <label className="font-semibold text-foreground/90">Target Role</label>
+                  <label className="type-label" htmlFor="regex-rule-target">Target role</label>
                   <select
+                    id="regex-rule-target"
                     value={editingRule.target || 'all'}
                     onChange={(e) => setEditingRule({ ...editingRule, target: e.target.value as RegexTarget })}
-                    className="w-full p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-accent"
+                    className="field"
                   >
-                    <option value="all">All (Both Character & User)</option>
-                    <option value="assistant">AI Assistant / Character Only</option>
-                    <option value="user">User Messages Only</option>
+                    <option value="all">All (both character & user)</option>
+                    <option value="assistant">AI assistant / character only</option>
+                    <option value="user">User messages only</option>
                   </select>
                 </div>
 
                 {/* Find Pattern */}
                 <div className="space-y-1">
-                  <label className="font-semibold text-foreground/90">Find Regex Pattern</label>
+                  <label className="type-label" htmlFor="regex-rule-find">Find pattern</label>
                   <input
+                    id="regex-rule-find"
                     type="text"
                     value={editingRule.findRegex || ''}
                     onChange={(e) => setEditingRule({ ...editingRule, findRegex: e.target.value })}
-                    placeholder="/pattern/flags or pattern"
-                    className="w-full p-2.5 rounded-xl font-mono bg-black/[0.03] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-accent"
+                    placeholder="/pattern/flags, e.g. /“([^”]+)”/g…"
+                    className="field font-mono"
                   />
-                  <p className="text-[11px] text-muted-foreground">
-                    Supports <code>/“([^”]+)”/g</code>, <code>&#123;&#123;char&#125;&#125;</code>, and standard regex flags.
+                  <p className="type-meta">
+                    Supports standard regex flags, {'{{char}}'}, and {'{{user}}'} macros.
                   </p>
                 </div>
 
                 {/* Replace String */}
                 <div className="space-y-1">
-                  <label className="font-semibold text-foreground/90">Replace With</label>
+                  <label className="type-label" htmlFor="regex-rule-replace">Replace with</label>
                   <input
+                    id="regex-rule-replace"
                     type="text"
                     value={editingRule.replaceString ?? ''}
                     onChange={(e) => setEditingRule({ ...editingRule, replaceString: e.target.value })}
-                    placeholder="e.g. [[rp-dialogue]]$1[[/rp-dialogue]] or empty to delete"
-                    className="w-full p-2.5 rounded-xl font-mono bg-black/[0.03] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-accent"
+                    placeholder="E.g. [[rp-dialogue]]$1[[/rp-dialogue]]…"
+                    className="field font-mono"
                   />
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    <span className="text-[10px] text-muted-foreground">Shortcuts: </span>
+                    <span className="type-meta">Shortcuts: </span>
                     {['$1', '$2', '{{char}}', '{{user}}', '[[rp-dialogue]]$1[[/rp-dialogue]]', '[[rp-action]]$1[[/rp-action]]'].map((tok) => (
                       <button
                         key={tok}
                         type="button"
                         onClick={() => setEditingRule({ ...editingRule, replaceString: (editingRule.replaceString || '') + tok })}
-                        className="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10 hover:bg-black/10 text-[10px] font-mono"
+                        className="chip type-code"
                       >
                         {tok}
                       </button>
@@ -696,20 +725,20 @@ export function RegexManagerModal({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-black/[0.06] dark:border-white/[0.08]">
+              <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
                 <button
                   type="button"
                   onClick={() => setIsEditorOpen(false)}
-                  className="px-3.5 py-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground transition-colors"
+                  className="btn btn-quiet"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveEditor}
-                  className="px-4 py-1.5 rounded-xl bg-accent text-white font-semibold flex items-center gap-1.5 hover:opacity-90 transition-all shadow-xs"
+                  className="btn btn-primary"
                 >
-                  <Check className="w-3.5 h-3.5" /> Save Rule
+                  <Check aria-hidden className="h-3.5 w-3.5" /> Save rule
                 </button>
               </div>
             </div>

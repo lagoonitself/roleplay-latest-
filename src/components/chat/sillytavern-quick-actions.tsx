@@ -51,15 +51,15 @@ export function SillyTavernQuickActions({
   const activePreset = presets.find((p) => p.id === currentPresetId) || presets[0];
 
   return (
-    <div className="relative flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px] px-0.5">
+    <div className="scrollbar-none relative flex flex-nowrap items-center gap-1.5 overflow-x-auto px-0.5 text-[11px] sm:flex-wrap sm:overflow-visible">
       {/* 1. Continue Nudge (SillyTavern Continue) */}
       <button
         onClick={onContinue}
         disabled={isGenerating}
-        className="px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 apple-button disabled:opacity-40"
+        className="btn btn-ghost whitespace-nowrap text-[11px]"
         title="Continue generating character's last message"
       >
-        <Play className="w-3 h-3 fill-current" />
+        <Play aria-hidden className="h-3 w-3 fill-current" />
         Continue
       </button>
 
@@ -67,10 +67,10 @@ export function SillyTavernQuickActions({
       <button
         onClick={onImpersonate}
         disabled={isGenerating}
-        className="px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 apple-button disabled:opacity-40"
+        className="btn btn-ghost whitespace-nowrap text-[11px]"
         title="Draft next response from user's perspective"
       >
-        <User className="w-3 h-3" />
+        <User aria-hidden className="h-3 w-3" />
         Impersonate
       </button>
 
@@ -78,12 +78,14 @@ export function SillyTavernQuickActions({
       <div className="relative">
         <button
           onClick={() => setPresetDropdownOpen(!presetDropdownOpen)}
-          className="px-3 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-muted-foreground hover:text-foreground font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 apple-button"
-          title="Switch SillyTavern System Prompt Preset"
+          aria-expanded={presetDropdownOpen}
+          aria-haspopup="menu"
+          className="btn btn-ghost whitespace-nowrap text-[11px]"
+          title="Switch SillyTavern system prompt preset"
         >
-          <Zap className="w-3 h-3 text-amber-500" />
+          <Zap aria-hidden className="h-3 w-3" />
           <span>Preset: {activePreset.name}</span>
-          <ChevronDown className="w-3 h-3 opacity-60" />
+          <ChevronDown aria-hidden className="h-3 w-3 opacity-60" />
         </button>
 
         {presetDropdownOpen && (
@@ -92,33 +94,38 @@ export function SillyTavernQuickActions({
               className="fixed inset-0 z-40"
               onClick={() => setPresetDropdownOpen(false)}
             />
-            <div className="absolute left-0 bottom-full mb-1.5 w-64 p-1.5 rounded-2xl bg-background border border-black/[0.08] dark:border-white/[0.1] shadow-lg glass-card z-50 space-y-1 animate-in fade-in zoom-in-[0.98] duration-150 ease-out">
-              <div className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                System Prompt Preset
+            <div
+              role="menu"
+              style={{ transformOrigin: 'bottom left' }}
+              className="panel animate-in fade-in absolute bottom-full left-0 z-50 mb-1.5 w-64 space-y-1 rounded-xl border-line bg-raised p-1.5 duration-150 ease-out"
+            >
+              <div className="type-label px-2 py-1">
+                System prompt preset
               </div>
-              <div className="max-h-56 overflow-y-auto space-y-0.5 pr-0.5">
+              <div className="max-h-56 space-y-0.5 overflow-y-auto pr-0.5">
                 {presets.map((preset) => (
                   <button
                     key={preset.id}
+                    role="menuitem"
                     onClick={() => {
                       onSelectPreset(preset);
                       setPresetDropdownOpen(false);
-                      toast.success(`Active Preset: ${preset.name}`);
+                      toast.success(`Active preset: ${preset.name}`);
                     }}
-                    className={`w-full p-2 rounded-xl text-left text-xs transition-colors flex items-start justify-between gap-1.5 ${
+                    className={`flex w-full items-start justify-between gap-1.5 rounded-lg p-2 text-left text-xs transition-colors ${
                       preset.id === activePreset.id
-                        ? 'bg-accent/10 text-accent font-semibold'
-                        : 'hover:bg-black/5 dark:hover:bg-white/5 text-foreground'
+                        ? 'text-accent-text'
+                        : 'text-ink-2 hover:text-ink'
                     }`}
                   >
-                    <div>
-                      <div className="font-medium text-xs">{preset.name}</div>
-                      <div className="text-[10px] text-muted-foreground line-clamp-1">
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium">{preset.name}</div>
+                      <div className="line-clamp-1 text-[10px] text-ink-3">
                         {preset.description}
                       </div>
                     </div>
                     {preset.id === activePreset.id && (
-                      <Check className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
+                      <Check aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
                     )}
                   </button>
                 ))}
@@ -131,40 +138,38 @@ export function SillyTavernQuickActions({
       {/* 4. Author's Note Toggle Button */}
       <button
         onClick={onToggleAuthorsNote}
-        className={`px-3 py-1 rounded-full font-medium whitespace-nowrap transition-colors touch-manipulation flex items-center gap-1.5 apple-button ${
-          authorsNoteActive
-            ? 'bg-accent/15 text-accent font-semibold border border-accent/30'
-            : 'bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground hover:text-foreground'
+        aria-pressed={authorsNoteActive}
+        className={`btn btn-ghost whitespace-nowrap text-[11px] ${
+          authorsNoteActive ? 'border-accent-line bg-accent-wash text-accent-text' : ''
         }`}
-        title="Author's Note (Injected at Depth 4)"
+        title="Author's note (injected at depth 4)"
       >
-        <Bookmark className="w-3 h-3" />
-        {authorsNoteActive ? "Author's Note (ON)" : "Author's Note"}
+        <Bookmark aria-hidden className="h-3 w-3" />
+        {authorsNoteActive ? "Author's note (on)" : "Author's note"}
       </button>
 
       {/* 5. Deep Thinking Mode Toggle */}
       <button
         onClick={onToggleThinking}
-        className={`px-3 py-1 rounded-full font-medium whitespace-nowrap transition-colors touch-manipulation flex items-center gap-1.5 apple-button ${
-          thinkingEnabled
-            ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 font-semibold border border-purple-500/30'
-            : 'bg-black/[0.04] dark:bg-white/[0.06] text-muted-foreground hover:text-foreground'
+        aria-pressed={thinkingEnabled}
+        className={`btn btn-ghost whitespace-nowrap text-[11px] ${
+          thinkingEnabled ? 'border-accent-line bg-accent-wash text-accent-text' : ''
         }`}
-        title="Toggle Deep Thinking (Live CoT reasoning)"
+        title="Toggle deep thinking (live CoT reasoning)"
       >
-        <Brain className="w-3 h-3 text-purple-500" />
-        {thinkingEnabled ? 'Thinking: ON' : 'Thinking: OFF'}
+        <Brain aria-hidden className="h-3 w-3" />
+        {thinkingEnabled ? 'Thinking (on)' : 'Thinking (off)'}
       </button>
 
       {/* 6. Regex & Output Formatters */}
       {onOpenRegexManager && (
         <button
           onClick={onOpenRegexManager}
-          className="px-3 py-1 rounded-full bg-accent/10 hover:bg-accent/20 text-accent font-medium whitespace-nowrap transition-colors touch-manipulation flex items-center gap-1.5 apple-button border border-accent/20"
-          title="Open Regex Scripts & Output Formatters Studio"
+          className="btn btn-ghost whitespace-nowrap text-[11px]"
+          title="Open regex scripts and output formatters studio"
         >
-          <Sparkles className="w-3 h-3 text-accent" />
-          <span>Regex & Formatters{typeof regexActiveCount === 'number' ? ` (${regexActiveCount})` : ''}</span>
+          <Sparkles aria-hidden className="h-3 w-3" />
+          <span>Regex & formatters{typeof regexActiveCount === 'number' ? ` (${regexActiveCount})` : ''}</span>
         </button>
       )}
     </div>
