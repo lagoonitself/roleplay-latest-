@@ -132,6 +132,8 @@ export interface Message {
     reasoning_durations?: (number | undefined)[];
     model?: string;
     persona_name?: string;
+    /** Why generation failed — shown on the reply's error card. Local only. */
+    error?: string;
     duo?: {
       side: 'a' | 'b';
       kind: 'character' | 'persona';

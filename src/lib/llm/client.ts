@@ -92,13 +92,50 @@ async function postWithRetry(
     if (response.ok) return response;
 
     const errorText = await response.text().catch(() => '');
-    lastError = new Error(`LLM API error (${response.status}): ${errorText.slice(0, 500)}`);
-    if (!RETRYABLE_STATUS.has(response.status) || attempt === retries) break;
+    lastError = new LlmError(response.status, errorText);
+    // A spent quota is not transient: retrying only delays the bad news.
+    const quotaSpent = response.status === 429 && /usage.?limit|quota|insufficient|billing|credit/i.test(errorText);
+    if (!RETRYABLE_STATUS.has(response.status) || quotaSpent || attempt === retries) break;
 
-    await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
+    const retryAfter = Number(response.headers.get('retry-after'));
+    const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5000) : 600 * 2 ** attempt;
+    await new Promise((r) => setTimeout(r, delay));
   }
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+/**
+ * Provider error with a message a person can act on. The raw body is kept for
+ * logs; `message` is what reaches the chat UI.
+ */
+export class LlmError extends Error {
+  readonly status: number;
+  readonly body: string;
+
+  constructor(status: number, body: string) {
+    super(describeLlmError(status, body));
+    this.name = 'LlmError';
+    this.status = status;
+    this.body = body.slice(0, 500);
+  }
+}
+
+function describeLlmError(status: number, body: string): string {
+  let detail = '';
+  try {
+    const parsed = JSON.parse(body);
+    detail = String(parsed?.error?.message || parsed?.message || '');
+  } catch {
+    detail = body.slice(0, 200);
+  }
+  if (status === 401 || status === 403) return 'The model provider rejected the API key. Check it in Settings.';
+  if (status === 429 && /usage.?limit|quota|insufficient|billing|credit/i.test(body)) {
+    return 'The model provider’s usage limit is used up. Add your own API key in Settings, or try again once the limit resets.';
+  }
+  if (status === 429) return 'The model provider is rate-limiting requests. Wait a few seconds and try again.';
+  if (status >= 500) return 'The model provider is having trouble right now. Try again in a moment.';
+  return `The model provider returned an error (${status})${detail ? `: ${detail}` : ''}.`;
 }
 
 function applyThinking(payload: Record<string, unknown>, thinking: boolean | undefined) {

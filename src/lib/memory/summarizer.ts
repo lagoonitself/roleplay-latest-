@@ -1,264 +1,123 @@
 /**
- * SillyTavern-Compatible Chat Summarization Engine
+ * Summary API
+ * -----------
+ * The user-facing surface of the automatic memory engine for the *running story
+ * summary*: regenerate it on demand, or save a hand-edited one and lock it against
+ * auto-overwrite.
  *
- * Implements:
- * - Interval-based automatic chat summarization (default: every 10 turns)
- * - Incremental expansion: builds upon previous summary with new dialogue turns
- * - SillyTavern's exact summarization system prompt & template formatting
- * - Persistence to Supabase `summaries` table
- * - Injection into chat prompt at depth (default: depth 2) or relative prompt order
+ * The summary itself is produced by `engine.ts`, which regenerates it together with
+ * the fact bank and scene state in one pass. Everything here is either a thin
+ * wrapper over that pass or pure formatting.
  */
 
 import { createClient } from '@/lib/supabase/server';
-import { substituteMacros, formatRoleplayText } from '@/lib/prompt/macros';
-import { estimateTokens } from '@/lib/prompt/tokens';
-import type { Message, Summary } from '@/lib/supabase/types';
+import {
+  DEFAULT_SUMMARY_WORDS,
+  SUMMARY_TOKEN_CAP,
+  cleanSummaryOutput,
+  runMemoryPass,
+  type MemoryPassInput,
+} from './engine';
+import { estimateTokens, truncateToTokensMiddle } from '@/lib/prompt/tokens';
+import type { Summary } from '@/lib/supabase/types';
 
+export { cleanSummaryOutput, DEFAULT_SUMMARY_WORDS };
+
+/** How many messages trigger an automatic pass (SillyTavern's summary interval). */
 export const DEFAULT_SUMMARY_INTERVAL = 10;
-export const DEFAULT_SUMMARY_WORDS = 250;
-export const DEFAULT_SUMMARY_PROMPT =
-  'Ignore previous instructions. Summarize the most important facts and events in the story so far. If a summary already exists in your memory, use that as a base and expand with new facts. Limit the summary to {{words}} words or less. Your response should include nothing but the summary.';
 export const DEFAULT_SUMMARY_TEMPLATE = '[Summary: {{summary}}]';
 
-export interface SummarizeParams {
-  chatId: string;
-  userId: string;
-  charName: string;
-  userName: string;
-  history: Message[];
-  apiKey?: string;
-  promptWords?: number;
-  interval?: number;
-  force?: boolean;
-  frozen?: boolean;
-}
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * Strips reasoning tokens or markdown headers from the generated summary
- */
-function cleanSummaryOutput(raw: string): string {
-  let cleaned = raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/^```[a-z]*\n/i, '')
-    .replace(/\n```$/i, '')
-    .trim();
-
-  // If the model prefixed with "Summary: " or "[Summary: ...]", clean it to raw text so template formatting stays clean
-  cleaned = cleaned.replace(/^\[?summary:\s*/i, '').replace(/\]$/, '').trim();
-  return cleaned;
-}
-
-/**
- * Checks if the chat requires a new summary turn and executes summarization if needed.
- */
-export async function summarizeChatIfNeeded(params: SummarizeParams): Promise<Summary | null> {
-  const {
-    chatId,
-    userId,
-    charName,
-    userName,
-    history,
-    apiKey,
-    promptWords = DEFAULT_SUMMARY_WORDS,
-    interval = DEFAULT_SUMMARY_INTERVAL,
-    force = false,
-    frozen = false,
-  } = params;
-
-  if (!chatId || !userId) {
-    return null;
-  }
-
-  if (!force && history.length < interval) {
-    return null;
-  }
-
-  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const isChatUuid = UUID_REGEX.test(chatId);
-  const isUserUuid = UUID_REGEX.test(userId);
-
-  let latestSummary: Summary | null = null;
-
-  if (isChatUuid && isUserUuid) {
-    try {
-      const supabase = await createClient();
-      const { data: latestSummaryData } = await supabase
-        .from('summaries')
-        .select('*')
-        .eq('chat_id', chatId)
-        .eq('superseded', false)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      latestSummary = (latestSummaryData as Summary) || null;
-    } catch (e) {
-      console.warn('Could not fetch existing summary from Supabase:', e);
-    }
-  }
-
-  // If summary is frozen by the user and one already exists, do not auto-overwrite
-  if (frozen && latestSummary) {
-    return latestSummary;
-  }
-
-  // 2. Count messages since last summary
-  let messagesSinceLastSummary = 0;
-  const turnsToSummarize: Message[] = [];
-
-  if (latestSummary?.last_message_id) {
-    const lastSummaryIndex = history.findIndex((m) => m.id === latestSummary.last_message_id);
-    if (lastSummaryIndex !== -1) {
-      turnsToSummarize.push(...history.slice(lastSummaryIndex + 1));
-      messagesSinceLastSummary = turnsToSummarize.length;
-    } else {
-      // If last_message_id not in recent window, check recent slice
-      turnsToSummarize.push(...history.slice(-interval));
-      messagesSinceLastSummary = turnsToSummarize.length;
-    }
-  } else {
-    // No previous summary exists
-    turnsToSummarize.push(...history);
-    messagesSinceLastSummary = history.length;
-  }
-
-  if (!force && messagesSinceLastSummary < interval) {
-    return latestSummary;
-  }
-
-  // 3. Build summarization prompt and dialogue buffer
-  const systemPrompt = substituteMacros(DEFAULT_SUMMARY_PROMPT, charName, userName)
-    .replace(/\{\{\s*words\s*\}\}/gi, String(promptWords));
-
-  const bufferLines: string[] = [];
-  if (latestSummary?.content) {
-    bufferLines.push(`[Previous Summary of Story So Far]:\n${latestSummary.content}`);
-  }
-
-  bufferLines.push('[Recent Story Exchanges]:');
-  for (const msg of turnsToSummarize) {
-    if (msg.role === 'system' || !msg.content?.trim()) continue;
-    const speaker = msg.role === 'assistant' ? charName : userName;
-    bufferLines.push(`${speaker}: ${formatRoleplayText(msg.content, charName, userName)}`);
-  }
-
-  const userPromptContent = bufferLines.join('\n\n');
-
-  // 4. Call LLM for summarization
-  try {
-    const { streamChatCompletions } = await import('@/lib/llm/client');
-
-    const res = await streamChatCompletions(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPromptContent },
-      ],
-      {
-        apiKey,
-        sessionId: `summary-${chatId}`,
-        temperature: 0.3,
-        thinking: false,
-        max_tokens: 600,
-      }
-    );
-
-    if (!res.body) return latestSummary;
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let accumulatedText = '';
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') continue;
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(trimmed.slice(6));
-            const delta = data.choices?.[0]?.delta?.content;
-            if (delta) accumulatedText += delta;
-          } catch {}
-        }
-      }
-    }
-
-    const cleanSummary = cleanSummaryOutput(accumulatedText);
-    if (!cleanSummary || cleanSummary.length < 15) {
-      return latestSummary;
-    }
-
-    const lastMsgId = turnsToSummarize[turnsToSummarize.length - 1]?.id || null;
-    const msgIds = turnsToSummarize.map((m) => m.id).filter(Boolean);
-
-    let summaryRow: Summary = {
-      id: 'sum-' + Date.now(),
-      chat_id: chatId,
-      user_id: userId,
-      level: 'chunk',
-      content: cleanSummary,
-      message_ids: msgIds,
-      last_message_id: lastMsgId,
-      token_estimate: estimateTokens(cleanSummary),
-      user_edited: false,
-      superseded: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    // 5. Supersede previous summary and insert new active summary in Supabase
-    if (isChatUuid && isUserUuid) {
-      try {
-        const supabase = await createClient();
-        if (latestSummary?.id && UUID_REGEX.test(latestSummary.id)) {
-          await supabase
-            .from('summaries')
-            .update({ superseded: true })
-            .eq('id', latestSummary.id);
-        }
-
-        const { data: newSummaryRow, error } = await supabase
-          .from('summaries')
-          .insert({
-            chat_id: chatId,
-            user_id: userId,
-            level: 'chunk',
-            content: cleanSummary,
-            message_ids: msgIds,
-            last_message_id: lastMsgId,
-            token_estimate: estimateTokens(cleanSummary),
-            user_edited: false,
-            superseded: false,
-          })
-          .select()
-          .single();
-
-        if (!error && newSummaryRow) {
-          summaryRow = newSummaryRow as Summary;
-        }
-      } catch (dbErr) {
-        console.warn('Failed to insert new summary to Supabase:', dbErr);
-      }
-    }
-
-    return summaryRow;
-  } catch (err) {
-    console.error('Error generating chat summary:', err);
-    return latestSummary;
-  }
-}
-
-/**
- * Formats summary into prompt text using SillyTavern template
- */
+/** Formats summary into prompt text using the SillyTavern template. */
 export function formatSummaryPrompt(summaryContent: string, template: string = DEFAULT_SUMMARY_TEMPLATE): string {
   if (!summaryContent?.trim()) return '';
   return template.replace(/\{\{\s*summary\s*\}\}/gi, summaryContent.trim());
+}
+
+export interface SummarizeNowParams extends Omit<MemoryPassInput, 'summaryWords'> {
+  promptWords?: number;
+}
+
+/**
+ * Regenerates the summary on demand (the "Summarize now" button).
+ * Delegates to the memory pass so facts and scene state stay in step with it.
+ */
+export async function summarizeChatNow(
+  params: SummarizeNowParams,
+  options: { supabase?: Awaited<ReturnType<typeof createClient>>; isDbBacked?: boolean } = {}
+): Promise<Summary | null> {
+  const result = await runMemoryPass(
+    { ...params, summaryWords: params.promptWords ?? DEFAULT_SUMMARY_WORDS },
+    {
+      supabase: options.supabase as never,
+      isDbBacked: options.isDbBacked ?? UUID_REGEX.test(params.chatId),
+    }
+  );
+  return result.summary;
+}
+
+/**
+ * Saves a hand-edited summary. It is marked `user_edited`, which freezes it:
+ * the automatic pass will never overwrite a summary the writer has locked.
+ */
+export async function saveSummaryEdit(params: {
+  chatId: string;
+  userId: string;
+  content: string;
+}): Promise<Summary | null> {
+  const content = (params.content || '').trim();
+  if (!content) return null;
+
+  const summaryRow: Summary = {
+    id: `sum-${Date.now()}`,
+    chat_id: params.chatId,
+    user_id: params.userId,
+    level: 'chunk',
+    content,
+    message_ids: [],
+    last_message_id: null,
+    token_estimate: estimateTokens(content),
+    user_edited: true,
+    superseded: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!UUID_REGEX.test(params.chatId) || !UUID_REGEX.test(params.userId)) return summaryRow;
+
+  try {
+    const supabase = await createClient();
+    const { data: activeSummary } = await supabase
+      .from('summaries')
+      .select('*')
+      .eq('chat_id', params.chatId)
+      .eq('superseded', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeSummary?.id) {
+      await supabase.from('summaries').update({ superseded: true }).eq('id', activeSummary.id);
+    }
+
+    const { data: newRow, error } = await supabase
+      .from('summaries')
+      .insert({
+        chat_id: params.chatId,
+        user_id: params.userId,
+        level: 'chunk',
+        content: truncateToTokensMiddle(content, SUMMARY_TOKEN_CAP),
+        user_edited: true,
+        superseded: false,
+      })
+      .select()
+      .single();
+
+    if (!error && newRow) return newRow as Summary;
+  } catch (err) {
+    console.warn('saveSummaryEdit: falling back to local summary:', err);
+  }
+
+  return summaryRow;
 }

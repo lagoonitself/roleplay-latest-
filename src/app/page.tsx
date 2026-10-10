@@ -426,7 +426,7 @@ function HomePageContent() {
   };
 
   return (
-    <div className="flex-1 flex flex-col w-full pb-20">
+    <div className="flex-1 flex flex-col w-full pb-24 md:pb-10">
       {/* ─────────────────── TAB: PROFILE (Feature 2 — full dedicated section) ─────────────────── */}
       {activeTab === 'profile' ? (
         <ProfileView onOpenSettingsDialog={() => setSettingsDialogOpen(true)} />

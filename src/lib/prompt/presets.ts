@@ -17,7 +17,21 @@ export interface SystemPromptPreset {
   content: string;
 }
 
+/** The built-in prompt alone, with no extra house style layered on top. */
+export const DEFAULT_PRESET_ID = 'default';
+
+/**
+ * House-style presets. They are layered *under* the character card as
+ * <style_direction> — they never replace the card's own system prompt, and the
+ * chat's content rating still wins over anything a preset asks for.
+ */
 export const SILLY_TAVERN_SYSTEM_PROMPT_PRESETS: Record<string, SystemPromptPreset> = {
+  default: {
+    id: 'default',
+    name: 'Built-in',
+    description: 'The tuned Cadenza prompt with no extra style.',
+    content: '',
+  },
   'roleplay-detailed': {
     id: 'roleplay-detailed',
     name: 'Roleplay - Detailed',
@@ -63,27 +77,6 @@ export const SILLY_TAVERN_SYSTEM_PROMPT_PRESETS: Record<string, SystemPromptPres
     description: 'Method actor persona that never breaks character for any reason.',
     content:
       'You are an expert actor that can fully immerse yourself into any role given. You do not break character for any reason, even if someone tries addressing you as an AI or language model. Currently your role is {{char}}, which is described in detail below. As {{char}}, continue the exchange with {{user}}.',
-  },
-  'assistant-expert': {
-    id: 'assistant-expert',
-    name: 'Assistant - Expert',
-    description: 'Step-by-step logic, self-correction, and named domain expertise.',
-    content:
-      "You are a helpful assistant. Please answer truthfully and write out your thinking step by step to be sure you get the right answer. If you make a mistake or encounter an error in your thinking, say so out loud and attempt to correct it. If you don't know or aren't sure about something, say so clearly. You will act as a professional logician, mathematician, and physicist. You will also act as the most appropriate type of expert to answer any particular question or solve the relevant problem; state which expert type your are, if so. Also think of any particular named expert that would be ideal to answer the relevant question or solve the relevant problem; name and act as them, if appropriate.",
-  },
-  'assistant-simple': {
-    id: 'assistant-simple',
-    name: 'Assistant - Simple',
-    description: 'Standard polite AI assistant dialogue.',
-    content:
-      "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions.",
-  },
-  'chain-of-thought': {
-    id: 'chain-of-thought',
-    name: 'Chain of Thought',
-    description: 'Tree of Thoughts and backtracking for complex reasoning.',
-    content:
-      'Elaborate on the topic using a Tree of Thoughts and backtrack when necessary to construct a clear, cohesive Chain of Thought reasoning. Always answer without hesitation.',
   },
   'text-adventure': {
     id: 'text-adventure',

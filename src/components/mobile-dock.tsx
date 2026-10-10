@@ -20,7 +20,7 @@ export function MobileDock({ activeTab, onTabChange, totalChatsCount = 0 }: Mobi
   return (
     <nav
       aria-label="App Navigation"
-      className="pointer-events-none fixed right-0 bottom-0 left-0 z-40 flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]"
+      className="pointer-events-none fixed right-0 bottom-0 left-0 z-40 flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] md:hidden"
     >
       <div className="panel bg-raised pointer-events-auto flex items-center gap-1 rounded-full border-line px-2 py-1.5 shadow-float">
         {/* Tab 1: Explore / Home */}

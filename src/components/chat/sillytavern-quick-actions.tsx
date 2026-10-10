@@ -1,174 +1,262 @@
 'use client';
 
 import React, { useState } from 'react';
+import { Popover } from 'radix-ui';
 import {
   Play,
-  User,
+  UserPen,
   Bookmark,
   Brain,
-  Sparkles,
   ChevronDown,
   Check,
-  Zap,
+  Quote,
+  Asterisk,
+  MessageSquareCode,
+  EyeOff,
+  Dices,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import {
+  DEFAULT_PRESET_ID,
   SILLY_TAVERN_SYSTEM_PROMPT_PRESETS,
   type SystemPromptPreset,
 } from '@/lib/prompt/presets';
-import { toast } from 'sonner';
+import { playDiceSound } from '@/lib/audio/sound-effects';
 
 export interface SillyTavernQuickActionsProps {
   onContinue: () => void;
   onImpersonate: () => void;
   isGenerating: boolean;
   authorsNoteActive: boolean;
+  authorsNoteOpen?: boolean;
   onToggleAuthorsNote: () => void;
   thinkingEnabled: boolean;
   onToggleThinking: () => void;
   currentPresetId?: string;
   onSelectPreset: (preset: SystemPromptPreset) => void;
-  onOpenRegexManager?: () => void;
-  regexActiveCount?: number;
+  /** Wraps the composer selection (or inserts at the caret). */
+  onFormat: (prefix: string, suffix?: string, placeholder?: string) => void;
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
 }
 
+const COMMON_DICE = [
+  { formula: '1d20', desc: 'Check or save' },
+  { formula: '2d6', desc: 'Tabletop classic' },
+  { formula: '1d100', desc: 'Percentile' },
+  { formula: '1d6', desc: 'Single die' },
+  { formula: '3d6', desc: 'Attribute roll' },
+];
+
+/**
+ * The composer's single tool row: story actions on the left, text formatting on
+ * the right. It scrolls sideways on narrow screens; menus are portaled so the
+ * scroll container can never clip them.
+ */
 export function SillyTavernQuickActions({
   onContinue,
   onImpersonate,
   isGenerating,
   authorsNoteActive,
+  authorsNoteOpen = false,
   onToggleAuthorsNote,
   thinkingEnabled,
   onToggleThinking,
-  currentPresetId = 'roleplay-detailed',
+  currentPresetId = DEFAULT_PRESET_ID,
   onSelectPreset,
-  onOpenRegexManager,
-  regexActiveCount,
+  onFormat,
+  soundEnabled = true,
+  onToggleSound,
 }: SillyTavernQuickActionsProps) {
-  const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
+  const [presetOpen, setPresetOpen] = useState(false);
+  const [diceOpen, setDiceOpen] = useState(false);
 
   const presets = Object.values(SILLY_TAVERN_SYSTEM_PROMPT_PRESETS);
   const activePreset = presets.find((p) => p.id === currentPresetId) || presets[0];
 
   return (
-    <div className="scrollbar-none relative flex flex-nowrap items-center gap-1.5 overflow-x-auto px-0.5 text-[11px] sm:flex-wrap sm:overflow-visible">
-      {/* 1. Continue Nudge (SillyTavern Continue) */}
-      <button
-        onClick={onContinue}
-        disabled={isGenerating}
-        className="btn btn-ghost whitespace-nowrap text-[11px]"
-        title="Continue generating character's last message"
-      >
-        <Play aria-hidden className="h-3 w-3 fill-current" />
+    <div
+      role="toolbar"
+      aria-label="Story tools"
+      className="scrollbar-none -mx-1 flex items-center gap-0.5 overflow-x-auto px-1"
+    >
+      <button type="button" onClick={onContinue} disabled={isGenerating} className="tool" title="Extend the last reply">
+        <Play aria-hidden className="h-3 w-3" />
         Continue
       </button>
 
-      {/* 2. Impersonate (SillyTavern User POV Generation) */}
       <button
+        type="button"
         onClick={onImpersonate}
         disabled={isGenerating}
-        className="btn btn-ghost whitespace-nowrap text-[11px]"
-        title="Draft next response from user's perspective"
+        className="tool"
+        title="Draft your next turn into the composer"
       >
-        <User aria-hidden className="h-3 w-3" />
-        Impersonate
+        <UserPen aria-hidden className="h-3.5 w-3.5" />
+        Write for me
       </button>
 
-      {/* 3. System Prompt Preset Selector */}
-      <div className="relative">
-        <button
-          onClick={() => setPresetDropdownOpen(!presetDropdownOpen)}
-          aria-expanded={presetDropdownOpen}
-          aria-haspopup="menu"
-          className="btn btn-ghost whitespace-nowrap text-[11px]"
-          title="Switch SillyTavern system prompt preset"
-        >
-          <Zap aria-hidden className="h-3 w-3" />
-          <span>Preset: {activePreset.name}</span>
-          <ChevronDown aria-hidden className="h-3 w-3 opacity-60" />
-        </button>
-
-        {presetDropdownOpen && (
-          <>
-            <div
-              className="fixed inset-0 z-40"
-              onClick={() => setPresetDropdownOpen(false)}
-            />
-            <div
-              role="menu"
-              style={{ transformOrigin: 'bottom left' }}
-              className="panel animate-in fade-in absolute bottom-full left-0 z-50 mb-1.5 w-64 space-y-1 rounded-xl border-line bg-raised p-1.5 duration-150 ease-out"
-            >
-              <div className="type-label px-2 py-1">
-                System prompt preset
-              </div>
-              <div className="max-h-56 space-y-0.5 overflow-y-auto pr-0.5">
-                {presets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    role="menuitem"
-                    onClick={() => {
-                      onSelectPreset(preset);
-                      setPresetDropdownOpen(false);
-                      toast.success(`Active preset: ${preset.name}`);
-                    }}
-                    className={`flex w-full items-start justify-between gap-1.5 rounded-lg p-2 text-left text-xs transition-colors ${
-                      preset.id === activePreset.id
-                        ? 'text-accent-text'
-                        : 'text-ink-2 hover:text-ink'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium">{preset.name}</div>
-                      <div className="line-clamp-1 text-[10px] text-ink-3">
-                        {preset.description}
-                      </div>
-                    </div>
-                    {preset.id === activePreset.id && (
-                      <Check aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* 4. Author's Note Toggle Button */}
       <button
+        type="button"
         onClick={onToggleAuthorsNote}
-        aria-pressed={authorsNoteActive}
-        className={`btn btn-ghost whitespace-nowrap text-[11px] ${
-          authorsNoteActive ? 'border-accent-line bg-accent-wash text-accent-text' : ''
-        }`}
-        title="Author's note (injected at depth 4)"
+        aria-pressed={authorsNoteActive || authorsNoteOpen}
+        className="tool"
+        title={authorsNoteActive ? "Author's note is steering the scene" : "Add an author's note to steer the scene"}
       >
-        <Bookmark aria-hidden className="h-3 w-3" />
-        {authorsNoteActive ? "Author's note (on)" : "Author's note"}
+        <Bookmark aria-hidden className="h-3.5 w-3.5" />
+        Note
+        {authorsNoteActive && <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />}
       </button>
 
-      {/* 5. Deep Thinking Mode Toggle */}
       <button
+        type="button"
         onClick={onToggleThinking}
         aria-pressed={thinkingEnabled}
-        className={`btn btn-ghost whitespace-nowrap text-[11px] ${
-          thinkingEnabled ? 'border-accent-line bg-accent-wash text-accent-text' : ''
-        }`}
-        title="Toggle deep thinking (live CoT reasoning)"
+        className="tool"
+        title={thinkingEnabled ? 'Thinking is on: slower, more deliberate replies' : 'Let the model think before it writes'}
       >
-        <Brain aria-hidden className="h-3 w-3" />
-        {thinkingEnabled ? 'Thinking (on)' : 'Thinking (off)'}
+        <Brain aria-hidden className="h-3.5 w-3.5" />
+        Think
       </button>
 
-      {/* 6. Regex & Output Formatters */}
-      {onOpenRegexManager && (
+      <Popover.Root open={presetOpen} onOpenChange={setPresetOpen}>
+        <Popover.Trigger asChild>
+          <button type="button" className="tool" title="House style layered on the character">
+            <span className="max-w-[9rem] truncate">Style: {activePreset.name}</span>
+            <ChevronDown aria-hidden className="h-3 w-3 opacity-60" />
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            side="top"
+            align="start"
+            sideOffset={8}
+            collisionPadding={12}
+            className="panel z-50 w-72 rounded-xl p-1.5 animate-in fade-in duration-150"
+          >
+            <p className="type-meta px-2 pb-1 pt-0.5">
+              Layered under the character. The chat’s content rating still applies.
+            </p>
+            <div role="menu" className="max-h-64 space-y-0.5 overflow-y-auto">
+              {presets.map((preset) => {
+                const active = preset.id === activePreset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={active}
+                    onClick={() => {
+                      onSelectPreset(preset);
+                      setPresetOpen(false);
+                    }}
+                    className={`flex w-full items-start justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 hover:bg-sunken ${
+                      active ? 'text-accent-text' : 'text-ink-2 hover:text-ink'
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-xs font-medium">{preset.name}</span>
+                      <span className="block truncate text-[11px] text-ink-3">{preset.description}</span>
+                    </span>
+                    {active && <Check aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+
+      <span className="tool-sep mx-1" aria-hidden />
+
+      <button
+        type="button"
+        disabled={isGenerating}
+        onClick={() => onFormat('“', '”')}
+        className="tool px-2"
+        title="Dialogue: wrap in quotes"
+        aria-label="Wrap in quotes"
+      >
+        <Quote aria-hidden className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        disabled={isGenerating}
+        onClick={() => onFormat('*', '*')}
+        className="tool px-2"
+        title="Action: wrap in asterisks"
+        aria-label="Wrap in asterisks"
+      >
+        <Asterisk aria-hidden className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        disabled={isGenerating}
+        onClick={() => onFormat('(( ', ' ))')}
+        className="tool px-2"
+        title="Out of character: a note to the AI"
+        aria-label="Out-of-character note"
+      >
+        <MessageSquareCode aria-hidden className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        disabled={isGenerating}
+        onClick={() => onFormat('||', '||')}
+        className="tool px-2"
+        title="Spoiler: hidden until tapped"
+        aria-label="Wrap as spoiler"
+      >
+        <EyeOff aria-hidden className="h-3.5 w-3.5" />
+      </button>
+
+      <Popover.Root open={diceOpen} onOpenChange={setDiceOpen}>
+        <Popover.Trigger asChild>
+          <button type="button" disabled={isGenerating} className="tool px-2" aria-label="Insert a dice roll" title="Insert a dice roll">
+            <Dices aria-hidden className="h-3.5 w-3.5" />
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            side="top"
+            align="end"
+            sideOffset={8}
+            collisionPadding={12}
+            className="panel z-50 w-48 rounded-xl p-1.5 animate-in fade-in duration-150"
+          >
+            <p className="type-meta px-2 pb-1 pt-0.5">Rolled when you send</p>
+            <div role="menu">
+              {COMMON_DICE.map((d) => (
+                <button
+                  key={d.formula}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    playDiceSound();
+                    onFormat(`{{roll::${d.formula}}}`, '', '');
+                    setDiceOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-ink-2 transition-colors duration-150 hover:bg-sunken hover:text-ink"
+                >
+                  <span className="font-mono font-semibold text-accent-text">{d.formula}</span>
+                  <span className="text-[11px] text-ink-3">{d.desc}</span>
+                </button>
+              ))}
+            </div>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+
+      {onToggleSound && (
         <button
-          onClick={onOpenRegexManager}
-          className="btn btn-ghost whitespace-nowrap text-[11px]"
-          title="Open regex scripts and output formatters studio"
+          type="button"
+          onClick={onToggleSound}
+          className="tool ml-auto px-2"
+          aria-label={soundEnabled ? 'Mute sound effects' : 'Turn on sound effects'}
+          title={soundEnabled ? 'Mute sound effects' : 'Turn on sound effects'}
         >
-          <Sparkles aria-hidden className="h-3 w-3" />
-          <span>Regex & formatters{typeof regexActiveCount === 'number' ? ` (${regexActiveCount})` : ''}</span>
+          {soundEnabled ? <Volume2 aria-hidden className="h-3.5 w-3.5" /> : <VolumeX aria-hidden className="h-3.5 w-3.5" />}
         </button>
       )}
     </div>

@@ -12,7 +12,7 @@ export interface LlmLogEntry {
   chatId: string;
   characterId: string;
   characterName: string;
-  kind: 'chat' | 'swipe' | 'regen';
+  kind: 'chat' | 'swipe' | 'regen' | 'continue' | 'impersonate';
   model: string;
   /** Exact generation params sent to the provider. */
   params: {

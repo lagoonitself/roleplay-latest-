@@ -23,6 +23,7 @@ import {
   User,
   MoreVertical,
   ExternalLink,
+  CircleAlert,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
@@ -33,8 +34,8 @@ import { ThinkingProcess } from '@/components/thinking-process';
 import { RoleplayMessageContent } from '@/components/chat/roleplay-message-content';
 import { RegexManagerModal } from '@/components/chat/regex-manager-modal';
 import { useRegexScripts } from '@/lib/store/regex-store';
-import { processPromptTime } from '@/lib/formatter/regex-engine';
-import { formatRoleplayText } from '@/lib/prompt/macros';
+import { processPromptTime, sanitizeModelOutput } from '@/lib/formatter/regex-engine';
+import { formatRoleplayText, joinContinuation } from '@/lib/prompt/macros';
 import { extractThinking } from '@/lib/llm/stream-parser';
 import { recordLocalUsage } from '@/lib/usage/tokens';
 import { saveLocalLog, makeLogId, type LlmLogEntry } from '@/lib/logs/llm-log-store';
@@ -45,7 +46,9 @@ import {
   getLocalMessages,
   saveLocalMessages,
   getLocalMemories,
+  saveLocalMemories,
   getLocalChatState,
+  saveLocalChatState,
   getLocalSummary,
   saveLocalSummary,
   getLocalAuthorsNote,
@@ -54,12 +57,8 @@ import {
 } from '@/lib/chats/chat-manager';
 import { SillyTavernContextInspector } from '@/components/chat/sillytavern-context-inspector';
 import { SillyTavernQuickActions } from '@/components/chat/sillytavern-quick-actions';
-import { ComposerFormatToolbar } from '@/components/chat/composer-format-toolbar';
 import { useSoundEffects, playSendSound, playReceiveSound } from '@/lib/audio/sound-effects';
-import {
-  SILLY_TAVERN_SPECIAL_PROMPTS,
-  SILLY_TAVERN_SYSTEM_PROMPT_PRESETS,
-} from '@/lib/prompt/presets';
+import { DEFAULT_PRESET_ID, SILLY_TAVERN_SYSTEM_PROMPT_PRESETS } from '@/lib/prompt/presets';
 import { toast } from 'sonner';
 import type { Chat, Character, Persona, Message, Memory, Summary, ChatState } from '@/lib/supabase/types';
 
@@ -104,7 +103,10 @@ function persistLlmLog(payload: unknown) {
       chatId: String(p.chatId || ''),
       characterId: String(p.characterId || ''),
       characterName: String(p.characterName || ''),
-      kind: p.kind === 'swipe' ? 'swipe' : p.kind === 'regen' ? 'regen' : 'chat',
+      kind:
+        p.kind === 'swipe' || p.kind === 'regen' || p.kind === 'continue' || p.kind === 'impersonate'
+          ? p.kind
+          : 'chat',
       model: String(p.model || ''),
       params: (p.params || { temperature: 0, max_tokens: 0, thinking: false, top_p: 0 }) as LlmLogEntry['params'],
       requestMessages: p.requestMessages as LlmLogEntry['requestMessages'],
@@ -227,6 +229,27 @@ async function streamRegeneratedReply(
   return { text: streamedContent, reasoning: streamedReasoning, reasoningDuration, aborted: false, failed: false, metaSync: receivedMetaSync };
 }
 
+// Older builds saved a fake "[Connection interrupted…]" line as the reply text.
+// Failed replies are a status now; strip the legacy text so the error card shows.
+const LEGACY_ERROR_TEXT = /^\*?\[Connection interrupted\. Tap retry to continue\.\]\*?$/;
+function healLegacyErrors(list: Message[]): Message[] {
+  return list.map((m) =>
+    m.role === 'assistant' && LEGACY_ERROR_TEXT.test((m.content || '').trim())
+      ? { ...m, status: 'error' as const, content: '', meta: { ...m.meta, swipes: [''], active_swipe_index: 0 } }
+      : m
+  );
+}
+
+// The request only needs what the prompt uses. Shipping every swipe, reasoning
+// trace and meta blob of a long chat on each turn was pure payload weight.
+const HISTORY_PAYLOAD_LIMIT = 100;
+function slimHistory(list: Message[]): Array<Pick<Message, 'id' | 'role' | 'content' | 'status'>> {
+  return list
+    .filter((m) => m.status !== 'error' && m.status !== 'streaming' && m.content?.trim())
+    .slice(-HISTORY_PAYLOAD_LIMIT)
+    .map((m) => ({ id: m.id, role: m.role, content: m.content, status: m.status }));
+}
+
 // Builds the streaming assistant placeholder for edit-rewind regeneration.
 // Module scope so id/timestamp creation stays out of the component body.
 function makeRegenPlaceholder(chatId: string, parentId: string | null): Message {
@@ -273,8 +296,50 @@ export default function ChatPage() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [currentSummary, setCurrentSummary] = useState<Summary | null>(null);
-  const [, setChatState] = useState<ChatState['state']>({});
-  const [currentPresetId, setCurrentPresetId] = useState<string>('roleplay-detailed');
+  const [chatState, setChatState] = useState<ChatState['state']>({});
+  const [inspectorRecall, setInspectorRecall] = useState<Array<{ content: string; score?: number }>>([]);
+  const [inspectorLore, setInspectorLore] = useState<Array<{ id: string; title: string; keys: string[]; content: string }>>([]);
+  const [currentPresetId, setCurrentPresetId] = useState<string>(DEFAULT_PRESET_ID);
+  const [isImpersonating, setIsImpersonating] = useState(false);
+
+  // Refresh the memory context shown in the inspector whenever it opens: one call
+  // returns the memory bank, summary, scene state, and what recall would surface.
+  useEffect(() => {
+    if (!inspectorOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/chat/memory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'list',
+            chatId,
+            character,
+            persona: activePersona,
+            history: messages,
+            memories,
+            summary: currentSummary,
+            state: chatState,
+            includeRecall: true,
+          }),
+        });
+        const data = await res.json();
+        if (cancelled || !res.ok) return;
+        if (Array.isArray(data.memories)) setMemories(data.memories);
+        if (data.summary) setCurrentSummary(data.summary);
+        if (data.state) setChatState(data.state);
+        if (Array.isArray(data.recalled)) setInspectorRecall(data.recalled);
+        if (Array.isArray(data.lore)) setInspectorLore(data.lore);
+      } catch {
+        // The panel still works with whatever is already loaded.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh on open only
+  }, [inspectorOpen]);
 
   // Editing in-place
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -304,6 +369,31 @@ export default function ChatPage() {
       toast.success('Chat deleted');
       router.push('/?tab=chats');
     }
+  };
+
+  // Streaming renders: tokens arrive far faster than the screen refreshes. Updates
+  // are composed and applied once per animation frame instead of once per token.
+  const pendingStreamUpdate = useRef<((prev: Message[]) => Message[]) | null>(null);
+  const streamFrame = useRef<number | null>(null);
+  const queueStreamUpdate = (updater: (prev: Message[]) => Message[]) => {
+    const previous = pendingStreamUpdate.current;
+    pendingStreamUpdate.current = previous ? (list) => updater(previous(list)) : updater;
+    if (streamFrame.current !== null) return;
+    streamFrame.current = requestAnimationFrame(() => {
+      streamFrame.current = null;
+      const pending = pendingStreamUpdate.current;
+      pendingStreamUpdate.current = null;
+      if (pending) setMessages(pending);
+    });
+  };
+  const flushStreamUpdate = () => {
+    if (streamFrame.current !== null) {
+      cancelAnimationFrame(streamFrame.current);
+      streamFrame.current = null;
+    }
+    const pending = pendingStreamUpdate.current;
+    pendingStreamUpdate.current = null;
+    if (pending) setMessages(pending);
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -568,7 +658,7 @@ export default function ChatPage() {
       const userName = resolvedPersona.name || 'User';
 
       let loadedMessages: Message[] = [];
-      const localMsgs = getLocalMessages(chatId);
+      const localMsgs = healLegacyErrors(getLocalMessages(chatId));
 
       // 1. Fetch from Supabase if not a local chat
       if (!chatId.startsWith('local-')) {
@@ -980,8 +1070,11 @@ export default function ChatPage() {
           thinking: settings.thinkingEnabled,
           authorsNote: authorsNote.prompt?.trim() || undefined,
           authorsNoteDepth: authorsNote.depth,
-          presetContent: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content,
-          history: messages,
+          stylePreset: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content || '',
+          clientMemories: memories,
+          clientSummary: currentSummary,
+          clientState: chatState,
+          history: slimHistory(messages),
         }),
       });
 
@@ -1038,7 +1131,7 @@ export default function ChatPage() {
 
                 if (parsed.reasoning) {
                   streamedReasoning += parsed.reasoning;
-                  setMessages((prev) =>
+                  queueStreamUpdate((prev) =>
                     prev.map((m) => {
                       if (m.id !== assistantMsgId) return m;
                       const rList = m.meta?.reasoning_swipes ? [...m.meta.reasoning_swipes] : [streamedReasoning];
@@ -1059,7 +1152,7 @@ export default function ChatPage() {
                 if (parsed.reasoningDone && !thinkingEnded) {
                   thinkingEnded = true;
                   reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
-                  setMessages((prev) =>
+                  queueStreamUpdate((prev) =>
                     prev.map((m) => {
                       if (m.id !== assistantMsgId) return m;
                       const dList = m.meta?.reasoning_durations ? [...(m.meta.reasoning_durations || [])] : [];
@@ -1085,7 +1178,7 @@ export default function ChatPage() {
                   streamedContent += parsed.text;
                   const formattedLive = formatRoleplayText(streamedContent, charName, userName);
 
-                  setMessages((prev) =>
+                  queueStreamUpdate((prev) =>
                     prev.map((m) => {
                       if (m.id !== assistantMsgId) return m;
                       const sList = m.meta?.swipes ? [...m.meta.swipes] : [formattedLive];
@@ -1116,6 +1209,7 @@ export default function ChatPage() {
         reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
       }
 
+      flushStreamUpdate();
       let finalMessages: Message[] = [];
       setMessages((prev) => {
         const mapped: Message[] = prev.map((m) => {
@@ -1199,8 +1293,48 @@ export default function ChatPage() {
         }
       }
 
-      // Refresh memory & state after a few seconds
+      // Refresh memory a few seconds after the reply, giving the background memory
+      // pass time to fold the new exchange in. Local (guest) chats run the same pass
+      // on demand and keep the result in this browser.
       setTimeout(async () => {
+        if (chatId.startsWith('local-')) {
+          try {
+            const res = await fetch('/api/chat/memory', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'regenerate',
+                chatId,
+                charName: character.name,
+                userName: activePersona?.name || 'User',
+                history: finalMessages,
+                memories,
+                summary: currentSummary,
+                state: chatState,
+                force: false,
+                apiKey: settings.opencodeApiKey,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok) return;
+            if (Array.isArray(data.memories)) {
+              setMemories(data.memories);
+              saveLocalMemories(chatId, data.memories);
+            }
+            if (data.summary) {
+              setCurrentSummary(data.summary);
+              saveLocalSummary(chatId, data.summary);
+            }
+            if (data.state) {
+              setChatState(data.state);
+              saveLocalChatState(chatId, data.state);
+            }
+          } catch {
+            // Guest memory is best-effort; the story still plays without it.
+          }
+          return;
+        }
+
         const { data: memData } = await supabase
           .from('memories')
           .select('*')
@@ -1216,8 +1350,8 @@ export default function ChatPage() {
         if (stData?.state) setChatState(stData.state);
       }, 3500);
     } catch (err) {
+      flushStreamUpdate();
       if ((err as { name?: unknown } | null | undefined)?.name !== 'AbortError') {
-        toast.error((err instanceof Error ? err.message : '') || 'Generation error');
         let errMessages: Message[] = [];
         setMessages((prev) => {
           errMessages = prev.map((m) =>
@@ -1225,7 +1359,7 @@ export default function ChatPage() {
               ? {
                   ...m,
                   status: 'error',
-                  content: m.content || '*[Connection interrupted. Tap retry to continue.]*',
+                  meta: { ...m.meta, error: (err instanceof Error && err.message) || 'The reply could not be generated.' },
                 }
               : m
           );
@@ -1341,12 +1475,17 @@ export default function ChatPage() {
       triggerUserMessage = '*Continues the story naturally*';
     }
 
-    // Add a new swipe slot
+    // Add a new swipe slot — or, when retrying a reply that failed before writing
+    // anything, reuse its empty slot so the failure doesn't leave a blank swipe.
     const prevSwipes = targetMsg.meta?.swipes || [targetMsg.content];
     const prevReasoningSwipes = targetMsg.meta?.reasoning_swipes || [targetMsg.reasoning || ''];
-    const newSwipeIndex = prevSwipes.length;
-    const updatedSwipes = [...prevSwipes, ''];
-    const updatedReasoningSwipes = [...prevReasoningSwipes, ''];
+    const activeSlot = targetMsg.meta?.active_swipe_index ?? prevSwipes.length - 1;
+    const retryInPlace = targetMsg.status === 'error' && !prevSwipes[activeSlot]?.trim();
+    const newSwipeIndex = retryInPlace ? activeSlot : prevSwipes.length;
+    const updatedSwipes = retryInPlace ? prevSwipes.map((v, i) => (i === activeSlot ? '' : v)) : [...prevSwipes, ''];
+    const updatedReasoningSwipes = retryInPlace
+      ? prevReasoningSwipes.map((v, i) => (i === activeSlot ? '' : v))
+      : [...prevReasoningSwipes, ''];
 
     setMessages((prev) =>
       prev.map((m, i) =>
@@ -1358,6 +1497,7 @@ export default function ChatPage() {
               status: 'streaming',
               meta: {
                 ...m.meta,
+                error: undefined,
                 swipes: updatedSwipes,
                 reasoning_swipes: updatedReasoningSwipes,
                 active_swipe_index: newSwipeIndex,
@@ -1392,8 +1532,11 @@ export default function ChatPage() {
           thinking: settings.thinkingEnabled,
           authorsNote: authorsNote.prompt?.trim() || undefined,
           authorsNoteDepth: authorsNote.depth,
-          presetContent: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content,
-          history: historyBeforeAssistant.filter((m) => m.content !== triggerUserMessage),
+          stylePreset: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content || '',
+          clientMemories: memories,
+          clientSummary: currentSummary,
+          clientState: chatState,
+          history: slimHistory(historyBeforeAssistant.filter((m) => m.content !== triggerUserMessage)),
         }),
       });
 
@@ -1408,6 +1551,7 @@ export default function ChatPage() {
       let streamedReasoning = '';
       let thinkingEnded = false;
       let reasoningDuration = 0;
+      let adoptedId: string | null = null;
       const genStartTime = Date.now();
 
       if (reader) {
@@ -1436,11 +1580,16 @@ export default function ChatPage() {
                   if (parsed.metaSync.reasoning_duration_seconds && !reasoningDuration) {
                     reasoningDuration = parsed.metaSync.reasoning_duration_seconds;
                   }
+                  // A reply that only existed locally (e.g. a failed one) now has a
+                  // real row — adopt its id so later swipes update it, not duplicate it.
+                  if (parsed.metaSync.assistantMsgId && !isUuid(targetMsg.id)) {
+                    adoptedId = parsed.metaSync.assistantMsgId;
+                  }
                 }
 
                 if (parsed.reasoning) {
                   streamedReasoning += parsed.reasoning;
-                  setMessages((prev) =>
+                  queueStreamUpdate((prev) =>
                     prev.map((m, i) => {
                       if (i !== assistantMsgIndex) return m;
                       const rList = m.meta?.reasoning_swipes ? [...m.meta.reasoning_swipes] : [streamedReasoning];
@@ -1460,7 +1609,7 @@ export default function ChatPage() {
                 if (parsed.reasoningDone && !thinkingEnded) {
                   thinkingEnded = true;
                   reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
-                  setMessages((prev) =>
+                  queueStreamUpdate((prev) =>
                     prev.map((m, i) => {
                       if (i !== assistantMsgIndex) return m;
                       const dList = m.meta?.reasoning_durations ? [...(m.meta.reasoning_durations || [])] : [];
@@ -1485,7 +1634,7 @@ export default function ChatPage() {
                   streamedContent += parsed.text;
                   const formattedLive = formatRoleplayText(streamedContent, charName, userName);
 
-                  setMessages((prev) =>
+                  queueStreamUpdate((prev) =>
                     prev.map((m, i) => {
                       if (i !== assistantMsgIndex) return m;
                       const sList = m.meta?.swipes ? [...m.meta.swipes] : [formattedLive];
@@ -1513,6 +1662,7 @@ export default function ChatPage() {
         reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
       }
 
+      flushStreamUpdate();
       let finalMessages: Message[] = [];
       setMessages((prev) => {
         finalMessages = prev.map((m, i) => {
@@ -1529,11 +1679,13 @@ export default function ChatPage() {
 
           return {
             ...m,
+            id: adoptedId || m.id,
             status: 'done',
             content: finalVal,
             reasoning: streamedReasoning || m.reasoning || null,
             meta: {
               ...m.meta,
+              error: undefined,
               swipes: sList,
               active_swipe_index: newSwipeIndex,
               reasoning_swipes: rList,
@@ -1561,27 +1713,39 @@ export default function ChatPage() {
         }
       }
 
-      toast.success(`Generated variation ${newSwipeIndex + 1}/${updatedSwipes.length}`);
       playReceiveSound();
     } catch (err) {
+      flushStreamUpdate();
       if ((err as { name?: unknown } | null | undefined)?.name !== 'AbortError') {
-        toast.error((err instanceof Error ? err.message : '') || 'Regeneration error');
-        setMessages((prev) =>
-          prev.map((m, i) =>
-            i === assistantMsgIndex
-              ? {
-                  ...m,
-                  status: 'done',
-                  content: prevSwipes[prevSwipes.length - 1] || m.content,
-                  meta: {
-                    ...m.meta,
-                    swipes: prevSwipes,
-                    active_swipe_index: Math.max(0, prevSwipes.length - 1),
-                  },
-                }
-              : m
-          )
-        );
+        const reason = (err instanceof Error && err.message) || 'The reply could not be generated.';
+        if (retryInPlace) {
+          // Still failing: keep the error card (with its retry) instead of a blank reply.
+          setMessages((prev) => {
+            const next = prev.map((m, i) =>
+              i === assistantMsgIndex ? { ...m, status: 'error' as const, meta: { ...m.meta, error: reason } } : m
+            );
+            saveLocalMessages(chatId, next);
+            return next;
+          });
+        } else {
+          toast.error(reason);
+          setMessages((prev) =>
+            prev.map((m, i) =>
+              i === assistantMsgIndex
+                ? {
+                    ...m,
+                    status: 'done',
+                    content: prevSwipes[prevSwipes.length - 1] || m.content,
+                    meta: {
+                      ...m.meta,
+                      swipes: prevSwipes,
+                      active_swipe_index: Math.max(0, prevSwipes.length - 1),
+                    },
+                  }
+                : m
+            )
+          );
+        }
       }
     } finally {
       setIsGenerating(false);
@@ -1842,7 +2006,10 @@ export default function ChatPage() {
           thinking: settings.thinkingEnabled,
           authorsNote: authorsNote.prompt?.trim() || undefined,
           authorsNoteDepth: authorsNote.depth,
-          presetContent: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content,
+          stylePreset: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content || '',
+          clientMemories: memories,
+          clientSummary: currentSummary,
+          clientState: chatState,
           history: baseBefore,
         }),
       });
@@ -1901,17 +2068,17 @@ export default function ChatPage() {
       if (streamResult.failed) {
         // Stream died mid-way: keep the partial reply, mark it error, and
         // persist the same timeline to both stores.
-        toast.error('Regeneration error');
         const errVal = formatRoleplayText(streamResult.text, charName, userName);
         const failedAssistant: Message = {
           ...placeholder,
           status: 'error',
-          content: errVal || '*[Connection interrupted. Tap retry to continue.]*',
+          content: errVal,
           reasoning: streamResult.reasoning || null,
           updated_at: new Date().toISOString(),
           meta: {
             ...placeholder.meta,
-            swipes: [errVal || '*[Connection interrupted. Tap retry to continue.]*'],
+            error: 'The connection dropped before the reply finished.',
+            swipes: [errVal],
             reasoning_swipes: [streamResult.reasoning || null],
             reasoning_duration_seconds: streamResult.reasoningDuration || undefined,
           },
@@ -2005,16 +2172,16 @@ export default function ChatPage() {
           toast.warning('Cloud sync failed — rewound chat kept locally only for now');
         }
       } else {
-        toast.error(err instanceof Error ? err.message : 'Regeneration error');
         const failedAssistant: Message = {
           ...placeholder,
           status: 'error',
-          content: '*[Connection interrupted. Tap retry to continue.]*',
+          content: '',
           reasoning: null,
           updated_at: new Date().toISOString(),
           meta: {
             ...placeholder.meta,
-            swipes: ['*[Connection interrupted. Tap retry to continue.]*'],
+            error: (err instanceof Error && err.message) || 'The reply could not be generated.',
+            swipes: [''],
             reasoning_swipes: [null],
           },
         };
@@ -2074,28 +2241,181 @@ export default function ChatPage() {
 
   // Copy message
   const handleCopyMessage = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('Copied message to clipboard');
+    navigator.clipboard.writeText(
+      formatRoleplayText(text, character?.name || 'Character', activePersona?.name || 'User')
+    );
+    toast.success('Copied');
   };
 
-  // SillyTavern Continue: Continue generating character's last message
-  const handleContinue = () => {
-    if (isGenerating) return;
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg) return;
+  // SillyTavern-style Continue and Impersonate. Both send a hidden instruction
+  // to the model (never a chat message): Continue extends the last reply in place,
+  // Impersonate drafts your next turn into the composer for you to edit.
+  const runAssistMode = async (genMode: 'continue' | 'impersonate') => {
+    if (isGenerating || !character) return;
+    if (!settings.opencodeApiKey && !process.env.NEXT_PUBLIC_HAS_SERVER_KEY) {
+      toast.error('Please configure your OpenCode Go API key in Settings first.');
+      return;
+    }
 
-    if (lastMsg.role === 'assistant') {
-      handleSendMessage(SILLY_TAVERN_SPECIAL_PROMPTS.continueNudgePrompt);
-    } else {
-      handleSendMessage();
+    const charName = character.name || 'Character';
+    const userName = activePersona?.name || 'User';
+
+    let targetIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'assistant' && m.status !== 'error' && m.content?.trim()) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (genMode === 'continue' && (targetIndex === -1 || targetIndex !== messages.length - 1)) {
+      toast.info('Continue extends the last reply. Send a message to get a new one.');
+      return;
+    }
+
+    const target = targetIndex >= 0 ? messages[targetIndex] : null;
+    const base = target?.content || '';
+    const controller = new AbortController();
+    setAbortController(controller);
+    setIsGenerating(true);
+    if (genMode === 'impersonate') {
+      setIsImpersonating(true);
+      setInputText('');
+    } else if (target) {
+      setMessages((prev) => prev.map((m, i) => (i === targetIndex ? { ...m, status: 'streaming' } : m)));
+    }
+
+    const applyContinuation = (raw: string, final: boolean) => {
+      if (targetIndex < 0) return [] as Message[];
+      const addition = final ? (raw.match(/^\s*/)?.[0] || '') + sanitizeModelOutput(raw, charName) : raw;
+      const extended = formatRoleplayText(joinContinuation(base, addition), charName, userName);
+      let next: Message[] = [];
+      const updater = (prev: Message[]) => {
+        next = prev.map((m, i) => {
+          if (i !== targetIndex) return m;
+          const swipes = m.meta?.swipes ? [...m.meta.swipes] : [m.content];
+          swipes[m.meta?.active_swipe_index ?? 0] = extended;
+          return {
+            ...m,
+            content: extended,
+            status: final ? ('done' as const) : ('streaming' as const),
+            meta: { ...m.meta, swipes },
+          };
+        });
+        return next;
+      };
+      if (final) {
+        flushStreamUpdate();
+        setMessages(updater);
+      } else {
+        queueStreamUpdate(updater);
+      }
+      return next;
+    };
+
+    try {
+      const reqHeaders = await getAuthHeaders(supabase);
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: reqHeaders,
+        signal: controller.signal,
+        body: JSON.stringify({
+          mode: genMode,
+          chatId,
+          characterId: character.id,
+          personaId: activePersona?.id,
+          persona: activePersona,
+          character,
+          existingAssistantMessageId: target && isUuid(target.id) ? target.id : undefined,
+          apiKey: settings.opencodeApiKey,
+          temperature: settings.defaultTemperature,
+          authorsNote: authorsNote.prompt?.trim() || undefined,
+          authorsNoteDepth: authorsNote.depth,
+          stylePreset: SILLY_TAVERN_SYSTEM_PROMPT_PRESETS[currentPresetId]?.content || '',
+          clientMemories: memories,
+          clientSummary: currentSummary,
+          clientState: chatState,
+          history: slimHistory(genMode === 'continue' ? messages.slice(0, targetIndex + 1) : messages),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorJson = await response.json().catch(() => ({}));
+        throw new Error(errorJson.error || 'The model could not be reached.');
+      }
+
+      let rawText = '';
+      const result = await streamRegeneratedReply(response, {
+        charName,
+        userName,
+        onReasoning: () => undefined,
+        onThinkingDone: () => undefined,
+        onText: (live) => {
+          rawText = live;
+          if (genMode === 'continue') {
+            applyContinuation(live, false);
+          } else {
+            setInputText(live.trimStart());
+          }
+        },
+      });
+      rawText = result.text || rawText;
+
+      if (genMode === 'continue') {
+        const finalMessages = applyContinuation(rawText, true);
+        if (finalMessages.length) saveLocalMessages(chatId, finalMessages);
+        if (result.failed) toast.error('The connection dropped before the reply finished.');
+      } else {
+        const draft = sanitizeModelOutput(rawText, userName);
+        setInputText(draft);
+        if (!draft) toast.error('No draft came back. Try again.');
+        requestAnimationFrame(() => {
+          const ta = textareaRef.current;
+          if (!ta) return;
+          ta.style.height = 'auto';
+          ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
+          ta.focus();
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        });
+      }
+    } catch (err) {
+      flushStreamUpdate();
+      if (!isAbortError(err)) {
+        toast.error((err instanceof Error && err.message) || 'The model could not be reached.');
+      }
+      if (genMode === 'continue' && targetIndex >= 0) {
+        setMessages((prev) => prev.map((m, i) => (i === targetIndex ? { ...m, status: 'done' } : m)));
+      }
+    } finally {
+      setIsGenerating(false);
+      setIsImpersonating(false);
+      setAbortController(null);
     }
   };
 
-  // SillyTavern Impersonate: Draft next reply from user's perspective
-  const handleImpersonate = () => {
-    if (isGenerating) return;
-    handleSendMessage(SILLY_TAVERN_SPECIAL_PROMPTS.impersonationPrompt);
+  const handleSelectPreset = async (preset: { id: string }) => {
+    setCurrentPresetId(preset.id);
+    try {
+      localStorage.setItem(`cadenza_preset_${chatId}`, preset.id);
+    } catch {
+      // private mode: the choice just won't survive a reload
+    }
+    if (!isUuid(chatId)) return;
+    try {
+      const { data: cRow } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
+      if (!cRow) return;
+      const existingSettings = (cRow.settings as Record<string, unknown>) || {};
+      await supabase
+        .from('chats')
+        .update({ settings: { ...existingSettings, system_prompt_preset: preset.id } })
+        .eq('id', chatId);
+    } catch (e) {
+      console.warn('Failed to sync preset to Supabase:', e);
+    }
   };
+
+  const handleContinue = () => runAssistMode('continue');
+  const handleImpersonate = () => runAssistMode('impersonate');
 
   return (
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-background select-none">
@@ -2146,11 +2466,12 @@ export default function ChatPage() {
           {/* Active Persona Switcher Pill */}
           <button
             onClick={() => setPersonaModalOpen(true)}
-            className="btn btn-ghost px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 max-w-[140px] sm:max-w-[200px]"
+            className="btn btn-ghost h-9 w-9 p-0 sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5 text-xs font-semibold flex items-center gap-1.5 sm:max-w-[200px]"
             title="Change your roleplay persona"
+            aria-label={`Persona: ${activePersona?.name || 'not set'}. Change persona`}
           >
             <User className="w-3.5 h-3.5 shrink-0" aria-hidden />
-            <span className="truncate">
+            <span className="hidden sm:inline truncate">
               {activePersona?.name || 'Set Persona'}
             </span>
           </button>
@@ -2235,11 +2556,8 @@ export default function ChatPage() {
               const isAssistant = message.role === 'assistant';
               const swipes = message.meta?.swipes || [message.content];
               const swipeIndex = message.meta?.active_swipe_index ?? 0;
-              const formattedContent = formatRoleplayText(
-                message.content,
-                character?.name || 'Character',
-                activePersona?.name || 'User'
-              );
+              const isFailed = message.status === 'error';
+              const isStreamingMsg = message.status === 'streaming';
 
               return (
                 <div
@@ -2336,8 +2654,36 @@ export default function ChatPage() {
                             characterName={character?.name}
                           />
 
+                          {isFailed && (
+                            <div
+                              role="alert"
+                              className="surface border-danger-line flex flex-col gap-2.5 rounded-lg p-3.5 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                              <div className="flex min-w-0 items-start gap-2">
+                                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden />
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-danger">This reply didn’t come through</p>
+                                  <p className="type-meta mt-0.5 break-words">
+                                    {message.meta?.error || 'The connection dropped before the reply finished.'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1.5 self-start sm:self-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRegenerate(index)}
+                                  disabled={isGenerating}
+                                  className="btn btn-ghost"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                                  Try again
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           {/* Roleplay Prose Bubble */}
-                          {(message.content || (!message.reasoning && message.status !== 'streaming')) ? (
+                          {isFailed && !message.content ? null : (message.content || (!message.reasoning && !isStreamingMsg)) ? (
                             <div className="prose-rp w-full max-w-[62ch] border-t border-line pt-3 select-text">
                               <RoleplayMessageContent
                                 content={message.content}
@@ -2392,15 +2738,15 @@ export default function ChatPage() {
                             Keep
                           </button>
                         </div>
-                      ) : (
-                      <div className="flex items-center gap-1 px-1 pt-1 mt-1 border-t border-line opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-[opacity] duration-150">
+                      ) : isStreamingMsg || (isFailed && !message.content) ? null : (
+                      <div className="flex items-center gap-1 px-1 pt-1 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-[opacity] duration-150">
                         {message.content && (
-                          <span className="type-meta mr-auto select-none pl-1">
+                          <span className="type-meta mr-auto hidden select-none pl-1 sm:inline">
                             {message.content.trim().split(/\s+/).filter(Boolean).length} words
                           </span>
                         )}
                         <button
-                          onClick={() => handleCopyMessage(formattedContent)}
+                          onClick={() => handleCopyMessage(message.content)}
                           className="icon-btn w-7 h-7"
                           title="Copy message"
                           aria-label="Copy message"
@@ -2533,14 +2879,14 @@ export default function ChatPage() {
                           </button>
                         </div>
                       ) : (
-                      <div className="flex justify-end items-center gap-1 px-1 pt-1 mt-1 border-t border-line opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-[opacity] duration-150">
+                      <div className="flex justify-end items-center gap-1 px-1 pt-1 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-[opacity] duration-150">
                         {message.content && (
-                          <span className="type-meta mr-auto select-none pl-1">
+                          <span className="type-meta mr-auto hidden select-none pl-1 sm:inline">
                             {message.content.trim().split(/\s+/).filter(Boolean).length} words
                           </span>
                         )}
                         <button
-                          onClick={() => handleCopyMessage(formattedContent)}
+                          onClick={() => handleCopyMessage(message.content)}
                           className="icon-btn w-7 h-7"
                           title="Copy"
                           aria-label="Copy message"
@@ -2602,10 +2948,18 @@ export default function ChatPage() {
             activePersona={activePersona}
             history={messages}
             summary={currentSummary}
+            memories={memories}
+            onMemoriesChanged={(next) => {
+              setMemories(next);
+              if (!chatId.startsWith('local-')) return;
+              saveLocalMemories(chatId, next);
+            }}
             onSummaryUpdated={(newSummary) => {
               setCurrentSummary(newSummary);
               saveLocalSummary(chatId, newSummary);
             }}
+            activeLorebookEntries={inspectorLore}
+            vectorMemories={inspectorRecall}
             authorsNote={authorsNote}
             onAuthorsNoteUpdated={async (newNote) => {
               setAuthorsNote(newNote);
@@ -2642,50 +2996,6 @@ export default function ChatPage() {
       {/* Mobile-First Reachable Bottom Input Composer */}
       <footer className="p-2 sm:p-4 bg-background border-t border-line shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
         <div className="max-w-3xl mx-auto space-y-2">
-          {/* SillyTavern Quick Action Chips */}
-          <SillyTavernQuickActions
-            onContinue={handleContinue}
-            onImpersonate={handleImpersonate}
-            isGenerating={isGenerating}
-            authorsNoteActive={Boolean(authorsNote.prompt?.trim())}
-            onToggleAuthorsNote={() => setShowAuthorsNote(!showAuthorsNote)}
-            thinkingEnabled={settings.thinkingEnabled}
-            onToggleThinking={() => {
-              const nextVal = !settings.thinkingEnabled;
-              updateSettings({ thinkingEnabled: nextVal });
-              toast.info(nextVal ? 'Deep Thinking Mode: ON' : 'Deep Thinking Mode: OFF');
-            }}
-            currentPresetId={currentPresetId}
-            onOpenRegexManager={() => setRegexModalOpen(true)}
-            regexActiveCount={regexActiveCount}
-            onSelectPreset={async (preset) => {
-              setCurrentPresetId(preset.id);
-              if (typeof window !== 'undefined') {
-                localStorage.setItem(`cadenza_preset_${chatId}`, preset.id);
-              }
-              if (isUuid(chatId)) {
-                try {
-                  const { data: authData } = await supabase.auth.getUser();
-                  if (authData?.user) {
-                    const { data: cRow } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
-                    const existingSettings = (cRow?.settings as Record<string, unknown>) || {};
-                    await supabase
-                      .from('chats')
-                      .update({
-                        settings: {
-                          ...existingSettings,
-                          system_prompt_preset: preset.id,
-                        },
-                      })
-                      .eq('id', chatId);
-                  }
-                } catch (e) {
-                  console.warn('Failed to sync preset to Supabase:', e);
-                }
-              }
-            }}
-          />
-
           {/* Author's Note Quick Drawer */}
           {showAuthorsNote && (
             <div className="surface p-3 space-y-2">
@@ -2717,16 +3027,23 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Quick Formatting & Dice Macro Toolbar */}
-          <ComposerFormatToolbar
+          <SillyTavernQuickActions
+            onContinue={handleContinue}
+            onImpersonate={handleImpersonate}
+            isGenerating={isGenerating}
+            authorsNoteActive={Boolean(authorsNote.prompt?.trim())}
+            authorsNoteOpen={showAuthorsNote}
+            onToggleAuthorsNote={() => setShowAuthorsNote(!showAuthorsNote)}
+            thinkingEnabled={settings.thinkingEnabled}
+            onToggleThinking={() => updateSettings({ thinkingEnabled: !settings.thinkingEnabled })}
+            currentPresetId={currentPresetId}
+            onSelectPreset={handleSelectPreset}
             onFormat={handleFormatInput}
-            disabled={isGenerating}
             soundEnabled={soundEnabled}
             onToggleSound={() => {
               const next = !soundEnabled;
               toggleSound(next);
               if (next) playReceiveSound();
-              toast.info(next ? 'Sound effects enabled' : 'Sound effects muted');
             }}
           />
 
@@ -2743,9 +3060,9 @@ export default function ChatPage() {
                   handleSendMessage();
                 }
               }}
-              placeholder={`Write your turn as ${activePersona?.name || 'you'}…`}
+              placeholder={isImpersonating ? 'Drafting your turn…' : `Write your turn as ${activePersona?.name || 'you'}…`}
               aria-label="Write your turn"
-              className="flex-1 bg-transparent px-3 py-2 text-xs sm:text-sm text-ink focus:outline-none resize-none max-h-40 min-h-[40px] leading-relaxed"
+              className="flex-1 bg-transparent px-3 py-2 text-sm text-ink focus:outline-none resize-none max-h-40 min-h-[40px] leading-relaxed"
             />
 
             {isGenerating ? (

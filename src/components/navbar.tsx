@@ -74,11 +74,14 @@ export function Navbar() {
 
           {/* Right Actions */}
           <div className="flex items-center gap-1.5">
-            <Link href="/c/new" className="btn btn-ghost text-xs">
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Create character</span>
-              <span className="sm:hidden">New</span>
-            </Link>
+            {/* Explore has its own primary Create (scratch or import) — don't double it. */}
+            {pathname !== '/' && (
+              <Link href="/c/new" className="btn btn-ghost text-xs">
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">Create character</span>
+                <span className="sm:hidden">New</span>
+              </Link>
+            )}
 
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

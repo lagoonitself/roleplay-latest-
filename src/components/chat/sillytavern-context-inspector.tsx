@@ -13,10 +13,25 @@ import {
   Save,
   Check,
   SlidersHorizontal,
+  Plus,
+  Pin,
+  PinOff,
+  Trash2,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Summary, Character, Persona, Message } from '@/lib/supabase/types';
+import type { Summary, Character, Persona, Message, Memory } from '@/lib/supabase/types';
 import type { LocalAuthorsNote } from '@/lib/chats/chat-manager';
+
+const MEMORY_KIND_LABELS: Record<string, string> = {
+  fact: 'Fact',
+  event: 'Event',
+  preference: 'Preference',
+  relationship: 'Relationship',
+  promise: 'Promise',
+  secret: 'Secret',
+  trait: 'Trait',
+};
 
 export interface SillyTavernInspectorProps {
   open: boolean;
@@ -31,6 +46,9 @@ export interface SillyTavernInspectorProps {
   onAuthorsNoteUpdated: (note: LocalAuthorsNote) => void;
   activeLorebookEntries?: Array<{ id: string; title: string; keys: string[]; content: string }>;
   vectorMemories?: Array<{ content: string; score?: number }>;
+  /** The chat's full memory bank, for the writer to inspect and extend. */
+  memories?: Memory[];
+  onMemoriesChanged?: (memories: Memory[]) => void;
 }
 
 export function SillyTavernContextInspector({
@@ -46,8 +64,10 @@ export function SillyTavernContextInspector({
   onAuthorsNoteUpdated,
   activeLorebookEntries = [],
   vectorMemories = [],
+  memories = [],
+  onMemoriesChanged,
 }: SillyTavernInspectorProps) {
-  const [activeTab, setActiveTab] = useState<'summary' | 'note' | 'worldInfo' | 'vectors'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'memory' | 'note' | 'worldInfo' | 'vectors'>('summary');
 
   // Summary State
   const [summaryText, setSummaryText] = useState(summary?.content || '');
@@ -64,6 +84,14 @@ export function SillyTavernContextInspector({
   const [noteInterval, setNoteInterval] = useState(authorsNote.interval ?? 1);
   const [noteRole, setNoteRole] = useState(authorsNote.role || 'system');
   const [notePosition, setNotePosition] = useState(authorsNote.position || 'in_chat');
+
+  // Memory State
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [newMemoryText, setNewMemoryText] = useState('');
+  const [newMemoryKind, setNewMemoryKind] = useState<string>('fact');
+  const [newMemoryImportance, setNewMemoryImportance] = useState(8);
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [editingMemoryText, setEditingMemoryText] = useState('');
 
   // Sync state if props change
   React.useEffect(() => {
@@ -88,11 +116,11 @@ export function SillyTavernContextInspector({
   const handleSaveSummaryEdit = async () => {
     setIsSavingSummary(true);
     try {
-      const res = await fetch('/api/chat/summarize', {
+      const res = await fetch('/api/chat/memory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'save_edit',
+          action: 'save_summary',
           chatId,
           content: summaryText,
         }),
@@ -111,7 +139,7 @@ export function SillyTavernContextInspector({
     }
   };
 
-  // Handle On-Demand Manual Summarization
+  // Handle On-Demand Manual Summarization (full memory pass: summary + facts + state)
   const handleTriggerSummarizeNow = async () => {
     if (history.length < 2) {
       toast.info('Need at least 2 messages in chat to create a story summary');
@@ -120,17 +148,18 @@ export function SillyTavernContextInspector({
 
     setIsSummarizing(true);
     try {
-      const res = await fetch('/api/chat/summarize', {
+      const res = await fetch('/api/chat/memory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'regenerate',
           chatId,
           charName: character.name,
           userName: activePersona?.name || 'User',
-          promptWords: summaryMaxWords,
-          force: true,
-          frozen: false,
           history,
+          summaryWords: summaryMaxWords,
+          frozen: false,
+          force: true,
         }),
       });
 
@@ -140,7 +169,8 @@ export function SillyTavernContextInspector({
       if (data.summary) {
         onSummaryUpdated(data.summary);
         setSummaryText(data.summary.content);
-        toast.success('Generated fresh chat summary!');
+        if (Array.isArray(data.memories) && onMemoriesChanged) onMemoriesChanged(data.memories);
+        toast.success('Memory regenerated — summary, facts and scene state are current');
       } else {
         toast.info('No new events to summarize yet');
       }
@@ -148,6 +178,97 @@ export function SillyTavernContextInspector({
       toast.error((e instanceof Error ? e.message : '') || 'Summarization error');
     } finally {
       setIsSummarizing(false);
+    }
+  };
+
+  // ── Memory CRUD ────────────────────────────────────────────────────────────
+  const settingsTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleSaveMemorySettings = (patch: Record<string, unknown>) => {
+    if (settingsTimer.current) clearTimeout(settingsTimer.current);
+    settingsTimer.current = setTimeout(() => {
+      fetch('/api/chat/memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId, action: 'save_settings', ...patch }),
+      }).catch(() => {});
+    }, 600);
+  };
+
+  const memoryRequest = async (payload: Record<string, unknown>) => {
+    const res = await fetch('/api/chat/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId, ...payload }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Memory update failed');
+    return data;
+  };
+
+  const handleAddMemory = async () => {
+    const content = newMemoryText.trim();
+    if (!content) return;
+    try {
+      const data = await memoryRequest({
+        action: 'add_memory',
+        content,
+        kind: newMemoryKind,
+        importance: newMemoryImportance,
+        pinned: true,
+      });
+      if (onMemoriesChanged) onMemoriesChanged([data.memory, ...memories]);
+      setNewMemoryText('');
+      toast.success('Memory added — it will always be held in mind');
+    } catch (e) {
+      toast.error((e instanceof Error ? e.message : '') || 'Could not add memory');
+    }
+  };
+
+  const handleUpdateMemory = async (id: string, patch: Record<string, unknown>) => {
+    try {
+      const data = await memoryRequest({ action: 'update_memory', id, ...patch });
+      if (onMemoriesChanged) {
+        onMemoriesChanged(memories.map((m) => (m.id === id ? { ...m, ...(data.memory || patch) } : m)));
+      }
+    } catch (e) {
+      toast.error((e instanceof Error ? e.message : '') || 'Could not update memory');
+    }
+  };
+
+  const handleDeleteMemory = async (id: string) => {
+    try {
+      await memoryRequest({ action: 'delete_memory', id });
+      if (onMemoriesChanged) onMemoriesChanged(memories.filter((m) => m.id !== id));
+      toast.success('Memory forgotten');
+    } catch (e) {
+      toast.error((e instanceof Error ? e.message : '') || 'Could not delete memory');
+    }
+  };
+
+  const handleRegenerateMemory = async () => {
+    if (history.length < 2) {
+      toast.info('Need at least 2 messages before memory can be regenerated');
+      return;
+    }
+    setIsRegenerating(true);
+    try {
+      const data = await memoryRequest({
+        action: 'regenerate',
+        charName: character.name,
+        userName: activePersona?.name || 'User',
+        history,
+        force: true,
+      });
+      if (Array.isArray(data.memories) && onMemoriesChanged) onMemoriesChanged(data.memories);
+      if (data.summary) {
+        onSummaryUpdated(data.summary);
+        setSummaryText(data.summary.content);
+      }
+      toast.success(data.passRan ? 'Memory regenerated' : 'Nothing new to fold in yet');
+    } catch (e) {
+      toast.error((e instanceof Error ? e.message : '') || 'Memory regeneration failed');
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -207,6 +328,18 @@ export function SillyTavernContextInspector({
           <FileText aria-hidden className="h-3.5 w-3.5" />
           Chat summary
           {tabUnderline('summary')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'memory'}
+          onClick={() => setActiveTab('memory')}
+          className={tabButtonClass('memory')}
+        >
+          <Brain aria-hidden className="h-3.5 w-3.5" />
+          Memory
+          {memories.length > 0 && <span className="type-code text-ink-3">{memories.length}</span>}
+          {tabUnderline('memory')}
         </button>
         <button
           type="button"
@@ -325,7 +458,11 @@ export function SillyTavernContextInspector({
                       step="1"
                       value={summaryInterval}
                       aria-label="Summary update interval in turns"
-                      onChange={(e) => setSummaryInterval(Number(e.target.value))}
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
+                        setSummaryInterval(value);
+                        scheduleSaveMemorySettings({ summaryInterval: value });
+                      }}
                       className="w-full accent-accent"
                     />
                   </div>
@@ -342,14 +479,192 @@ export function SillyTavernContextInspector({
                       step="25"
                       value={summaryMaxWords}
                       aria-label="Summary maximum words"
-                      onChange={(e) => setSummaryMaxWords(Number(e.target.value))}
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
+                        setSummaryMaxWords(value);
+                        scheduleSaveMemorySettings({ summaryWords: value });
+                      }}
                       className="w-full accent-accent"
                     />
                   </div>
 
                   <div className="text-[10px] leading-relaxed text-ink-3">
-                    The summary engine condenses dialogue turns into a persistent story summary injected at in-chat depth 2, formatted as <code className="type-code text-accent-text">[Summary: …]</code>.
+                    Every N messages the memory pass folds the new exchanges into the story summary, the fact
+                    bank and the scene state — all at once. The summary is injected at in-chat depth 2, formatted
+                    as <code className="type-code text-accent-text">[Summary: …]</code>.
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: MEMORY */}
+        {activeTab === 'memory' && (
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <span className="type-label">Story memory</span>
+                <p className="type-meta mt-0.5">
+                  Written automatically as the story grows. Add your own — pinned memories are always
+                  held in mind and never rewritten by the automatic pass.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRegenerateMemory}
+                disabled={isRegenerating}
+                className="btn btn-ghost shrink-0 text-xs"
+                title="Fold the latest exchanges into memory now"
+              >
+                <Sparkles aria-hidden className="h-3.5 w-3.5" />
+                {isRegenerating ? 'Regenerating…' : 'Regenerate'}
+              </button>
+            </div>
+
+            {/* Add a memory */}
+            <div className="surface space-y-2.5 rounded-lg p-3">
+              <label className="type-label" htmlFor="new-memory-text">
+                Add a memory
+              </label>
+              <textarea
+                id="new-memory-text"
+                value={newMemoryText}
+                onChange={(e) => setNewMemoryText(e.target.value)}
+                placeholder="e.g. {{char}} carries her mother's signet ring and never takes it off."
+                rows={3}
+                className="field resize-y text-xs leading-relaxed"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="sr-only" htmlFor="new-memory-kind">Memory kind</label>
+                <select
+                  id="new-memory-kind"
+                  value={newMemoryKind}
+                  onChange={(e) => setNewMemoryKind(e.target.value)}
+                  className="field text-xs"
+                >
+                  {Object.entries(MEMORY_KIND_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+
+                <label className="type-label" htmlFor="new-memory-importance">Importance</label>
+                <input
+                  id="new-memory-importance"
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={newMemoryImportance}
+                  onChange={(e) => setNewMemoryImportance(Number(e.target.value))}
+                  className="w-24 accent-accent"
+                />
+                <span className="type-code text-ink-3">{newMemoryImportance}</span>
+
+                <button
+                  type="button"
+                  onClick={handleAddMemory}
+                  disabled={!newMemoryText.trim()}
+                  className="btn btn-primary ml-auto text-xs"
+                >
+                  <Plus aria-hidden className="h-3.5 w-3.5" />
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Memory bank */}
+            <div className="space-y-2">
+              {memories.length > 0 ? (
+                memories.map((memory) => (
+                  <div key={memory.id} className="surface space-y-1.5 rounded-lg p-3 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1">
+                        <span className="chip type-code">{MEMORY_KIND_LABELS[memory.kind] || memory.kind}</span>
+                        <span className="chip type-code" title="Importance">★ {memory.importance}</span>
+                        {memory.pinned && (
+                          <span className="chip chip-warn" title="Always in context, never auto-rewritten">
+                            <Pin aria-hidden className="h-3 w-3" /> Pinned
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingMemoryId(memory.id);
+                            setEditingMemoryText(memory.content);
+                          }}
+                          aria-label="Edit memory"
+                          className="icon-btn"
+                          style={{ width: 24, height: 24 }}
+                        >
+                          <Pencil aria-hidden className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateMemory(memory.id, { pinned: !memory.pinned })}
+                          aria-label={memory.pinned ? 'Unpin memory' : 'Pin memory'}
+                          className="icon-btn"
+                          style={{ width: 24, height: 24 }}
+                        >
+                          {memory.pinned ? <PinOff aria-hidden className="h-3 w-3" /> : <Pin aria-hidden className="h-3 w-3" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMemory(memory.id)}
+                          aria-label="Forget memory"
+                          className="icon-btn text-danger-text"
+                          style={{ width: 24, height: 24 }}
+                        >
+                          <Trash2 aria-hidden className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {editingMemoryId === memory.id ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={editingMemoryText}
+                          onChange={(e) => setEditingMemoryText(e.target.value)}
+                          aria-label="Edit memory text"
+                          rows={3}
+                          className="field resize-y text-xs leading-relaxed"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingMemoryId(null)}
+                            className="btn btn-ghost text-xs"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await handleUpdateMemory(memory.id, { content: editingMemoryText.trim() });
+                              setEditingMemoryId(null);
+                              toast.success('Memory updated');
+                            }}
+                            disabled={!editingMemoryText.trim()}
+                            className="btn btn-primary text-xs"
+                          >
+                            <Check aria-hidden className="h-3.5 w-3.5" />
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] leading-relaxed text-ink-2">{memory.content}</p>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
+                  <Brain aria-hidden className="mb-1 h-6 w-6 text-ink-3" />
+                  <p className="type-sec">No memories yet</p>
+                  <p className="type-meta">
+                    The story starts remembering on its own once events, promises and secrets appear.
+                  </p>
                 </div>
               )}
             </div>

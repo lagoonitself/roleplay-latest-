@@ -473,11 +473,13 @@ export function sanitizeModelOutput(text: string, charName?: string): string {
   sanitized = sanitized.replace(/^(?:\*\*)?(?:Assistant|Bot|Narrator)(?:\*\*)?\s*:\s*/gim, '');
 
   // 4. Strip canned AI assistant preambles
-  sanitized = sanitized.replace(/^(?:Certainly|Sure|Of course|Understood|Alright)[!,.]\s*(?:Here(?:['’]s| is) (?:the |your )?(?:continuation|next part|response|scene)[^:\n]*:?\s*|I(?:['’]d| would) be happy to[^:\n]*:?\s*)?/gim, '');
-  sanitized = sanitized.replace(/^\s*(?:As an AI(?: language model)?|In this roleplay scenario)[^.\n]*[.\n]\s*/gim, '');
+  // Only at the very start of the reply, and only when the opener is actually
+  // assistant boilerplate: "Of course, she knew…" is prose and must survive.
+  sanitized = sanitized.replace(/^\s*(?:Certainly|Sure|Of course|Understood|Alright)[!,.]\s*(?:Here(?:['’]s| is) (?:the |your )?(?:continuation|next part|response|reply|scene)[^:\n]*:\s*|I(?:['’]d| would) be happy to[^:\n]*:\s*)/i, '');
+  sanitized = sanitized.replace(/^\s*(?:As an AI(?: language model)?|In this roleplay scenario)[^.\n]*[.\n]\s*/i, '');
 
-  // 5. Strip canned sign-offs
-  sanitized = sanitized.replace(/(?:I hope (?:this|the) (?:response|continuation) (?:meets|pleases|helps)[^.\n]*[.\n]\s*|Is there anything else (?:I can|you['’]d like me to)[^?\n]*\?\s*)$/gim, '');
+  // 5. Strip canned sign-offs (end of the reply only)
+  sanitized = sanitized.replace(/\s*(?:I hope (?:this|the) (?:response|continuation) (?:meets|pleases|helps)[^.\n]*\.?|Is there anything else (?:I can|you['’]d like me to)[^?\n]*\?)\s*$/i, '');
 
   // 6. Clean excess newlines
   sanitized = sanitized.replace(/\n{3,}/g, '\n\n');

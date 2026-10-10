@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
-import { streamChatCompletions, getLlmModel } from '@/lib/llm/client';
-import { assemblePrompt } from '@/lib/prompt/assembler';
+import { streamChatCompletions, getLlmModel, LlmError } from '@/lib/llm/client';
+import { assemblePromptDetailed, type GenerationMode } from '@/lib/prompt/assembler';
 import { VERBOSITY_GUIDE } from '@/lib/prompt/system-prompt';
 import { retrieveContextForChat, type RetrievedContext } from '@/lib/memory/retriever';
-import { extractMemoriesAndState } from '@/lib/memory/extractor';
+import { regenerateMemoryIfNeeded } from '@/lib/memory/engine';
 import { makeCharacter } from '@/lib/cards/card-parser';
-import { formatRoleplayText } from '@/lib/prompt/macros';
+import { formatRoleplayText, joinContinuation } from '@/lib/prompt/macros';
 import { estimateTokens } from '@/lib/prompt/tokens';
 import { ThinkingStreamParser } from '@/lib/llm/stream-parser';
 import { sanitizeModelOutput } from '@/lib/formatter/regex-engine';
-import type { Character, Persona, Message } from '@/lib/supabase/types';
+import type { Character, Persona, Message, Memory, Summary, ChatState } from '@/lib/supabase/types';
 
 /** Sanitizes model reply: strips speaker tags, lingering thinking tags, tokens, and canned preambles. */
 function cleanReply(text: string, charName: string): string {
@@ -39,19 +39,30 @@ export async function POST(req: NextRequest) {
       authorsNote,
       authorsNoteDepth,
       presetContent,
+      stylePreset,
+      mode,
       character: clientCharacter,
       history: clientHistory,
       isSwipe,
       existingAssistantMessageId,
       swipeIndex,
+      // Local / guest context so recall works without a database row.
+      clientMemories,
+      clientSummary,
+      clientState,
     } = body;
 
-    if (!chatId || !characterId || !userMessage) {
+    // continue: extend the last reply in place. impersonate: draft the user's next
+    // message (returned to the composer, never stored as a character reply).
+    const genMode: GenerationMode = mode === 'continue' || mode === 'impersonate' ? mode : 'normal';
+
+    if (!chatId || !characterId || (genMode === 'normal' && !userMessage)) {
       return NextResponse.json(
         { error: 'Missing required parameters: chatId, characterId, userMessage' },
         { status: 400 }
       );
     }
+    const liveUserMessage: string = genMode === 'normal' ? String(userMessage) : '';
 
     const authHeader = req.headers.get('authorization');
     const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -74,6 +85,17 @@ export async function POST(req: NextRequest) {
       const { data: authData } = await supabase.auth.getUser();
       userId = authData?.user?.id;
     }
+
+    // Persona lookup doesn't depend on the character, so start it now.
+    const personaPromise: Promise<Persona | null> =
+      clientPersona && clientPersona.name
+        ? Promise.resolve(clientPersona as Persona)
+        : personaId && userId && UUID_REGEX.test(personaId)
+          ? Promise.resolve(supabase.from('personas').select('*').eq('id', personaId).maybeSingle()).then(
+              ({ data }) => (data as Persona) || null,
+              () => null
+            )
+          : Promise.resolve(null);
 
     // 1. Fetch Character (from database, client payload, or dynamic fallback)
     let character: Character;
@@ -147,18 +169,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Fetch Persona
-    let persona: Persona | null = null;
-    if (clientPersona && clientPersona.name) {
-      persona = clientPersona as Persona;
-    } else if (personaId && userId && UUID_REGEX.test(personaId)) {
-      const { data: dbPersona } = await supabase
-        .from('personas')
-        .select('*')
-        .eq('id', personaId)
-        .maybeSingle();
-      persona = (dbPersona as Persona) || null;
-    }
+    // 2. Persona
+    let persona: Persona | null = await personaPromise;
 
     if (!persona) {
       persona = {
@@ -226,8 +238,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Save User Message to Database (if authenticated and NOT a swipe variation)
+    // The insert and the history read are independent, so run them together. If the
+    // read races ahead of the insert, the assembler appends the live message anyway.
     let savedUserMsgId: string | null = null;
-    if (userId && !isSwipe) {
+    const saveUserMessage = async () => {
+      if (!userId || isSwipe || genMode !== 'normal') return;
       const safeParentId = (parentMessageId && UUID_REGEX.test(parentMessageId)) ? parentMessageId : null;
       try {
         let { data: userMsgRow, error: userMsgErr } = await supabase
@@ -269,60 +284,101 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.error('Exception inserting user message:', e);
       }
-    }
+    };
 
     // 4. Fetch Recent History (newest N turns, returned chronologically)
     let history: Message[] = [];
-    if (userId) {
+    const loadHistory = async () => {
+      if (!userId) return;
       try {
         const { data: historyData } = await supabase
           .from('messages')
           .select('*')
           .eq('chat_id', resolvedChatId)
           .order('created_at', { ascending: false })
-          .limit(80);
+          .limit(120);
 
         history = ((historyData as Message[]) || []).reverse();
       } catch (err) {
         console.warn('Failed to fetch history from Supabase:', err);
       }
-    }
+    };
+
+    await Promise.all([saveUserMessage(), loadHistory()]);
 
     if (history.length === 0 && Array.isArray(clientHistory) && clientHistory.length > 0) {
       history = clientHistory;
     }
 
-    // 5. Retrieve Context (memories, summary, state, lore via SillyTavern World Info and Vectors).
+    // Regenerate must not show the model the reply it is replacing, and Continue
+    // must end on the reply it extends. Cut the stored timeline accordingly.
+    if (existingAssistantMessageId && (isSwipe || genMode === 'continue')) {
+      const targetIdx = history.findIndex((m) => m.id === existingAssistantMessageId);
+      if (targetIdx !== -1) {
+        history = genMode === 'continue' ? history.slice(0, targetIdx + 1) : history.slice(0, targetIdx);
+      }
+    }
+    const continueBase =
+      genMode === 'continue'
+        ? [...history].reverse().find((m) => m.role === 'assistant' && m.content?.trim()) ?? null
+        : null;
+    if (genMode === 'continue' && !continueBase) {
+      return NextResponse.json({ error: 'There is no reply to continue yet.' }, { status: 400 });
+    }
+
+    // 5. Retrieve Context (memories, summary, state, lore via World Info and recall).
+    //    Works for guests too — they ship their local context in the request.
     let retrieved: RetrievedContext = {
       pinnedMemories: [],
       relevantMemories: [],
+      allMemories: [],
       summary: null,
       chatState: null,
       triggeredLore: [],
     };
 
-    if (userId) {
-      try {
-        retrieved = await retrieveContextForChat({
-          chatId: resolvedChatId,
-          character,
-          persona,
-          history,
-          latestUserMessage: userMessage,
-        });
-      } catch (e) {
-        console.warn('Memory retrieval skipped:', e);
-      }
+    try {
+      retrieved = await retrieveContextForChat({
+        chatId: resolvedChatId,
+        character,
+        persona,
+        history,
+        latestUserMessage: liveUserMessage || continueBase?.content || '',
+        supabase,
+        clientContext: {
+          memories: (clientMemories as Memory[] | undefined) || undefined,
+          summary: (clientSummary as Summary | null | undefined) || undefined,
+          // The client ships the bare scene-state object; wrap it into the row shape.
+          chatState: clientState ? ({ state: clientState } as ChatState) : undefined,
+        },
+      });
+    } catch (e) {
+      console.warn('Memory retrieval skipped:', e);
     }
 
-    // Apply SillyTavern system preset override if provided
-    const effectiveCharacter = presetContent?.trim()
-      ? { ...character, system_prompt: presetContent.trim() }
-      : character;
+    // House-style preset: layered under the card, never replacing its own prompt.
+    const effectiveStyle: string = (typeof stylePreset === 'string' ? stylePreset : presetContent) || '';
 
-    // 6. Assemble SillyTavern PromptManager Messages & In-Chat Injections
-    const assembledMessages = assemblePrompt({
-      character: effectiveCharacter,
+    // 6. Generation parameters (needed up front: they size the context budget)
+    const verbosity = character.behavior?.verbosity || 'medium';
+    const effectiveTemp = temperature ?? character.behavior?.temperature ?? 1.0;
+    // Continue and impersonate are short, mechanical turns: skip the thinking pass.
+    const effectiveThinking =
+      genMode === 'normal' ? (thinking ?? character.behavior?.thinking_enabled ?? false) : false;
+    const userDisplayName = persona.name || 'User';
+    const effectiveModel = getLlmModel();
+    const effectiveMaxTokens =
+      genMode === 'impersonate' ? 400 : (VERBOSITY_GUIDE[verbosity] ?? VERBOSITY_GUIDE.medium).maxTokens;
+    // Hard backstop against the model writing the other side's turn.
+    const otherSide = genMode === 'impersonate' ? character.name || 'Character' : userDisplayName;
+    const effectiveStop = [`\n${otherSide}:`, `\n${otherSide.toUpperCase()}:`];
+    const logKind = genMode !== 'normal' ? genMode : isSwipe ? 'swipe' : 'chat';
+
+    // 7. Assemble the prompt with a dynamic token budget for this model
+    const assembled = assemblePromptDetailed({
+      character,
+      mode: genMode,
+      stylePreset: effectiveStyle,
       persona,
       history,
       retrievedMemories: retrieved.relevantMemories,
@@ -334,18 +390,12 @@ export async function POST(req: NextRequest) {
       activatedLore: retrieved.activatedLore,
       authorsNote: authorsNote || '',
       authorsNoteDepth: typeof authorsNoteDepth === 'number' ? authorsNoteDepth : 4,
-      latestUserMessage: userMessage,
+      latestUserMessage: liveUserMessage,
+      model: effectiveModel,
+      maxResponseTokens: effectiveMaxTokens,
+      thinking: effectiveThinking,
     });
-
-    // 7. Generation parameters
-    const verbosity = character.behavior?.verbosity || 'medium';
-    const effectiveTemp = temperature ?? character.behavior?.temperature ?? 1.0;
-    const effectiveThinking = thinking ?? character.behavior?.thinking_enabled ?? false;
-    const userDisplayName = persona.name || 'User';
-    const effectiveModel = getLlmModel();
-    const effectiveMaxTokens = (VERBOSITY_GUIDE[verbosity] ?? VERBOSITY_GUIDE.medium).maxTokens;
-    const effectiveStop = [`\n${userDisplayName}:`, `\n${userDisplayName.toUpperCase()}:`];
-    const logKind = isSwipe ? 'swipe' : 'chat';
+    const assembledMessages = assembled.messages;
 
     const llmStreamResponse = await streamChatCompletions(assembledMessages, {
       apiKey: clientApiKey,
@@ -581,7 +631,36 @@ export async function POST(req: NextRequest) {
             : undefined;
           let assistantMsgRow: { id: string } | null = null;
 
-          if (userId && (fullAssistantContent || fullReasoningContent)) {
+          // Continue: the addition is appended to the reply it extends, in place.
+          if (
+            genMode === 'continue' &&
+            userId &&
+            fullAssistantContent.trim() &&
+            continueBase &&
+            UUID_REGEX.test(continueBase.id)
+          ) {
+            const leading = fullAssistantContent.match(/^\s*/)?.[0] || '';
+            const addition = leading + cleanReply(fullAssistantContent, character.name);
+            const extended = formatRoleplayText(
+              joinContinuation(continueBase.content || '', addition),
+              character.name,
+              persona.name
+            );
+            const baseMeta = (continueBase.meta || {}) as Record<string, unknown>;
+            const swipes = Array.isArray(baseMeta.swipes) ? [...(baseMeta.swipes as string[])] : [continueBase.content || ''];
+            const activeIdx = typeof baseMeta.active_swipe_index === 'number' ? baseMeta.active_swipe_index : 0;
+            swipes[activeIdx] = extended;
+            try {
+              await supabase
+                .from('messages')
+                .update({ content: extended, meta: { ...baseMeta, swipes, active_swipe_index: activeIdx } })
+                .eq('id', continueBase.id);
+            } catch (e) {
+              console.error('Failed to save continued reply:', e);
+            }
+          }
+
+          if (genMode === 'normal' && userId && (fullAssistantContent || fullReasoningContent)) {
             const cleanedAssistant = cleanReply(fullAssistantContent, character.name);
             const safeAssistantParentId = (savedUserMsgId && UUID_REGEX.test(savedUserMsgId)) ? savedUserMsgId : null;
 
@@ -688,40 +767,71 @@ export async function POST(req: NextRequest) {
                 .update({ leaf_id: assistantMsgRow.id, last_message_at: new Date().toISOString() })
                 .eq('id', resolvedChatId);
 
-              // Background non-blocking extraction of facts, state update, and periodic summarization
+              // Background: one automatic memory pass — story summary, fact bank and
+              // scene state regenerated together, on the engine's cadence rather than
+              // on every turn.
               const backgroundTask = async () => {
                 try {
-                  await extractMemoriesAndState({
-                    chatId: resolvedChatId,
-                    userId,
-                    charName: character.name,
-                    userName: persona?.name || 'User',
-                    userMessage,
-                    assistantMessage: cleanedAssistant,
-                    existingMemories: retrieved.relevantMemories,
-                    currentState: retrieved.chatState?.state || {},
-                    apiKey: clientApiKey,
-                  });
-                } catch (err) {
-                  console.error('Background memory extractor error:', err);
-                }
+                  let cursorId: string | null = null;
+                  let memoryInterval: number | undefined;
+                  let memoryWords: number | undefined;
+                  try {
+                    const { data: chatRow } = await supabase
+                      .from('chats')
+                      .select('memory_cursor_id, settings')
+                      .eq('id', resolvedChatId)
+                      .maybeSingle();
+                    cursorId = (chatRow?.memory_cursor_id as string) || null;
+                    const chatSettings = (chatRow?.settings as Record<string, unknown>) || {};
+                    if (typeof chatSettings.memory_interval_messages === 'number') {
+                      memoryInterval = chatSettings.memory_interval_messages;
+                    }
+                    if (typeof chatSettings.memory_summary_words === 'number') {
+                      memoryWords = chatSettings.memory_summary_words;
+                    }
+                  } catch {
+                    // fall back to the summary cursor
+                  }
+                  if (!cursorId && retrieved.summary?.last_message_id) {
+                    cursorId = retrieved.summary.last_message_id;
+                  }
 
-                try {
-                  const { summarizeChatIfNeeded } = await import('@/lib/memory/summarizer');
-                  await summarizeChatIfNeeded({
-                    chatId: resolvedChatId,
-                    userId,
-                    charName: character.name,
-                    userName: persona?.name || 'User',
-                    history: [
-                      ...history,
-                      { id: savedUserMsgId || 'user-now', role: 'user', content: userMessage } as Message,
-                      { id: assistantMsgRow?.id || 'assistant-now', role: 'assistant', content: cleanedAssistant } as Message,
-                    ],
-                    apiKey: clientApiKey,
-                  });
+                  const historyForMemory: Message[] = [...history];
+                  if (!historyForMemory.some((m) => m.id === savedUserMsgId)) {
+                    historyForMemory.push({
+                      id: savedUserMsgId || 'user-now',
+                      role: 'user',
+                      content: liveUserMessage,
+                    } as Message);
+                  }
+                  historyForMemory.push({
+                    id: assistantMsgRow?.id || 'assistant-now',
+                    role: 'assistant',
+                    content: cleanedAssistant,
+                  } as Message);
+
+                  await regenerateMemoryIfNeeded(
+                    {
+                      chatId: resolvedChatId,
+                      userId,
+                      charName: character.name,
+                      userName: persona?.name || 'User',
+                      history: historyForMemory,
+                      cursorMessageId: cursorId,
+                      summary: retrieved.summary,
+                      memories: retrieved.allMemories,
+                      currentState: retrieved.chatState?.state || {},
+                      historyTokenBudget: assembled.budget.historyBudget,
+                      // A summary the writer edited by hand is locked against auto-overwrite.
+                      frozen: !!retrieved.summary?.user_edited,
+                      intervalMessages: memoryInterval,
+                      summaryWords: memoryWords,
+                      apiKey: clientApiKey,
+                    },
+                    { supabase, isDbBacked: true }
+                  );
                 } catch (err) {
-                  console.error('Background summarizer error:', err);
+                  console.error('Background memory pass error:', err);
                 }
               };
 
@@ -739,7 +849,7 @@ export async function POST(req: NextRequest) {
               await supabase.from('usage_events').insert({
                 user_id: userId,
                 chat_id: UUID_REGEX.test(resolvedChatId) ? resolvedChatId : null,
-                kind: 'chat',
+                kind: logKind === 'impersonate' ? 'impersonate' : 'chat',
                 model: 'chat-completion',
                 prompt_tokens: finalInput,
                 completion_tokens: finalOutput,
@@ -766,6 +876,7 @@ export async function POST(req: NextRequest) {
               presence_penalty: character.behavior?.presence_penalty,
               frequency_penalty: character.behavior?.frequency_penalty,
               stop: effectiveStop,
+              budget: assembled.budget,
             },
             requestMessages: assembledMessages,
             userMessage,
@@ -853,7 +964,7 @@ export async function POST(req: NextRequest) {
     console.error('API /api/chat error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
+      { status: error instanceof LlmError ? (error.status === 429 ? 429 : 502) : 500 }
     );
   }
 }
