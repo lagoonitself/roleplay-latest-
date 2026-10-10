@@ -12,6 +12,23 @@ const STORAGE_KEY = 'cadenza_regex_scripts';
 const EVENT_NAME = 'cadenza-regex-changed';
 
 /**
+ * Presets are cached in localStorage, so a fixed preset regex never reaches
+ * existing users. Swap in the current definition only when the cached copy is
+ * still the exact legacy regex, so user edits are left alone.
+ */
+const LEGACY_PRESET_REGEXES: Record<string, string> = {
+  // Matched the inner `*…*` of `**bold**`, rendering bold text as italic action.
+  'prose-action-styler': '/(?:\\*([^*\\n]+)\\*)/g',
+};
+
+function upgradeLegacyPreset(script: RegexScript): RegexScript {
+  const legacy = LEGACY_PRESET_REGEXES[script.id];
+  if (legacy === undefined || script.findRegex !== legacy) return script;
+  const current = DEFAULT_REGEX_SCRIPTS.find((d) => d.id === script.id);
+  return current ? { ...script, findRegex: current.findRegex, description: current.description } : script;
+}
+
+/**
  * Loads saved scripts from localStorage and merges with DEFAULT_REGEX_SCRIPTS.
  * Ensures newly introduced presets are preserved while keeping user preferences.
  */
@@ -28,7 +45,7 @@ export function getSavedRegexScripts(): RegexScript[] {
 
     // Merge: keep all saved scripts (including custom ones), and ensure any missing presets are appended
     const existingIds = new Set(saved.map((s) => s.id));
-    const merged = [...saved];
+    const merged = saved.map(upgradeLegacyPreset);
 
     for (const preset of DEFAULT_REGEX_SCRIPTS) {
       if (!existingIds.has(preset.id)) {

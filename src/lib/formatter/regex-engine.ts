@@ -121,8 +121,8 @@ export const DEFAULT_REGEX_SCRIPTS: RegexScript[] = [
   {
     id: 'prose-action-styler',
     name: 'Prose & Action Italicizer',
-    description: 'Refines narrative action blocks in asterisks (*...*) with soft, expressive italics.',
-    findRegex: '/(?:\\*([^*\\n]+)\\*)/g',
+    description: 'Refines narrative action blocks in single asterisks (*...*) with soft, expressive italics. Leaves **bold** to Markdown.',
+    findRegex: '/(?<!\\*)\\*(?!\\*)([^*\\n]+)(?<!\\*)\\*(?!\\*)/g',
     replaceString: '[[rp-action]]$1[[/rp-action]]',
     scope: 'display',
     target: 'all',
