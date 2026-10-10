@@ -440,58 +440,80 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
    * - [[rp-dialogue]]...[[/rp-dialogue]] with styled quotation marks & dialogue color
    * - [[rp-action]]...[[/rp-action]] with soft italics
    * - [[rp-roll formula="2d6"]] with interactive DiceRollChip
+   *
+   * Tags can nest (e.g. a quote inside an *action* span becomes
+   * [[rp-action]]…[[rp-dialogue]]…[[/rp-dialogue]]…[[/rp-action]]), so tag
+   * contents are parsed recursively. Markers left unpaired (e.g. when markdown
+   * splits a tag pair across nodes) are stripped instead of shown raw.
    */
-  const renderFormattedInlineText = (text: string) => {
+  const renderFormattedInlineText = (text: string, keyPrefix = ''): React.ReactNode => {
     // If text has no special markers, render directly
-    if (!text.includes('[[rp-')) {
+    if (!text.includes('[[')) {
       return text;
     }
 
     const inlineRegex = /\[\[rp-dialogue\]\]([\s\S]*?)\[\[\/rp-dialogue\]\]|\[\[rp-action\]\]([\s\S]*?)\[\[\/rp-action\]\]|\[\[rp-roll\s+formula="([^"]+)"\]\]|\[\[rp-spoiler\]\]([\s\S]*?)\[\[\/rp-spoiler\]\]/gi;
+    const strayMarkerRegex = /\[\[\/?rp-(?:dialogue|action|spoiler)\]\]/gi;
 
     const elements: React.ReactNode[] = [];
     let last = 0;
     let inlineMatch: RegExpExecArray | null;
     let keyIdx = 0;
+    const nextKey = () => `${keyPrefix}${keyIdx++}`;
+    const pushPlain = (plain: string) => {
+      const cleaned = plain.replace(strayMarkerRegex, '');
+      if (cleaned) elements.push(cleaned);
+    };
 
     while ((inlineMatch = inlineRegex.exec(text)) !== null) {
       if (inlineMatch.index > last) {
-        elements.push(text.slice(last, inlineMatch.index));
+        pushPlain(text.slice(last, inlineMatch.index));
       }
 
       if (inlineMatch[1] !== undefined) {
         // Dialogue match
+        const key = nextKey();
         elements.push(
-          <span key={keyIdx++} className="rp-dialogue">
+          <span key={key} className="rp-dialogue">
             <span className="select-none opacity-70">“</span>
-            {inlineMatch[1]}
+            {renderFormattedInlineText(inlineMatch[1], `${key}-`)}
             <span className="select-none opacity-70">”</span>
           </span>
         );
       } else if (inlineMatch[2] !== undefined) {
         // Action prose match
+        const key = nextKey();
         elements.push(
-          <span key={keyIdx++} className="rp-action">
-            {inlineMatch[2]}
+          <span key={key} className="rp-action">
+            {renderFormattedInlineText(inlineMatch[2], `${key}-`)}
           </span>
         );
       } else if (inlineMatch[3] !== undefined) {
         // Interactive Dice Roll
-        elements.push(<DiceRollChip key={keyIdx++} formula={inlineMatch[3]} />);
+        elements.push(<DiceRollChip key={nextKey()} formula={inlineMatch[3]} />);
       } else if (inlineMatch[4] !== undefined) {
         // Spoiler Blur Tag
-        elements.push(<SpoilerSpan key={keyIdx++}>{inlineMatch[4]}</SpoilerSpan>);
+        const key = nextKey();
+        elements.push(
+          <SpoilerSpan key={key}>{renderFormattedInlineText(inlineMatch[4], `${key}-`)}</SpoilerSpan>
+        );
       }
 
       last = inlineRegex.lastIndex;
     }
 
     if (last < text.length) {
-      elements.push(text.slice(last));
+      pushPlain(text.slice(last));
     }
 
     return elements;
   };
+
+  /** Applies the inline parser to every string child of a markdown node. */
+  const formatChildren = (children: React.ReactNode) =>
+    React.Children.map(children, (child) =>
+      typeof child === 'string' ? renderFormattedInlineText(child) : child
+    );
 
   return (
     <div style={styleVars} className="prose-rp select-text space-y-2">
@@ -538,21 +560,17 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
                   p: ({ children }) => {
                     return (
                       <p className="leading-relaxed">
-                        {React.Children.map(children, (child) => {
-                          if (typeof child === 'string') {
-                            return renderFormattedInlineText(child);
-                          }
-                          return child;
-                        })}
+                        {formatChildren(children)}
                       </p>
                     );
                   },
                   em: ({ children }) => (
-                    <em className="rp-action">{children}</em>
+                    <em className="rp-action">{formatChildren(children)}</em>
                   ),
                   strong: ({ children }) => (
-                    <strong className="font-semibold text-ink">{children}</strong>
+                    <strong className="font-semibold text-ink">{formatChildren(children)}</strong>
                   ),
+                  li: ({ children }) => <li>{formatChildren(children)}</li>,
                   blockquote: ({ children }) => (
                     <blockquote
                       style={{ borderColor: 'var(--rp-quote-rule)' }}
