@@ -16,6 +16,7 @@ import { useSettings } from '@/lib/store/settings';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { toast } from 'sonner';
 import type { Character, Persona } from '@/lib/supabase/types';
+import { resolveLlmKey } from '@/lib/llm/credentials';
 
 interface PersonaModalProps {
   open: boolean;
@@ -141,7 +142,7 @@ export function PersonaModal({
                 content_rating: character.content_rating,
               }
             : null,
-          apiKey: settings.opencodeApiKey,
+          apiKey: await resolveLlmKey(settings),
         }),
       });
 

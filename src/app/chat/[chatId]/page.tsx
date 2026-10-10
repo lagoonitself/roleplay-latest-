@@ -61,6 +61,7 @@ import { useSoundEffects, playSendSound, playReceiveSound } from '@/lib/audio/so
 import { DEFAULT_PRESET_ID, SILLY_TAVERN_SYSTEM_PROMPT_PRESETS } from '@/lib/prompt/presets';
 import { toast } from 'sonner';
 import type { Chat, Character, Persona, Message, Memory, Summary, ChatState } from '@/lib/supabase/types';
+import { resolveLlmKey, hasLlmCredentials, missingCredentialsMessage } from '@/lib/llm/credentials';
 
 // Local temp ids (usr-/ast-/msg-) are never valid Supabase UUIDs.
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -989,8 +990,8 @@ export default function ChatPage() {
     const rawToSend = (customPrompt ?? inputText).trim();
     if (!rawToSend || isGenerating || !character) return;
 
-    if (!settings.opencodeApiKey && !process.env.NEXT_PUBLIC_HAS_SERVER_KEY) {
-      toast.error('Please configure your OpenCode Go API key in Settings first.');
+    if (!hasLlmCredentials(settings)) {
+      toast.error(missingCredentialsMessage(settings));
       return;
     }
 
@@ -1065,7 +1066,7 @@ export default function ChatPage() {
           character,
           userMessage: textToSend,
           parentMessageId: (newUserMsg.parent_id && isUuid(newUserMsg.parent_id)) ? newUserMsg.parent_id : null,
-          apiKey: settings.opencodeApiKey,
+          apiKey: await resolveLlmKey(settings),
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
           authorsNote: authorsNote.prompt?.trim() || undefined,
@@ -1312,7 +1313,7 @@ export default function ChatPage() {
                 summary: currentSummary,
                 state: chatState,
                 force: false,
-                apiKey: settings.opencodeApiKey,
+                apiKey: await resolveLlmKey(settings),
               }),
             });
             const data = await res.json();
@@ -1453,8 +1454,8 @@ export default function ChatPage() {
     const targetMsg = messages[assistantMsgIndex];
     if (!targetMsg || targetMsg.role !== 'assistant') return;
 
-    if (!settings.opencodeApiKey && !process.env.NEXT_PUBLIC_HAS_SERVER_KEY) {
-      toast.error('Please configure your OpenCode Go API key in Settings first.');
+    if (!hasLlmCredentials(settings)) {
+      toast.error(missingCredentialsMessage(settings));
       return;
     }
 
@@ -1527,7 +1528,7 @@ export default function ChatPage() {
           isSwipe: true,
           existingAssistantMessageId: isUuid(targetMsg.id) ? targetMsg.id : undefined,
           swipeIndex: newSwipeIndex,
-          apiKey: settings.opencodeApiKey,
+          apiKey: await resolveLlmKey(settings),
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
           authorsNote: authorsNote.prompt?.trim() || undefined,
@@ -1941,8 +1942,8 @@ export default function ChatPage() {
       return;
     }
     if (!character) return;
-    if (!settings.opencodeApiKey && !process.env.NEXT_PUBLIC_HAS_SERVER_KEY) {
-      toast.error('Please configure your OpenCode Go API key in Settings first.');
+    if (!hasLlmCredentials(settings)) {
+      toast.error(missingCredentialsMessage(settings));
       return;
     }
 
@@ -2001,7 +2002,7 @@ export default function ChatPage() {
           character,
           userMessage: trimmed,
           parentMessageId: parentForServer,
-          apiKey: settings.opencodeApiKey,
+          apiKey: await resolveLlmKey(settings),
           temperature: settings.defaultTemperature,
           thinking: settings.thinkingEnabled,
           authorsNote: authorsNote.prompt?.trim() || undefined,
@@ -2252,8 +2253,8 @@ export default function ChatPage() {
   // Impersonate drafts your next turn into the composer for you to edit.
   const runAssistMode = async (genMode: 'continue' | 'impersonate') => {
     if (isGenerating || !character) return;
-    if (!settings.opencodeApiKey && !process.env.NEXT_PUBLIC_HAS_SERVER_KEY) {
-      toast.error('Please configure your OpenCode Go API key in Settings first.');
+    if (!hasLlmCredentials(settings)) {
+      toast.error(missingCredentialsMessage(settings));
       return;
     }
 
@@ -2327,7 +2328,7 @@ export default function ChatPage() {
           persona: activePersona,
           character,
           existingAssistantMessageId: target && isUuid(target.id) ? target.id : undefined,
-          apiKey: settings.opencodeApiKey,
+          apiKey: await resolveLlmKey(settings),
           temperature: settings.defaultTemperature,
           authorsNote: authorsNote.prompt?.trim() || undefined,
           authorsNoteDepth: authorsNote.depth,

@@ -72,6 +72,17 @@ memories are never auto-rewritten or superseded.
 `{{pick::…}}` and `{{roll 1d20}}`. Volatile macros are only expanded in live content —
 stored history is never re-rolled, so the past stays the past.
 
+## Model providers
+
+Pick one in **Settings → Model provider**:
+
+- **OpenCode Go** — paste your OpenCode Go key (or set `OPENCODE_GO_API_KEY` on the server).
+- **ChatGPT** — *Sign in with ChatGPT* uses your Plus/Pro/Team subscription through the
+  same device-code login as the Codex CLI (`src/app/api/auth/chatgpt/route.ts`). Tokens stay
+  in the browser and are refreshed automatically; requests go to the Codex backend's
+  Responses API and are translated back to Chat Completions SSE (`src/lib/llm/chatgpt.ts`).
+  If the code is rejected, enable device code sign-in for Codex in ChatGPT's security settings.
+
 ## Develop
 
 ```bash

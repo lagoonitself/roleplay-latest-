@@ -1,3 +1,5 @@
+import { completeChatgpt, DEFAULT_CHATGPT_MODEL, parseChatgptKey, streamChatgpt } from './chatgpt';
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -34,7 +36,10 @@ export function getLlmApiKey(explicitKey?: string): string {
   return key.trim();
 }
 
-export function getLlmModel(explicitModel?: string): string {
+/** The model a request will use; a ChatGPT credential carries its own model choice. */
+export function getLlmModel(explicitModel?: string, apiKey?: string): string {
+  const chatgpt = apiKey ? parseChatgptKey(apiKey) : null;
+  if (chatgpt) return chatgpt.m || DEFAULT_CHATGPT_MODEL;
   return explicitModel || process.env.OPENCODE_GO_MODEL || DEFAULT_DEEPSEEK_MODEL;
 }
 
@@ -113,8 +118,8 @@ export class LlmError extends Error {
   readonly status: number;
   readonly body: string;
 
-  constructor(status: number, body: string) {
-    super(describeLlmError(status, body));
+  constructor(status: number, body: string, provider: 'opencode' | 'chatgpt' = 'opencode') {
+    super(provider === 'chatgpt' ? describeChatgptError(status, body) : describeLlmError(status, body));
     this.name = 'LlmError';
     this.status = status;
     this.body = body.slice(0, 500);
@@ -138,6 +143,13 @@ function describeLlmError(status: number, body: string): string {
   return `The model provider returned an error (${status})${detail ? `: ${detail}` : ''}.`;
 }
 
+function describeChatgptError(status: number, body: string): string {
+  if (status === 401 || status === 403) return 'Your ChatGPT sign-in has expired. Sign in again in Settings.';
+  if (status === 429) return 'You’ve hit your ChatGPT plan’s usage limit. Try again once it resets, or switch provider in Settings.';
+  if (status === 400 && /model/i.test(body)) return 'Your ChatGPT plan can’t use this model. Pick another one in Settings.';
+  return describeLlmError(status, body);
+}
+
 function applyThinking(payload: Record<string, unknown>, thinking: boolean | undefined) {
   // DeepSeek V4 parameter for thinking control
   payload.thinking = { type: thinking ? 'enabled' : 'disabled' };
@@ -150,6 +162,16 @@ export async function streamChatCompletions(
   messages: ChatMessage[],
   options: StreamChatOptions = {}
 ): Promise<Response> {
+  const chatgpt = parseChatgptKey(options.apiKey || '');
+  if (chatgpt) {
+    return streamChatgpt(messages, chatgpt, {
+      sessionId: options.sessionId,
+      thinking: options.thinking,
+      stop: options.stop,
+      signal: options.signal,
+    });
+  }
+
   const { endpoint, model, headers } = resolveRequest(options, 'session');
 
   const baseMaxTokens = options.max_tokens ?? 1200;
@@ -183,6 +205,9 @@ export async function textCompletion(
   messages: ChatMessage[],
   options: StreamChatOptions = {}
 ): Promise<string> {
+  const chatgpt = parseChatgptKey(options.apiKey || '');
+  if (chatgpt) return completeChatgpt(messages, chatgpt, { sessionId: options.sessionId, signal: options.signal });
+
   const { endpoint, model, headers } = resolveRequest(options, 'bg-session');
 
   const payload: Record<string, unknown> = {
@@ -289,6 +314,20 @@ export async function jsonCompletion<T = unknown>(
   messages: ChatMessage[],
   options: StreamChatOptions = {}
 ): Promise<T> {
+  const chatgpt = parseChatgptKey(options.apiKey || '');
+  if (chatgpt) {
+    const attemptChatgpt = async () =>
+      repairAndParseJson<T>(
+        (await completeChatgpt(messages, chatgpt, { sessionId: options.sessionId, json: true, signal: options.signal })) || '{}'
+      );
+    try {
+      return await attemptChatgpt();
+    } catch (err) {
+      if (err instanceof SyntaxError) return attemptChatgpt();
+      throw err;
+    }
+  }
+
   const { endpoint, model, headers } = resolveRequest(options, 'bg-session');
 
   const attempt = async (temperature: number): Promise<T> => {

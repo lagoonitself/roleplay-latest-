@@ -10,6 +10,7 @@ import { CharacterAvatar } from '@/components/character-avatar';
 import { DUO_DEFAULT_DELAY_MS, DUO_DEFAULT_MAX_TURNS, DUO_MAX_TURNS_CAP, type AgentKind, type DuoSide } from '@/lib/duo/types';
 import { toast } from 'sonner';
 import type { Character, Persona } from '@/lib/supabase/types';
+import { resolveLlmKey } from '@/lib/llm/credentials';
 
 interface Pick {
   kind: AgentKind;
@@ -133,7 +134,8 @@ export default function DuoNewPage() {
     setStarting(true);
     try {
       const headers = await getAuthHeaders(supabase);
-      if (settings.opencodeApiKey) headers['x-llm-key'] = settings.opencodeApiKey;
+      const llmKey = await resolveLlmKey(settings);
+      if (llmKey) headers['x-llm-key'] = llmKey;
       const res = await fetch('/api/duo', {
         method: 'POST',
         headers,

@@ -12,6 +12,7 @@ import { DUO_CONTINUE_TURNS, DUO_MAX_TURNS_CAP, parseDuo, type DuoSession } from
 import { formatTokenCount } from '@/lib/usage/tokens';
 import { toast } from 'sonner';
 import type { Chat, Message } from '@/lib/supabase/types';
+import { resolveLlmKey } from '@/lib/llm/credentials';
 
 async function getAuthHeaders(supabase: ReturnType<typeof createClient>): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -134,7 +135,8 @@ export default function DuoWatchPage() {
       if (current.status === 'running' && Date.now() - lastActivityRef.current > 45000) {
         try {
           const headers = await getAuthHeaders(supabase);
-          if (settings.opencodeApiKey) headers['x-llm-key'] = settings.opencodeApiKey;
+          const llmKey = await resolveLlmKey(settings);
+          if (llmKey) headers['x-llm-key'] = llmKey;
           await fetch('/api/duo', {
             method: 'POST',
             headers,
@@ -156,7 +158,8 @@ export default function DuoWatchPage() {
     setBusy(true);
     try {
       const headers = await getAuthHeaders(supabase);
-      if (settings.opencodeApiKey) headers['x-llm-key'] = settings.opencodeApiKey;
+      const llmKey = await resolveLlmKey(settings);
+      if (llmKey) headers['x-llm-key'] = llmKey;
       const res = await fetch('/api/duo', {
         method: 'POST',
         headers,
@@ -186,7 +189,8 @@ export default function DuoWatchPage() {
     setDirectSaving(true);
     try {
       const headers = await getAuthHeaders(supabase);
-      if (settings.opencodeApiKey) headers['x-llm-key'] = settings.opencodeApiKey;
+      const llmKey = await resolveLlmKey(settings);
+      if (llmKey) headers['x-llm-key'] = llmKey;
       const res = await fetch('/api/duo', {
         method: 'POST',
         headers,

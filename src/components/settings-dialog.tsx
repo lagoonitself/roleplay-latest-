@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useSettings } from '@/lib/store/settings';
+import { useSettings, type LlmProvider } from '@/lib/store/settings';
+import { CHATGPT_MODELS } from '@/lib/llm/chatgpt';
+import { ChatgptSignIn } from '@/components/chatgpt-sign-in';
 import { useTheme } from 'next-themes';
 import { createClient } from '@/lib/supabase/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
@@ -65,6 +67,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [soundEnabled, toggleSound] = useSoundEffects();
 
+  const [provider, setProvider] = useState<LlmProvider>(settings.llmProvider);
+  const [chatgptModel, setChatgptModel] = useState(settings.chatgptModel);
   const [apiKey, setApiKey] = useState(settings.opencodeApiKey);
   const [model, setModel] = useState(settings.opencodeModel);
   const [endpoint, setEndpoint] = useState(settings.opencodeEndpoint);
@@ -80,6 +84,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
   useEffect(() => {
     const t = setTimeout(() => {
+      setProvider(settings.llmProvider);
+      setChatgptModel(settings.chatgptModel);
       setApiKey(settings.opencodeApiKey);
       setModel(settings.opencodeModel);
       setEndpoint(settings.opencodeEndpoint);
@@ -94,6 +100,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
   const handleSave = () => {
     updateSettings({
+      llmProvider: provider,
+      chatgptModel,
       opencodeApiKey: apiKey.trim(),
       opencodeModel: model,
       opencodeEndpoint: endpoint.trim(),
@@ -191,49 +199,116 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             </div>
           </div>
 
-          {/* OpenCode Go API Key */}
+          {/* Model provider */}
           <div className="surface rounded-lg p-4 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <label htmlFor="settings-api-key" className="type-sec flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-ink-3" aria-hidden />
-                OpenCode Go API key
-              </label>
-              <span className="type-meta">From OpenCode console</span>
+            <span className="type-sec">Model provider</span>
+            <div role="group" aria-label="Model provider" className="flex rounded-full border border-line p-1 gap-1">
+              {(
+                [
+                  { name: 'OpenCode Go', val: 'opencode' },
+                  { name: 'ChatGPT', val: 'chatgpt' },
+                ] as const
+              ).map((p) => {
+                const isSelected = provider === p.val;
+                return (
+                  <button
+                    key={p.val}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => setProvider(p.val)}
+                    className={`flex flex-1 items-center justify-center gap-2 py-2 px-3 rounded-full text-xs font-medium ${
+                      isSelected
+                        ? 'bg-accent-wash text-accent-text border border-accent-line'
+                        : 'chip border-transparent'
+                    }`}
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
             </div>
-            <input
-              id="settings-api-key"
-              type="password"
-              autoComplete="off"
-              name="apiKey"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Paste your key, e.g. oc_…"
-              className="field"
-            />
-            <p className="type-meta">Stored in your browser and used to stream your turns.</p>
+            <p className="type-meta">
+              {provider === 'chatgpt'
+                ? 'Runs on your ChatGPT subscription instead of an API key.'
+                : 'Runs on your OpenCode Go subscription key.'}
+            </p>
           </div>
 
-          {/* Model Selection */}
-          <div className="surface rounded-lg p-4 space-y-2">
-            <label htmlFor="settings-model" className="type-sec flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-ink-3" aria-hidden />
-              Model
-            </label>
-            <select
-              id="settings-model"
-              name="model"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="field bg-sunken text-ink"
-            >
-              <option value="deepseek-v4.1-flash">DeepSeek V4.1 Flash (Recommended - 1M Context)</option>
-              <option value="deepseek-v4-pro">DeepSeek V4 Pro (High Intelligence)</option>
-              <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-              <option value="kimi-k3">Kimi K3</option>
-              <option value="glm-5.3-flash">GLM-5.3 Flash</option>
-            </select>
-            <p className="type-meta">Endpoint is configured automatically.</p>
-          </div>
+          {provider === 'chatgpt' ? (
+            <>
+              <div className="surface rounded-lg p-4">
+                <ChatgptSignIn />
+              </div>
+
+              <div className="surface rounded-lg p-4 space-y-2">
+                <label htmlFor="settings-chatgpt-model" className="type-sec flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-ink-3" aria-hidden />
+                  Model
+                </label>
+                <select
+                  id="settings-chatgpt-model"
+                  name="chatgptModel"
+                  value={chatgptModel}
+                  onChange={(e) => setChatgptModel(e.target.value)}
+                  className="field bg-sunken text-ink"
+                >
+                  {CHATGPT_MODELS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+                <p className="type-meta">Availability depends on your ChatGPT plan.</p>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* OpenCode Go API Key */}
+              <div className="surface rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="settings-api-key" className="type-sec flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-ink-3" aria-hidden />
+                    OpenCode Go API key
+                  </label>
+                  <span className="type-meta">From OpenCode console</span>
+                </div>
+                <input
+                  id="settings-api-key"
+                  type="password"
+                  autoComplete="off"
+                  name="apiKey"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Paste your key, e.g. oc_…"
+                  className="field"
+                />
+                <p className="type-meta">Stored in your browser and used to stream your turns.</p>
+              </div>
+
+              {/* Model Selection */}
+              <div className="surface rounded-lg p-4 space-y-2">
+                <label htmlFor="settings-model" className="type-sec flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-ink-3" aria-hidden />
+                  Model
+                </label>
+                <select
+                  id="settings-model"
+                  name="model"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="field bg-sunken text-ink"
+                >
+                  <option value="deepseek-v4.1-flash">DeepSeek V4.1 Flash (Recommended - 1M Context)</option>
+                  <option value="deepseek-v4-pro">DeepSeek V4 Pro (High Intelligence)</option>
+                  <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+                  <option value="kimi-k3">Kimi K3</option>
+                  <option value="glm-5.3-flash">GLM-5.3 Flash</option>
+                </select>
+                <p className="type-meta">Endpoint is configured automatically.</p>
+              </div>
+
+            </>
+          )}
 
           {/* Uncensored / NSFW Roleplay Toggle */}
           <div className="surface rounded-lg p-4 flex items-center justify-between gap-4">

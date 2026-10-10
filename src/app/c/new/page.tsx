@@ -27,6 +27,7 @@ import { CharacterAvatar } from '@/components/character-avatar';
 import { toast } from 'sonner';
 import { saveLocalChat } from '@/lib/chats/chat-manager';
 import type { Character } from '@/lib/supabase/types';
+import { resolveLlmKey } from '@/lib/llm/credentials';
 
 const POPULAR_TAGS = ['Fantasy', 'Romance', 'Sci-Fi', 'Cyberpunk', 'Mystery', 'Supernatural', 'Adventure', 'Companion'];
 
@@ -154,7 +155,7 @@ export default function CreateCharacterPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           idea: aiPrompt.trim(),
-          apiKey: settings.opencodeApiKey,
+          apiKey: await resolveLlmKey(settings),
         }),
       });
 

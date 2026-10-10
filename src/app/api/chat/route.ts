@@ -366,7 +366,7 @@ export async function POST(req: NextRequest) {
     const effectiveThinking =
       genMode === 'normal' ? (thinking ?? character.behavior?.thinking_enabled ?? false) : false;
     const userDisplayName = persona.name || 'User';
-    const effectiveModel = getLlmModel();
+    const effectiveModel = getLlmModel(undefined, clientApiKey);
     const effectiveMaxTokens =
       genMode === 'impersonate' ? 400 : (VERBOSITY_GUIDE[verbosity] ?? VERBOSITY_GUIDE.medium).maxTokens;
     // Hard backstop against the model writing the other side's turn.

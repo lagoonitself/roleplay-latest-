@@ -382,7 +382,7 @@ export async function executeClaimedTurn(opts: {
   });
 
   const parentId = done.length ? done[done.length - 1].id : null;
-  const model = getLlmModel();
+  const model = getLlmModel(undefined, opts.apiKey);
   const messageId = await insertMessage(supabase, {
     chatId,
     userId,

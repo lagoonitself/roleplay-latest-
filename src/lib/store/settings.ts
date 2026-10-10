@@ -2,7 +2,23 @@
 
 import { useState, useEffect } from 'react';
 
+export type LlmProvider = 'opencode' | 'chatgpt';
+
+/** OAuth session from "Sign in with ChatGPT" (kept in this browser only). */
+export interface ChatgptAuth {
+  accessToken: string;
+  refreshToken: string;
+  /** Epoch ms when the access token expires. */
+  expiresAt: number;
+  accountId: string;
+  email: string;
+  plan: string;
+}
+
 export interface UserAppSettings {
+  llmProvider: LlmProvider;
+  chatgptAuth: ChatgptAuth | null;
+  chatgptModel: string;
   opencodeApiKey: string;
   opencodeEndpoint: string;
   opencodeModel: string;
@@ -13,6 +29,9 @@ export interface UserAppSettings {
 }
 
 export const DEFAULT_SETTINGS: UserAppSettings = {
+  llmProvider: 'opencode',
+  chatgptAuth: null,
+  chatgptModel: 'gpt-5.5',
   opencodeApiKey: '',
   opencodeEndpoint: 'https://opencode.ai/zen/go/v1/chat/completions',
   opencodeModel: 'deepseek-v4.1-flash',
