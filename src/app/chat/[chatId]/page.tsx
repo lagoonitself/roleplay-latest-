@@ -241,6 +241,30 @@ function healLegacyErrors(list: Message[]): Message[] {
   );
 }
 
+const isTempId = (id: string) => id.startsWith('usr-') || id.startsWith('ast-') || id === 'msg-greeting';
+
+// A cached `streaming` bubble belongs to a request this page no longer owns (the user
+// left mid-reply). Empty ones are dropped; partial ones are shown as stopped.
+function settleInterrupted(list: Message[]): Message[] {
+  return list
+    .filter((m) => !(m.status === 'streaming' && !m.content?.trim() && !m.reasoning))
+    .map((m) => (m.status === 'streaming' ? { ...m, status: 'stopped' as const } : m));
+}
+
+// Cached messages the cloud does not have yet. Temporary assistant bubbles are always
+// superseded by the server's saved row (or were never generated), so only unsent user
+// turns and a trailing error card survive.
+function pendingLocalMessages(local: Message[], cloud: Message[]): Message[] {
+  const cloudIds = new Set(cloud.map((m) => m.id));
+  const cloudUserTexts = new Set(cloud.filter((m) => m.role === 'user').map((m) => m.content));
+  return local.filter((m, i) => {
+    if (cloudIds.has(m.id)) return false;
+    if (!isTempId(m.id) || m.id === 'msg-greeting') return false;
+    if (m.role === 'user') return !cloudUserTexts.has(m.content);
+    return m.role === 'assistant' && m.status === 'error' && i === local.length - 1;
+  });
+}
+
 // The request only needs what the prompt uses. Shipping every swipe, reasoning
 // trace and meta blob of a long chat on each turn was pure payload weight.
 const HISTORY_PAYLOAD_LIMIT = 100;
@@ -397,6 +421,28 @@ export default function ChatPage() {
     if (pending) setMessages(pending);
   };
 
+  // Latest timeline, readable synchronously. React runs setState updaters lazily, so
+  // reading a value assigned inside one right after the call often saw `[]` — and
+  // that empty list was then written over the local cache. It also keeps working
+  // after the page unmounts (user navigated away mid-reply), so the reply still lands.
+  const messagesRef = useRef<Message[]>(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  const commitMessages = (updater: (prev: Message[]) => Message[]): Message[] => {
+    if (streamFrame.current !== null) {
+      cancelAnimationFrame(streamFrame.current);
+      streamFrame.current = null;
+    }
+    const pending = pendingStreamUpdate.current;
+    pendingStreamUpdate.current = null;
+    const base = pending ? pending(messagesRef.current) : messagesRef.current;
+    const next = updater(base);
+    messagesRef.current = next;
+    setMessages(next);
+    return next;
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -451,21 +497,75 @@ export default function ChatPage() {
   // 1. Load Persona, Character, Messages, State
   useEffect(() => {
     async function initChat() {
+      const isCloudChat = isUuid(chatId);
+
+      // Paint the cached transcript right away; the cloud copy reconciles below.
+      const cachedMsgs = healLegacyErrors(getLocalMessages(chatId));
+      if (cachedMsgs.length > 0) setMessages(settleInterrupted(cachedMsgs));
+
+      // Everything the page needs from the cloud is independent — fetch it all at once
+      // instead of one round trip after another.
+      const dbChatPromise = isCloudChat
+        ? Promise.resolve(
+            supabase.from('chats').select('*, character:characters(*)').eq('id', chatId).maybeSingle()
+          ).then(
+            ({ data }) => (data as Chat) || null,
+            (e) => {
+              console.error('Error fetching Supabase chat:', e);
+              return null;
+            }
+          )
+        : Promise.resolve(null);
+      const dbMsgsPromise = isCloudChat
+        ? Promise.resolve(
+            supabase.from('messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true })
+          ).then(
+            ({ data, error }) => (error ? null : ((data as Message[]) || [])),
+            (e) => {
+              console.error('Error fetching Supabase messages:', e);
+              return null;
+            }
+          )
+        : Promise.resolve(null);
+      const memoryContextPromise = isCloudChat
+        ? Promise.all([
+            supabase
+              .from('memories')
+              .select('*')
+              .eq('chat_id', chatId)
+              .is('superseded_by', null)
+              .order('importance', { ascending: false }),
+            supabase
+              .from('summaries')
+              .select('*')
+              .eq('chat_id', chatId)
+              .eq('superseded', false)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            supabase.from('chat_state').select('*').eq('chat_id', chatId).maybeSingle(),
+          ]).catch(() => null)
+        : Promise.resolve(null);
+      // The session is read from local storage — no network round trip like getUser().
+      const sessionPromise = supabase.auth.getSession().then(
+        ({ data }) => data.session?.user?.id,
+        () => undefined
+      );
+      const personasPromise = sessionPromise.then((uid) =>
+        uid
+          ? Promise.resolve(
+              supabase.from('personas').select('*').order('created_at', { ascending: false })
+            ).then(
+              ({ data }) => (data as Persona[]) || [],
+              () => [] as Persona[]
+            )
+          : ([] as Persona[])
+      );
+
       // 0. Load any existing local or Supabase chat metadata
       let existingChat: Chat | null = getLocalChat(chatId);
-
-      if (!chatId.startsWith('local-')) {
-        try {
-          const { data: dbChat } = await supabase
-            .from('chats')
-            .select('*, character:characters(*)')
-            .eq('id', chatId)
-            .maybeSingle();
-          if (dbChat) existingChat = dbChat as Chat;
-        } catch (e) {
-          console.error('Error fetching Supabase chat:', e);
-        }
-      }
+      const dbChat = await dbChatPromise;
+      if (dbChat) existingChat = dbChat;
 
       // Duo scenes live on /duo/[id] — bounce if this chat is one.
       if (
@@ -483,18 +583,14 @@ export default function ChatPage() {
         localPersonas = JSON.parse(localStorage.getItem('cadenza_local_personas') || '[]');
       } catch {}
 
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id;
+      const userId = await sessionPromise;
       const targetPersonaId = existingChat?.persona_id || settings.activePersonaId;
 
       if (userId) {
-        const { data: dbPersonas } = await supabase
-          .from('personas')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const dbPersonas = await personasPromise;
 
-        if (dbPersonas && dbPersonas.length > 0) {
-          const list = dbPersonas as Persona[];
+        if (dbPersonas.length > 0) {
+          const list = dbPersonas;
           resolvedPersona =
             list.find((p) => p.id === targetPersonaId) ||
             list.find((p) => p.is_default) ||
@@ -659,26 +755,17 @@ export default function ChatPage() {
       const userName = resolvedPersona.name || 'User';
 
       let loadedMessages: Message[] = [];
-      const localMsgs = healLegacyErrors(getLocalMessages(chatId));
+      // Re-read the cache: a reply that finished after the first paint may have landed.
+      const localMsgs = settleInterrupted(healLegacyErrors(getLocalMessages(chatId)));
 
       // 1. Fetch from Supabase if not a local chat
-      if (!chatId.startsWith('local-')) {
-        try {
-          const { data: msgsData } = await supabase
-            .from('messages')
-            .select('*')
-            .eq('chat_id', chatId)
-            .order('created_at', { ascending: true });
-
-          if (msgsData && msgsData.length > 0) {
-            loadedMessages = msgsData as Message[];
-          }
-        } catch (e) {
-          console.error('Error fetching Supabase messages:', e);
-        }
+      const dbMsgs = await dbMsgsPromise;
+      if (dbMsgs && dbMsgs.length > 0) {
+        loadedMessages = dbMsgs;
       }
 
-      // 2. Reconcile with LocalStorage so unpersisted user messages or accurate live timers are never wiped
+      // 2. Reconcile with LocalStorage. The cloud is the source of truth (it is what
+      // other devices see); the cache only contributes what never reached it.
       if (loadedMessages.length === 0) {
         if (localMsgs.length > 0) {
           loadedMessages = localMsgs;
@@ -704,9 +791,10 @@ export default function ChatPage() {
           return dbMsg;
         });
 
-        // B. Preserve any trailing or pending local user/assistant messages that haven't synced to DB
-        const dbIds = new Set(loadedMessages.map((m) => m.id));
-        const unsavedLocal = localMsgs.filter((lm) => !dbIds.has(lm.id));
+        // B. Preserve local messages that never reached the DB — but not the temporary
+        // copies of rows the server already saved under their real ids (those showed up
+        // twice), nor rows another device deleted.
+        const unsavedLocal = pendingLocalMessages(localMsgs, loadedMessages);
         if (unsavedLocal.length > 0) {
           loadedMessages = [...loadedMessages, ...unsavedLocal];
         }
@@ -792,36 +880,12 @@ export default function ChatPage() {
       }
 
       // D. Load Memories, Summary & State
-      if (!chatId.startsWith('local-')) {
-        try {
-          const { data: memData } = await supabase
-            .from('memories')
-            .select('*')
-            .eq('chat_id', chatId)
-            .is('superseded_by', null)
-            .order('importance', { ascending: false });
-
-          if (memData) setMemories(memData as Memory[]);
-
-          const { data: sumData } = await supabase
-            .from('summaries')
-            .select('*')
-            .eq('chat_id', chatId)
-            .eq('superseded', false)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (sumData) setCurrentSummary(sumData as Summary);
-
-          const { data: stateData } = await supabase
-            .from('chat_state')
-            .select('*')
-            .eq('chat_id', chatId)
-            .maybeSingle();
-
-          if (stateData?.state) setChatState(stateData.state);
-        } catch {}
+      const memoryContext = await memoryContextPromise;
+      if (memoryContext) {
+        const [{ data: memData }, { data: sumData }, { data: stateData }] = memoryContext;
+        if (memData) setMemories(memData as Memory[]);
+        if (sumData) setCurrentSummary(sumData as Summary);
+        if (stateData?.state) setChatState(stateData.state);
       }
 
       // Also load local summary, memories, authors note, and state
@@ -922,7 +986,11 @@ export default function ChatPage() {
                 (m) =>
                   (m.id.startsWith('usr-') || m.id.startsWith('ast-')) &&
                   m.role === newMsg.role &&
-                  (m.content === newMsg.content || !m.content)
+                  (m.content === newMsg.content ||
+                    !m.content ||
+                    // A reply this page stopped following (user left mid-stream) —
+                    // the server's finished row replaces the partial bubble.
+                    (m.role === 'assistant' && m.status === 'stopped'))
               );
               let updated: Message[];
               if (tempMatch) {
@@ -959,6 +1027,60 @@ export default function ChatPage() {
 
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, [chatId, supabase]);
+
+  // Catch up with other devices. Phones drop the realtime socket while the app is in
+  // the background, so anything sent elsewhere in the meantime is pulled on return.
+  const isGeneratingRef = useRef(false);
+  useEffect(() => {
+    isGeneratingRef.current = isGenerating;
+  }, [isGenerating]);
+  useEffect(() => {
+    if (!chatId || !isUuid(chatId)) return;
+    let inFlight = false;
+    const resync = async () => {
+      if (document.visibilityState !== 'visible' || inFlight || isGeneratingRef.current) return;
+      inFlight = true;
+      try {
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: true });
+        if (error || !data || data.length === 0 || isGeneratingRef.current) return;
+        const cloud = data as Message[];
+        setMessages((prev) => {
+          const prevById = new Map(prev.map((m) => [m.id, m]));
+          const unchanged =
+            cloud.length === prev.length &&
+            cloud.every((m) => {
+              const p = prevById.get(m.id);
+              return p && p.updated_at === m.updated_at;
+            });
+          if (unchanged) return prev;
+          // Keep the already-formatted local copy of rows that did not change.
+          const merged = cloud.map((m) => {
+            const p = prevById.get(m.id);
+            return p && p.updated_at === m.updated_at ? p : m;
+          });
+          const next = [...merged, ...pendingLocalMessages(prev, cloud)];
+          saveLocalMessages(chatId, next);
+          return next;
+        });
+      } catch {
+        // offline — the next return to the tab tries again
+      } finally {
+        inFlight = false;
+      }
+    };
+    document.addEventListener('visibilitychange', resync);
+    window.addEventListener('focus', resync);
+    window.addEventListener('online', resync);
+    return () => {
+      document.removeEventListener('visibilitychange', resync);
+      window.removeEventListener('focus', resync);
+      window.removeEventListener('online', resync);
     };
   }, [chatId, supabase]);
 
@@ -1121,7 +1243,6 @@ export default function ChatPage() {
                 if (parsed.metaSync) {
                   if (parsed.metaSync.chatId && parsed.metaSync.chatId !== chatId) {
                     resolvedChatId = parsed.metaSync.chatId;
-                    window.history.replaceState(null, '', `/chat/${resolvedChatId}`);
                   }
                   if (parsed.metaSync.userMsgId) resolvedUserMsgId = parsed.metaSync.userMsgId;
                   if (parsed.metaSync.assistantMsgId) resolvedAssistantMsgId = parsed.metaSync.assistantMsgId;
@@ -1210,9 +1331,7 @@ export default function ChatPage() {
         reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
       }
 
-      flushStreamUpdate();
-      let finalMessages: Message[] = [];
-      setMessages((prev) => {
+      const finalMessages = commitMessages((prev) => {
         const mapped: Message[] = prev.map((m) => {
           if (m.id === userMsgId && resolvedUserMsgId !== userMsgId) {
             return { ...m, id: resolvedUserMsgId };
@@ -1254,11 +1373,23 @@ export default function ChatPage() {
             seen.set(m.id, m);
           }
         }
-        finalMessages = Array.from(seen.values());
-        return finalMessages;
+        return Array.from(seen.values());
       });
       saveLocalMessages(chatId, finalMessages);
       playReceiveSound();
+
+      // A browser-only chat that the server just created in the cloud (signed-in user):
+      // move the transcript to the real id and continue there, so the next turn lands
+      // in the same cloud chat instead of spawning a new one each time.
+      if (resolvedChatId !== chatId && isUuid(resolvedChatId)) {
+        const migrated = finalMessages.map((m) => ({ ...m, chat_id: resolvedChatId }));
+        saveLocalMessages(resolvedChatId, migrated);
+        const prevNote = getLocalAuthorsNote(chatId);
+        if (prevNote) saveLocalAuthorsNote(resolvedChatId, prevNote);
+        deleteChat(chatId);
+        router.replace(`/chat/${resolvedChatId}`);
+        return;
+      }
 
       // Update chat message count & timestamp for "My Chats"
       if (character) {
@@ -1351,11 +1482,9 @@ export default function ChatPage() {
         if (stData?.state) setChatState(stData.state);
       }, 3500);
     } catch (err) {
-      flushStreamUpdate();
       if ((err as { name?: unknown } | null | undefined)?.name !== 'AbortError') {
-        let errMessages: Message[] = [];
-        setMessages((prev) => {
-          errMessages = prev.map((m) =>
+        const errMessages = commitMessages((prev) =>
+          prev.map((m) =>
             m.id === assistantMsgId
               ? {
                   ...m,
@@ -1363,10 +1492,17 @@ export default function ChatPage() {
                   meta: { ...m.meta, error: (err instanceof Error && err.message) || 'The reply could not be generated.' },
                 }
               : m
-          );
-          return errMessages;
-        });
+          )
+        );
         saveLocalMessages(chatId, errMessages);
+      } else {
+        // Stopped by the user: keep what arrived. The server saves the same partial reply.
+        const stoppedMessages = commitMessages((prev) =>
+          prev
+            .filter((m) => !(m.id === assistantMsgId && !m.content?.trim() && !m.reasoning))
+            .map((m) => (m.id === assistantMsgId ? { ...m, status: 'stopped' as const } : m))
+        );
+        saveLocalMessages(chatId, stoppedMessages);
       }
     } finally {
       setIsGenerating(false);
@@ -1411,9 +1547,8 @@ export default function ChatPage() {
         ? msg.meta?.reasoning_duration_seconds
         : undefined;
 
-    let updatedMsgs: Message[] = [];
-    setMessages((prev) => {
-      updatedMsgs = prev.map((m, i) =>
+    const updatedMsgs = commitMessages((prev) =>
+      prev.map((m, i) =>
         i === msgIndex
           ? {
               ...m,
@@ -1426,9 +1561,8 @@ export default function ChatPage() {
               },
             }
           : m
-      );
-      return updatedMsgs;
-    });
+      )
+    );
     saveLocalMessages(chatId, updatedMsgs);
 
     if (!chatId.startsWith('local-') && isUuid(msg.id)) {
@@ -1663,10 +1797,8 @@ export default function ChatPage() {
         reasoningDuration = Math.max(1, Math.round((Date.now() - genStartTime) / 1000));
       }
 
-      flushStreamUpdate();
-      let finalMessages: Message[] = [];
-      setMessages((prev) => {
-        finalMessages = prev.map((m, i) => {
+      const finalMessages = commitMessages((prev) =>
+        prev.map((m, i) => {
           if (i !== assistantMsgIndex) return m;
           const sList = m.meta?.swipes ? [...m.meta.swipes] : [m.content];
           const finalVal = formatRoleplayText(m.content, charName, userName);
@@ -1694,9 +1826,8 @@ export default function ChatPage() {
               reasoning_durations: dList,
             },
           };
-        });
-        return finalMessages;
-      });
+        })
+      );
       saveLocalMessages(chatId, finalMessages);
 
       if (!chatId.startsWith('local-') && isUuid(targetMsg.id)) {
@@ -2305,12 +2436,8 @@ export default function ChatPage() {
         });
         return next;
       };
-      if (final) {
-        flushStreamUpdate();
-        setMessages(updater);
-      } else {
-        queueStreamUpdate(updater);
-      }
+      if (final) return commitMessages(updater);
+      queueStreamUpdate(updater);
       return next;
     };
 

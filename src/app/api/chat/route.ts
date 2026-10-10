@@ -430,13 +430,40 @@ export async function POST(req: NextRequest) {
     let providerCompletionTokens = 0;
     let providerCachedTokens = 0;
 
+    // Keeps the function alive until the reply is saved, even if the client hung up.
+    let markGenerationSettled: () => void = () => {};
+    const generationSettled = new Promise<void>((resolve) => {
+      markGenerationSettled = resolve;
+    });
+
     const stream = new ReadableStream({
       async start(controller) {
         let buffer = '';
+        // The reply is saved whether or not anyone is still listening: leaving the page,
+        // closing the app or pressing Stop must not lose it. Writes to a closed stream are
+        // dropped instead of throwing, and an aborted read ends generation with what came.
+        let clientGone = false;
+        const send = (chunk: Uint8Array) => {
+          if (clientGone) return;
+          try {
+            controller.enqueue(chunk);
+          } catch {
+            clientGone = true;
+          }
+        };
+        let interrupted = false;
 
         try {
           while (true) {
-            const { done, value } = await reader.read();
+            let readResult: ReadableStreamReadResult<Uint8Array>;
+            try {
+              readResult = await reader.read();
+            } catch (readErr) {
+              if (!req.signal.aborted) throw readErr;
+              interrupted = true;
+              break;
+            }
+            const { done, value } = readResult;
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
@@ -489,20 +516,20 @@ export async function POST(req: NextRequest) {
                   for (const chunk of parsedChunks) {
                     if (chunk.reasoning) {
                       fullReasoningContent += chunk.reasoning;
-                      controller.enqueue(
+                      send(
                         encoder.encode(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`)
                       );
                     }
                     if (chunk.reasoningDone) {
                       if (!reasoningEndTime) reasoningEndTime = Date.now();
-                      controller.enqueue(
+                      send(
                         encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
                       );
                     }
                     if (chunk.text) {
                       if (!reasoningEndTime) reasoningEndTime = Date.now();
                       fullAssistantContent += chunk.text;
-                      controller.enqueue(
+                      send(
                         encoder.encode(`data: ${JSON.stringify({ text: chunk.text })}\n\n`)
                       );
                     }
@@ -518,20 +545,20 @@ export async function POST(req: NextRequest) {
           for (const chunk of flushed) {
             if (chunk.reasoning) {
               fullReasoningContent += chunk.reasoning;
-              controller.enqueue(
+              send(
                 encoder.encode(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`)
               );
             }
             if (chunk.reasoningDone) {
               if (!reasoningEndTime) reasoningEndTime = Date.now();
-              controller.enqueue(
+              send(
                 encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
               );
             }
             if (chunk.text) {
               if (!reasoningEndTime) reasoningEndTime = Date.now();
               fullAssistantContent += chunk.text;
-              controller.enqueue(
+              send(
                 encoder.encode(`data: ${JSON.stringify({ text: chunk.text })}\n\n`)
               );
             }
@@ -542,9 +569,9 @@ export async function POST(req: NextRequest) {
 
           // SAFETY RECOVERY: If the model generated reasoning but was cut off (e.g. hit token limit)
           // or stopped before outputting the reply, run an immediate continuation to generate the prose.
-          if (fullAssistantContent.trim().length === 0 && fullReasoningContent.trim().length > 0) {
+          if (!interrupted && fullAssistantContent.trim().length === 0 && fullReasoningContent.trim().length > 0) {
             try {
-              controller.enqueue(
+              send(
                 encoder.encode(`data: ${JSON.stringify({ reasoningDone: true })}\n\n`)
               );
 
@@ -586,7 +613,7 @@ export async function POST(req: NextRequest) {
                         const cText = cData.choices?.[0]?.delta?.content;
                         if (cText) {
                           fullAssistantContent += cText;
-                          controller.enqueue(
+                          send(
                             encoder.encode(`data: ${JSON.stringify({ text: cText })}\n\n`)
                           );
                         }
@@ -615,7 +642,7 @@ export async function POST(req: NextRequest) {
           }
           if (finalInput > 0 || finalOutput > 0) {
             try {
-              controller.enqueue(
+              send(
                 encoder.encode(
                   `data: ${JSON.stringify({
                     usage: { input: finalInput, output: finalOutput, total: finalInput + finalOutput },
@@ -715,7 +742,7 @@ export async function POST(req: NextRequest) {
                     role: 'assistant',
                     content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
                     reasoning: fullReasoningContent || null,
-                    status: 'done',
+                    status: interrupted ? 'stopped' : 'done',
                     meta: {
                       model: effectiveModel,
                       reasoning_duration_seconds: reasoningDurationSeconds,
@@ -738,7 +765,7 @@ export async function POST(req: NextRequest) {
                       role: 'assistant',
                       content: formatRoleplayText(cleanedAssistant, character.name, persona.name),
                       reasoning: fullReasoningContent || null,
-                      status: 'done',
+                      status: interrupted ? 'stopped' : 'done',
                       meta: {
                         model: effectiveModel,
                         reasoning_duration_seconds: reasoningDurationSeconds,
@@ -919,7 +946,7 @@ export async function POST(req: NextRequest) {
           }
 
           try {
-            controller.enqueue(
+            send(
               encoder.encode(
                 `data: ${JSON.stringify({ llmLog: { ...llmLogPayload, serverId: llmLogServerId } })}\n\n`
               )
@@ -929,7 +956,7 @@ export async function POST(req: NextRequest) {
           // Sync generated database IDs to the client SSE stream so client state uses real UUIDs
           if (savedUserMsgId || assistantMsgRow?.id || resolvedChatId !== chatId) {
             try {
-              controller.enqueue(
+              send(
                 encoder.encode(
                   `data: ${JSON.stringify({
                     metaSync: {
@@ -945,13 +972,28 @@ export async function POST(req: NextRequest) {
           }
 
           // Signal stream completion AND close
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
+          send(encoder.encode('data: [DONE]\n\n'));
+          if (!clientGone) {
+            try {
+              controller.close();
+            } catch {}
+          }
         } catch (err) {
-          controller.error(err);
+          if (!clientGone) {
+            try {
+              controller.error(err);
+            } catch {}
+          }
+        } finally {
+          markGenerationSettled();
         }
       },
+      cancel() {
+        // Client disconnected; generation and persistence carry on in start().
+      },
     });
+
+    after(generationSettled);
 
     return new Response(stream, {
       headers: {
