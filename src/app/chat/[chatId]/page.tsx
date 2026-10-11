@@ -34,6 +34,7 @@ import { ThinkingProcess } from '@/components/thinking-process';
 import { RoleplayMessageContent } from '@/components/chat/roleplay-message-content';
 import { RegexManagerModal } from '@/components/chat/regex-manager-modal';
 import { useRegexScripts } from '@/lib/store/regex-store';
+import { useKeyboardViewport } from '@/lib/hooks/use-keyboard-viewport';
 import { processPromptTime, sanitizeModelOutput } from '@/lib/formatter/regex-engine';
 import { formatRoleplayText, joinContinuation } from '@/lib/prompt/macros';
 import { extractThinking } from '@/lib/llm/stream-parser';
@@ -486,6 +487,13 @@ export default function ChatPage() {
       setIsAtBottom(true);
     }
   };
+
+  // Keep the latest turn in view when the keyboard shrinks the transcript.
+  const { keyboardOpen, height: keyboardViewportHeight } = useKeyboardViewport();
+  useEffect(() => {
+    if (keyboardOpen && isAtBottom) scrollToBottom(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on viewport changes
+  }, [keyboardOpen, keyboardViewportHeight]);
 
   const handleChatScroll = () => {
     const el = chatContainerRef.current;
@@ -2546,12 +2554,15 @@ export default function ChatPage() {
   const handleImpersonate = () => runAssistMode('impersonate');
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-background select-none">
+    <div
+      className="flex flex-col h-[100dvh] w-full overflow-hidden bg-background select-none"
+      style={keyboardViewportHeight ? { height: keyboardViewportHeight } : undefined}
+    >
       {/* Mobile-First Immersive Top Header */}
-      <header className="pt-safe px-3 sm:px-6 bg-background border-b border-line shrink-0 z-30">
-        <div className="h-14 flex items-center justify-between">
+      <header className="pt-safe px-1.5 sm:px-6 bg-background border-b border-line shrink-0 z-30">
+        <div className="h-12 sm:h-14 flex items-center justify-between">
           {/* Left: Back & Character Identity */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="flex items-center gap-1 sm:gap-3 min-w-0">
           <Link
             href="/"
             className="icon-btn shrink-0"
@@ -2562,7 +2573,7 @@ export default function ChatPage() {
           </Link>
 
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-md overflow-hidden shrink-0 border border-line relative">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md overflow-hidden shrink-0 border border-line relative">
               <CharacterAvatar
                 name={character?.name || 'Character'}
                 avatarUrl={character?.avatar_url}
@@ -2590,16 +2601,24 @@ export default function ChatPage() {
         </div>
 
         {/* Right: Persona Switcher & Memory Drawer Button */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Active Persona Switcher Pill */}
+        <div className="flex items-center sm:gap-2 shrink-0">
+          {/* Active Persona Switcher: a plain icon on phones, a labelled pill on wider screens */}
           <button
             onClick={() => setPersonaModalOpen(true)}
-            className="btn btn-ghost h-9 w-9 p-0 sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5 text-xs font-semibold flex items-center gap-1.5 sm:max-w-[200px]"
+            className="icon-btn sm:hidden"
+            title="Change your roleplay persona"
+            aria-label={`Persona: ${activePersona?.name || 'not set'}. Change persona`}
+          >
+            <User className="w-4 h-4" aria-hidden />
+          </button>
+          <button
+            onClick={() => setPersonaModalOpen(true)}
+            className="btn btn-ghost hidden sm:inline-flex px-2.5 py-1.5 text-xs font-semibold items-center gap-1.5 max-w-[200px]"
             title="Change your roleplay persona"
             aria-label={`Persona: ${activePersona?.name || 'not set'}. Change persona`}
           >
             <User className="w-3.5 h-3.5 shrink-0" aria-hidden />
-            <span className="hidden sm:inline truncate">
+            <span className="truncate">
               {activePersona?.name || 'Set Persona'}
             </span>
           </button>
@@ -2609,7 +2628,7 @@ export default function ChatPage() {
             onClick={() => setRegexModalOpen(true)}
             aria-label={`Regex scripts and output formatters, ${regexActiveCount} active`}
             aria-pressed={regexModalOpen}
-            className="icon-btn relative"
+            className="icon-btn relative hidden sm:inline-flex"
             title={`Regex scripts and output formatters (${regexActiveCount} active)`}
           >
             <Sparkles className="w-4 h-4" aria-hidden />
@@ -2643,6 +2662,17 @@ export default function ChatPage() {
 
             {headerMenuOpen && (
               <div className="panel absolute right-0 top-full mt-1.5 w-52 rounded-xl bg-raised border-line shadow-float p-1.5 z-40 animate-in fade-in duration-150">
+                <button
+                  onClick={() => {
+                    setHeaderMenuOpen(false);
+                    setRegexModalOpen(true);
+                  }}
+                  className="btn btn-quiet w-full justify-start px-3 py-2 text-xs rounded-lg sm:hidden"
+                >
+                  <Sparkles className="w-4 h-4" aria-hidden />
+                  Output formatting
+                  <span className="ml-auto type-meta">{regexActiveCount} on</span>
+                </button>
                 {character?.id && (
                   <Link
                     href={`/c/${character.id}`}
@@ -2677,9 +2707,9 @@ export default function ChatPage() {
           onScroll={handleChatScroll}
           role="log"
           aria-label="Conversation"
-          className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5 scroll-smooth"
+          className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-6 space-y-5 scroll-smooth overscroll-contain"
         >
-          <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end space-y-5 pb-6">
+          <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end space-y-5 pb-2 sm:pb-6">
             {messages.map((message, index) => {
               const isAssistant = message.role === 'assistant';
               const swipes = message.meta?.swipes || [message.content];
@@ -2748,7 +2778,7 @@ export default function ChatPage() {
                               else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit();
                             }}
                             rows={4}
-                            className="field resize-y text-xs sm:text-sm leading-relaxed"
+                            className="field resize-y text-base sm:text-sm leading-relaxed"
                             placeholder="Edit character response…"
                             autoFocus
                           />
@@ -2812,7 +2842,7 @@ export default function ChatPage() {
 
                           {/* Roleplay Prose Bubble */}
                           {isFailed && !message.content ? null : (message.content || (!message.reasoning && !isStreamingMsg)) ? (
-                            <div className="prose-rp w-full max-w-[62ch] border-t border-line pt-3 select-text">
+                            <div className="prose-rp w-full max-w-[62ch] border-t border-line pt-2.5 sm:pt-3 select-text">
                               <RoleplayMessageContent
                                 content={message.content}
                                 characterName={character?.name || 'Character'}
@@ -2947,7 +2977,7 @@ export default function ChatPage() {
                               else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit();
                             }}
                             rows={3}
-                            className="field resize-y text-xs sm:text-sm"
+                            className="field resize-y text-base sm:text-sm"
                             placeholder="Edit your message…"
                             aria-label="Edit your message"
                             autoFocus
@@ -3122,8 +3152,12 @@ export default function ChatPage() {
       </div>
 
       {/* Mobile-First Reachable Bottom Input Composer */}
-      <footer className="p-2 sm:p-4 bg-background border-t border-line shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
-        <div className="max-w-3xl mx-auto space-y-2">
+      <footer
+        className={`px-2 pt-1.5 sm:p-4 bg-background border-t border-line shrink-0 ${
+          keyboardOpen ? 'pb-1.5' : 'pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] sm:pb-4'
+        }`}
+      >
+        <div className="max-w-3xl mx-auto space-y-1.5 sm:space-y-2">
           {/* Author's Note Quick Drawer */}
           {showAuthorsNote && (
             <div className="surface p-3 space-y-2">
@@ -3150,7 +3184,7 @@ export default function ChatPage() {
                 rows={2}
                 placeholder="Direct the scene, for example slow pacing in the rain…"
                 aria-label="Author’s note"
-                className="field resize-none text-xs leading-relaxed"
+                className="field resize-none text-base sm:text-xs leading-relaxed"
               />
             </div>
           )}
@@ -3176,7 +3210,7 @@ export default function ChatPage() {
           />
 
           {/* Input Box with Big Thumb Send Button */}
-          <div className="well relative flex items-end gap-2 p-1.5 sm:p-2 rounded-3xl">
+          <div className="well relative flex items-end gap-2 p-1 sm:p-2 rounded-3xl">
             <textarea
               ref={textareaRef}
               rows={1}
@@ -3190,7 +3224,7 @@ export default function ChatPage() {
               }}
               placeholder={isImpersonating ? 'Drafting your turn…' : `Write your turn as ${activePersona?.name || 'you'}…`}
               aria-label="Write your turn"
-              className="flex-1 bg-transparent px-3 py-2 text-sm text-ink focus:outline-none resize-none max-h-40 min-h-[40px] leading-relaxed"
+              className="flex-1 bg-transparent px-3 py-2 text-base sm:text-sm text-ink focus:outline-none resize-none max-h-32 sm:max-h-40 min-h-[40px] leading-snug sm:leading-relaxed"
             />
 
             {isGenerating ? (
