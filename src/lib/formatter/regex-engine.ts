@@ -110,7 +110,7 @@ export const DEFAULT_REGEX_SCRIPTS: RegexScript[] = [
     id: 'dialogue-highlighter',
     name: 'Dialogue Spoken Text Highlighter',
     description: 'Highlights character spoken dialogue in quotes with vivid luminous hue and typography.',
-    findRegex: '/(?:“([^”]+)”|"([^"]+)"|「([^」]+)」|«([^»]+)»)/g',
+    findRegex: '/(?:“([^”\\n]+)”|"([^"\\n]+)"|「([^」\\n]+)」|«([^»\\n]+)»)/g',
     replaceString: '[[rp-dialogue]]$1$2$3$4[[/rp-dialogue]]',
     scope: 'display',
     target: 'all',

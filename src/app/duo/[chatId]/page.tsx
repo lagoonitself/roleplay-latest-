@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, Pause, Play, Square, Plus, Loader2, AlertTriangle, Megaphone, ChevronDown } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
+import { useRegexScripts } from '@/lib/store/regex-store';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { RoleplayMessageContent } from '@/components/chat/roleplay-message-content';
 import { DUO_CONTINUE_TURNS, DUO_MAX_TURNS_CAP, parseDuo, type DuoSession } from '@/lib/duo/types';
@@ -29,6 +30,7 @@ export default function DuoWatchPage() {
   const chatId = params?.chatId as string;
   const supabase = createClient();
   const [settings] = useSettings();
+  const { scripts: regexScripts } = useRegexScripts();
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [duo, setDuo] = useState<DuoSession | null>(null);
@@ -445,7 +447,7 @@ export default function DuoWatchPage() {
                   </div>
                   <div className="prose-rp">
                     {m.content ? (
-                      <RoleplayMessageContent content={m.content} role="assistant" characterName={name} />
+                      <RoleplayMessageContent content={m.content} role="assistant" characterName={name} scripts={regexScripts} />
                     ) : (
                       <span className="pulse-soft text-accent-text" aria-label="Writing">
                         ●
@@ -474,7 +476,7 @@ export default function DuoWatchPage() {
                 <div className="rp-user-bubble rounded-xl rounded-tr-md px-3.5 py-2.5 w-full">
                   <div className="prose-rp text-[0.95rem]">
                     {m.content ? (
-                      <RoleplayMessageContent content={m.content} role="assistant" characterName={name} />
+                      <RoleplayMessageContent content={m.content} role="assistant" characterName={name} scripts={regexScripts} />
                     ) : (
                       <span className="pulse-soft text-accent-text" aria-label="Writing">
                         ●

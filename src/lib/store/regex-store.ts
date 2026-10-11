@@ -19,6 +19,8 @@ const EVENT_NAME = 'cadenza-regex-changed';
 const LEGACY_PRESET_REGEXES: Record<string, string> = {
   // Matched the inner `*…*` of `**bold**`, rendering bold text as italic action.
   'prose-action-styler': '/(?:\\*([^*\\n]+)\\*)/g',
+  // Could span paragraphs from an unclosed quote, flipping dialogue and narration.
+  'dialogue-highlighter': '/(?:“([^”]+)”|"([^"]+)"|「([^」]+)」|«([^»]+)»)/g',
 };
 
 function upgradeLegacyPreset(script: RegexScript): RegexScript {

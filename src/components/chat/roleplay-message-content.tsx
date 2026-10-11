@@ -445,11 +445,15 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
    * [[rp-action]]…[[rp-dialogue]]…[[/rp-dialogue]]…[[/rp-action]]), so tag
    * contents are parsed recursively. Markers left unpaired (e.g. when markdown
    * splits a tag pair across nodes) are stripped instead of shown raw.
+   *
+   * With `narrate`, plain text outside any tag is styled as action prose:
+   * models often leave beats like `"…," she says. Her thumb brushes his knuckle.`
+   * without asterisks, which otherwise render in the same voice as the dialogue.
    */
-  const renderFormattedInlineText = (text: string, keyPrefix = ''): React.ReactNode => {
+  const renderFormattedInlineText = (text: string, keyPrefix = '', narrate = false): React.ReactNode => {
     // If text has no special markers, render directly
     if (!text.includes('[[')) {
-      return text;
+      return narrate && text.trim() ? <span className="rp-action">{text}</span> : text;
     }
 
     const inlineRegex = /\[\[rp-dialogue\]\]([\s\S]*?)\[\[\/rp-dialogue\]\]|\[\[rp-action\]\]([\s\S]*?)\[\[\/rp-action\]\]|\[\[rp-roll\s+formula="([^"]+)"\]\]|\[\[rp-spoiler\]\]([\s\S]*?)\[\[\/rp-spoiler\]\]/gi;
@@ -462,7 +466,10 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
     const nextKey = () => `${keyPrefix}${keyIdx++}`;
     const pushPlain = (plain: string) => {
       const cleaned = plain.replace(strayMarkerRegex, '');
-      if (cleaned) elements.push(cleaned);
+      if (!cleaned) return;
+      elements.push(
+        narrate && cleaned.trim() ? <span key={nextKey()} className="rp-action">{cleaned}</span> : cleaned
+      );
     };
 
     while ((inlineMatch = inlineRegex.exec(text)) !== null) {
@@ -510,10 +517,24 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
   };
 
   /** Applies the inline parser to every string child of a markdown node. */
-  const formatChildren = (children: React.ReactNode) =>
+  const formatChildren = (children: React.ReactNode, narrate = false) =>
     React.Children.map(children, (child) =>
-      typeof child === 'string' ? renderFormattedInlineText(child) : child
+      typeof child === 'string' ? renderFormattedInlineText(child, '', narrate) : child
     );
+
+  /**
+   * Whether bare text in a paragraph is narration. A paragraph that mixes in
+   * dialogue makes everything outside the quotes narration. A reply paragraph
+   * with no quote marks at all is pure narration too; user turns are left
+   * alone there, since people often type plain speech without quotes.
+   */
+  const isNarratedParagraph = (children: React.ReactNode) => {
+    const text = React.Children.toArray(children)
+      .filter((c): c is string => typeof c === 'string')
+      .join('');
+    if (text.includes('[[rp-dialogue]]')) return true;
+    return role === 'assistant' && !/["“”「」«»]/.test(text);
+  };
 
   return (
     <div style={styleVars} className="prose-rp select-text space-y-2">
@@ -560,7 +581,7 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
                   p: ({ children }) => {
                     return (
                       <p className="leading-relaxed">
-                        {formatChildren(children)}
+                        {formatChildren(children, isNarratedParagraph(children))}
                       </p>
                     );
                   },
