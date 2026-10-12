@@ -523,12 +523,38 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on viewport changes
   }, [keyboardOpen, keyboardViewportHeight]);
 
+  // True while a finger is on the transcript (or momentum from a fling is
+  // still running). Streaming follow must never yank the list out from under
+  // the user's thumb — that fight is what made scrolling feel broken on iOS.
+  const userTouchingRef = useRef(false);
+  const momentumTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleChatScroll = () => {
     const el = chatContainerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     setIsAtBottom(distanceFromBottom < 120);
   };
+
+  const handleTranscriptTouchStart = () => {
+    userTouchingRef.current = true;
+    if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+  };
+
+  const handleTranscriptTouchEnd = () => {
+    // iOS keeps scrolling after the finger lifts; give momentum time to settle.
+    if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+    momentumTimerRef.current = setTimeout(() => {
+      userTouchingRef.current = false;
+    }, 600);
+  };
+
+  useEffect(
+    () => () => {
+      if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+    },
+    [],
+  );
 
   // 1. Load Persona, Character, Messages, State
   useEffect(() => {
@@ -1136,7 +1162,7 @@ export default function ChatPage() {
   // Intelligent auto-scroll: locks to bottom only when user is near bottom
   useEffect(() => {
     if (!chatContainerRef.current) return;
-    if (isAtBottom) {
+    if (isAtBottom && !userTouchingRef.current) {
       if (isGenerating) {
         // Fast hardware-accelerated follow during streaming (zero smooth-scroll lockouts)
         chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -2853,9 +2879,12 @@ export default function ChatPage() {
         <div
           ref={chatContainerRef}
           onScroll={handleChatScroll}
+          onTouchStart={handleTranscriptTouchStart}
+          onTouchEnd={handleTranscriptTouchEnd}
+          onTouchCancel={handleTranscriptTouchEnd}
           role="log"
           aria-label="Conversation"
-          className="flex-1 overflow-y-auto overscroll-contain px-3 sm:px-6 py-4 sm:py-6 space-y-5 scroll-smooth"
+          className="scroll-y flex-1 px-3 sm:px-6 py-4 sm:py-6 space-y-5"
         >
           <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end space-y-5 pb-6">
             {messages.map((message, index) => (
