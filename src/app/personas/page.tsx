@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Pencil } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
 import { CharacterAvatar } from '@/components/character-avatar';
@@ -16,6 +16,7 @@ export default function PersonasPage() {
 
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
 
   const loadPersonas = useCallback(async () => {
     let localList: Persona[] = [];
@@ -94,21 +95,31 @@ export default function PersonasPage() {
     toast.info('Persona removed');
   };
 
+  const handleOpenCreate = () => {
+    setEditingPersona(null);
+    setModalOpen(true);
+  };
+
+  const handleOpenEdit = (persona: Persona) => {
+    setEditingPersona(persona);
+    setModalOpen(true);
+  };
+
   return (
-    <div className="flex-1 max-w-2xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+    <div className="flex-1 max-w-2xl w-full mx-auto px-4 sm:px-6 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+2rem)] space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-line">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/"
-            className="icon-btn"
+            className="icon-btn min-h-11 min-w-11 shrink-0"
             aria-label="Back to explore"
           >
-            <ArrowLeft className="w-5 h-5" aria-hidden />
+            <ArrowLeft className="w-5 h-5" aria-hidden="true" />
           </Link>
-          <div>
+          <div className="min-w-0">
             <h1 className="type-page">Your personas</h1>
-            <p className="type-meta mt-0.5">
+            <p className="type-meta mt-0.5 truncate">
               Define who you play across different scenarios and worlds
             </p>
           </div>
@@ -116,29 +127,51 @@ export default function PersonasPage() {
 
         <button
           type="button"
-          onClick={() => setModalOpen(true)}
-          className="btn btn-primary flex items-center justify-center gap-1.5 self-start sm:self-auto"
+          onClick={handleOpenCreate}
+          className="btn btn-primary w-full sm:w-auto min-h-11 flex items-center justify-center gap-1.5 shrink-0"
         >
-          <Plus className="w-3.5 h-3.5" aria-hidden />
+          <Plus className="w-4 h-4" aria-hidden="true" />
           <span>New persona</span>
         </button>
       </div>
 
-      {/* Personas list */}
-      <div className="surface rounded-xl divide-y divide-line overflow-hidden">
-        {personas.map((persona) => {
-          const isActive =
-            settings.activePersonaId === persona.id ||
-            (!settings.activePersonaId && persona.is_default);
+      {/* Personas list: iOS list style */}
+      {personas.length === 0 ? (
+        <div className="surface rounded-xl p-8 text-center space-y-3">
+          <p className="type-sec">No personas yet</p>
+          <p className="type-meta">Create your first persona to start roleplaying.</p>
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="btn btn-primary min-h-11"
+          >
+            <Plus className="w-4 h-4" aria-hidden="true" />
+            <span>New persona</span>
+          </button>
+        </div>
+      ) : (
+        <div className="surface rounded-xl divide-y divide-line overflow-hidden">
+          {personas.map((persona) => {
+            const isActive =
+              settings.activePersonaId === persona.id ||
+              (!settings.activePersonaId && persona.is_default);
 
-          return (
-            <div
-              key={persona.id}
-              className={isActive ? 'border-l-2 border-accent-line p-4 sm:p-5' : 'p-4 sm:p-5'}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-line" style={{ width: 48, height: 48 }}>
+            return (
+              <div
+                key={persona.id}
+                className={`flex items-center justify-between gap-3 p-3.5 sm:p-4 min-h-[64px] row-press transition-[background-color] duration-150 ${
+                  isActive ? 'bg-accent-wash/30' : ''
+                }`}
+              >
+                {/* Tappable row body to set active */}
+                <button
+                  type="button"
+                  onClick={() => handleSetActive(persona)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left cursor-pointer"
+                  aria-label={isActive ? `${persona.name} (active persona)` : `Set ${persona.name} as active persona`}
+                  aria-pressed={isActive}
+                >
+                  <div className="w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-line">
                     <CharacterAvatar
                       name={persona.name}
                       avatarUrl={persona.avatar_url}
@@ -146,59 +179,67 @@ export default function PersonasPage() {
                     />
                   </div>
 
-                  <div className="min-w-0">
-                    <h3 className="font-serif text-base font-medium text-ink flex items-center gap-1.5 truncate">
-                      <span className="truncate">{persona.name}</span>
-                      {isActive && (
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <h2 className="font-serif text-base font-medium text-ink truncate">
+                        {persona.name}
+                      </h2>
+                      {isActive ? (
                         <span className="chip chip-accent shrink-0">
                           Active
                         </span>
-                      )}
-                    </h3>
+                      ) : persona.is_default ? (
+                        <span className="chip shrink-0">
+                          Default
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="type-meta line-clamp-2 mt-0.5">
                       {persona.description || 'No background description yet.'}
                     </p>
                   </div>
+                </button>
+
+                {/* Edit and Delete actions: always visible, >=44px touch targets */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEdit(persona)}
+                    className="icon-btn min-h-11 min-w-11"
+                    aria-label={`Edit ${persona.name}`}
+                  >
+                    <Pencil className="w-4 h-4" aria-hidden="true" />
+                  </button>
+
+                  {personas.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(persona.id)}
+                      className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-danger"
+                      aria-label={`Delete ${persona.name}`}
+                    >
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
-
-                {personas.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(persona.id)}
-                    className="icon-btn shrink-0"
-                    aria-label={`Delete ${persona.name}`}
-                  >
-                    <Trash2 className="w-4 h-4" aria-hidden />
-                  </button>
-                )}
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              <div className="pt-3 flex items-center justify-between gap-3">
-                <span className="type-meta">
-                  {isActive ? 'Current active persona in chats' : 'Ready to use'}
-                </span>
-                {!isActive && (
-                  <button
-                    type="button"
-                    onClick={() => handleSetActive(persona)}
-                    className="btn btn-quiet"
-                  >
-                    Set as active
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Universal Persona Modal with DeepSeek AI Generator */}
+      {/* Persona Sheet */}
       <PersonaModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingPersona(null);
+        }}
+        editingPersona={editingPersona}
+        initialMode="create"
         onSelectPersona={(p) => {
           handleSetActive(p);
-          loadPersonas();
+          void loadPersonas();
         }}
       />
     </div>

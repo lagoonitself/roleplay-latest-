@@ -2,15 +2,15 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  X,
   Plus,
   Sparkles,
   Check,
   ArrowRight,
   Trash2,
-  ChevronLeft,
+  Pencil,
   Image as ImageIcon,
 } from 'lucide-react';
+import { Sheet } from '@/components/ui/sheet';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
 import { CharacterAvatar } from '@/components/character-avatar';
@@ -18,12 +18,14 @@ import { toast } from 'sonner';
 import type { Character, Persona } from '@/lib/supabase/types';
 import { resolveLlmKey } from '@/lib/llm/credentials';
 
-interface PersonaModalProps {
+export interface PersonaModalProps {
   open: boolean;
   onClose: () => void;
   character?: Character | null;
   onSelectPersona: (persona: Persona) => void;
   currentPersonaId?: string | null;
+  editingPersona?: Persona | null;
+  initialMode?: 'list' | 'create';
 }
 
 const DEFAULT_PERSONAS: Persona[] = [
@@ -45,6 +47,8 @@ export function PersonaModal({
   character,
   onSelectPersona,
   currentPersonaId,
+  editingPersona,
+  initialMode,
 }: PersonaModalProps) {
   const [settings, updateSettings] = useSettings();
   const supabase = createClient();
@@ -55,14 +59,16 @@ export function PersonaModal({
     currentPersonaId || settings.activePersonaId || ''
   );
   const [mode, setMode] = useState<'list' | 'create'>('list');
+  const [editingPersonaState, setEditingPersonaState] = useState<Persona | null>(null);
 
-  // New Persona Form State
+  // Persona Form State
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [accentColor, setAccentColor] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Load Personas (from DB + localStorage)
   const loadPersonas = useCallback(async () => {
@@ -113,21 +119,28 @@ export function PersonaModal({
     if (!open) return;
     const timer = setTimeout(() => {
       void loadPersonas();
-      setMode('list');
+      if (currentPersonaId) {
+        setSelectedPersonaId(currentPersonaId);
+      }
+      if (editingPersona) {
+        setEditingPersonaState(editingPersona);
+        setName(editingPersona.name || '');
+        setDescription(editingPersona.description || '');
+        setAvatarUrl(editingPersona.avatar_url || '');
+        setMode('create');
+      } else if (initialMode) {
+        setEditingPersonaState(null);
+        setName('');
+        setDescription('');
+        setAvatarUrl('');
+        setMode(initialMode);
+      } else {
+        setEditingPersonaState(null);
+        setMode('list');
+      }
     }, 0);
     return () => clearTimeout(timer);
-  }, [open, loadPersonas]);
-
-  // Escape closes regardless of where focus is — a dialog's own onKeyDown only
-  // fires while focus is inside it.
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  }, [open, loadPersonas, currentPersonaId, editingPersona, initialMode]);
 
   // AI Persona Generation
   const handleGenerateAI = async () => {
@@ -138,8 +151,6 @@ export function PersonaModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           idea: aiPrompt.trim(),
-          // Full partner context so the persona fits the actual world, tone, and
-          // opening scene it will chat in (and never contradicts the character).
           character: character
             ? {
                 name: character.name,
@@ -191,6 +202,14 @@ export function PersonaModal({
     e.target.value = '';
   };
 
+  const handleStartEdit = (persona: Persona) => {
+    setEditingPersonaState(persona);
+    setName(persona.name || '');
+    setDescription(persona.description || '');
+    setAvatarUrl(persona.avatar_url || '');
+    setMode('create');
+  };
+
   // Save Persona
   const handleSavePersona = async () => {
     if (!name.trim()) {
@@ -198,59 +217,127 @@ export function PersonaModal({
       return;
     }
 
-    const { data: authData } = await supabase.auth.getUser();
-    const userId = authData.user?.id;
-
-    const newPersona: Persona = {
-      id: `persona-${Date.now()}`,
-      user_id: userId || 'guest',
-      name: name.trim(),
-      avatar_url: avatarUrl.trim() || null,
-      description: description.trim(),
-      is_default: personas.length === 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    if (userId) {
-      try {
-        const { data, error } = await supabase
-          .from('personas')
-          .insert({
-            user_id: userId,
-            name: newPersona.name,
-            avatar_url: newPersona.avatar_url,
-            description: newPersona.description,
-            is_default: newPersona.is_default,
-          })
-          .select()
-          .single();
-
-        if (!error && data) {
-          newPersona.id = data.id;
-        }
-      } catch {}
-    }
-
-    // Persist to local storage. The state update must not be lost when the
-    // write throws (e.g. quota exceeded on a big avatar) — keep the two apart.
-    const updated = [newPersona, ...personas.filter((p) => p.id !== newPersona.id)];
+    setSaving(true);
     try {
-      localStorage.setItem('cadenza_local_personas', JSON.stringify(updated));
-    } catch {}
-    setPersonas(updated);
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
 
-    setSelectedPersonaId(newPersona.id);
-    updateSettings({ activePersonaId: newPersona.id });
+      if (editingPersonaState) {
+        const updatedPersona: Persona = {
+          ...editingPersonaState,
+          name: name.trim(),
+          avatar_url: avatarUrl.trim() || null,
+          description: description.trim(),
+          updated_at: new Date().toISOString(),
+        };
 
-    // Reset form
-    setName('');
-    setDescription('');
-    setAvatarUrl('');
-    setAiPrompt('');
-    setMode('list');
+        // Local-only personas (guest, or created before sign-in) have ids like
+        // `persona-…` and never reached the database.
+        if (userId && !editingPersonaState.id.startsWith('persona-')) {
+          const { error } = await supabase
+            .from('personas')
+            .update({
+              name: updatedPersona.name,
+              avatar_url: updatedPersona.avatar_url,
+              description: updatedPersona.description,
+              updated_at: updatedPersona.updated_at,
+            })
+            .eq('id', editingPersonaState.id);
+          if (error) {
+            toast.error('Couldn’t save your changes. Try again.');
+            return;
+          }
+        }
 
-    toast.success(`Persona "${newPersona.name}" created!`);
+        const updated = personas.map((p) => (p.id === editingPersonaState.id ? updatedPersona : p));
+        try {
+          localStorage.setItem('cadenza_local_personas', JSON.stringify(updated));
+        } catch {}
+        setPersonas(updated);
+        // Editing is not choosing: only refresh the active persona if this was it.
+        if (selectedPersonaId === updatedPersona.id) {
+          onSelectPersona(updatedPersona);
+        }
+
+        setName('');
+        setDescription('');
+        setAvatarUrl('');
+        setAiPrompt('');
+        setEditingPersonaState(null);
+
+        if (!initialMode || initialMode === 'list') {
+          setMode('list');
+        } else {
+          onClose();
+        }
+        toast.success(`Persona "${updatedPersona.name}" updated!`);
+        return;
+      }
+
+      const newPersona: Persona = {
+        id: `persona-${Date.now()}`,
+        user_id: userId || 'guest',
+        name: name.trim(),
+        avatar_url: avatarUrl.trim() || null,
+        description: description.trim(),
+        is_default: personas.length === 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (userId) {
+        try {
+          const { data, error } = await supabase
+            .from('personas')
+            .insert({
+              user_id: userId,
+              name: newPersona.name,
+              avatar_url: newPersona.avatar_url,
+              description: newPersona.description,
+              is_default: newPersona.is_default,
+            })
+            .select()
+            .single();
+
+          if (!error && data) {
+            newPersona.id = data.id;
+          }
+        } catch {}
+      }
+
+      const updated = [newPersona, ...personas.filter((p) => p.id !== newPersona.id)];
+      try {
+        localStorage.setItem('cadenza_local_personas', JSON.stringify(updated));
+      } catch {}
+      setPersonas(updated);
+
+      setSelectedPersonaId(newPersona.id);
+      updateSettings({ activePersonaId: newPersona.id });
+      onSelectPersona(newPersona);
+
+      setName('');
+      setDescription('');
+      setAvatarUrl('');
+      setAiPrompt('');
+      if (!initialMode || initialMode === 'list') {
+        setMode('list');
+      } else {
+        onClose();
+      }
+
+      toast.success(`Persona "${newPersona.name}" created!`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    if (mode === 'create' && (!initialMode || initialMode === 'list')) {
+      setMode('list');
+      setEditingPersonaState(null);
+    } else {
+      onClose();
+    }
   };
 
   // Confirm selection and start chat
@@ -280,7 +367,6 @@ export function PersonaModal({
     if (selectedPersonaId === id && updated[0]) {
       setSelectedPersonaId(updated[0].id);
     }
-    // Also drop the cloud row — otherwise the persona resurrects on reload.
     try {
       const { error } = await supabase.from('personas').delete().eq('id', id);
       if (error) {
@@ -293,91 +379,128 @@ export function PersonaModal({
     }
   };
 
-  if (!open) return null;
-
-  const chosenName = personas.find((p) => p.id === selectedPersonaId)?.name || 'Default';
+  const isEditing = Boolean(editingPersonaState);
+  const sheetTitle = mode === 'list' ? 'Choose your persona' : (isEditing ? 'Edit persona' : 'New persona');
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      {/* Mobile Bottom Sheet / Desktop Modal Dialog */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={mode === 'list' ? 'Choose your persona' : 'Create a persona'}
-        onClick={(e) => e.stopPropagation()}
-        className="panel w-full sm:max-w-xl max-h-[92dvh] sm:max-h-[85dvh] flex flex-col rounded-t-3xl sm:rounded-2xl overflow-hidden animate-in slide-in-from-bottom duration-200"
-      >
-        {/* Mobile Grab Bar */}
-        <div className="sm:hidden flex justify-center pt-3 pb-1" aria-hidden>
-          <div className="w-8 h-1 rounded-full bg-line-strong" />
-        </div>
-
-        {/* Modal Header */}
-        <div className="px-5 sm:px-6 py-4 border-b border-line flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {mode === 'create' && (
-              <button onClick={() => setMode('list')} className="icon-btn" aria-label="Back to personas">
-                <ChevronLeft className="w-5 h-5" aria-hidden />
+    <>
+      <Sheet
+        open={open}
+        onOpenChange={(o) => {
+          if (!o) onClose();
+        }}
+        title={sheetTitle}
+        description={
+          mode === 'list'
+            ? (character ? `Roleplaying with ${character.name}` : 'Define who you play in this story')
+            : undefined
+        }
+        size="tall"
+        bodyClassName="px-4 sm:px-5 pb-5 space-y-4"
+        footer={
+          mode === 'list' ? (
+            <div className="flex gap-2 w-full">
+              <button
+                type="button"
+                onClick={onClose}
+                className="btn btn-quiet flex-1 min-h-11"
+              >
+                Cancel
               </button>
-            )}
-            <div className="min-w-0">
-              <h2 className="type-page text-lg">{mode === 'list' ? 'Choose your persona' : 'Create a persona'}</h2>
-              <p className="type-meta truncate">
-                {character ? `Roleplaying with ${character.name}` : 'Define who you play in this story'}
-              </p>
+              <button
+                type="button"
+                onClick={handleConfirmSelection}
+                className="btn btn-primary flex-1 min-h-11"
+              >
+                <span>{character ? 'Start roleplay' : 'Use persona'}</span>
+                <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </button>
             </div>
-          </div>
+          ) : (
+            <div className="flex gap-2 w-full">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="btn btn-quiet flex-1 min-h-11"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateAI}
+                disabled={aiLoading}
+                className="btn btn-ghost flex-1 min-h-11"
+              >
+                <Sparkles
+                  className={`w-4 h-4 text-accent-text ${aiLoading ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>{aiLoading ? 'Generating…' : 'Generate'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePersona}
+                disabled={saving}
+                className="btn btn-primary flex-1 min-h-11"
+              >
+                <Check className="w-4 h-4" aria-hidden="true" />
+                <span>{saving ? 'Saving…' : (isEditing ? 'Save' : 'Save & select')}</span>
+              </button>
+            </div>
+          )
+        }
+      >
+        {mode === 'list' ? (
+          /* LIST MODE */
+          <div className="space-y-3">
+            <div className="flex items-center justify-between pb-1">
+              <span className="type-sec">Your personas ({personas.length})</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingPersonaState(null);
+                  setName('');
+                  setDescription('');
+                  setAvatarUrl('');
+                  setMode('create');
+                }}
+                className="btn btn-ghost min-h-11"
+              >
+                <Plus className="w-4 h-4 text-accent-text" aria-hidden="true" />
+                <span>New persona</span>
+              </button>
+            </div>
 
-          <button onClick={onClose} className="icon-btn shrink-0" aria-label="Close personas">
-            <X className="w-4 h-4" aria-hidden />
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
-          {mode === 'list' ? (
-            /* LIST MODE */
             <div className="space-y-2">
-              <div className="flex items-center justify-between pb-1">
-                <span className="type-sec">Your personas ({personas.length})</span>
-                <button onClick={() => setMode('create')} className="btn btn-ghost">
-                  <Plus className="w-3.5 h-3.5 text-accent-text" aria-hidden />
-                  New persona
-                </button>
-              </div>
-
               {personas.map((persona) => {
                 const isSelected = selectedPersonaId === persona.id;
 
                 return (
                   <div
                     key={persona.id}
-                    className={`p-3.5 sm:p-4 rounded-lg border flex items-center justify-between gap-3 transition-[border-color,background-color] duration-150 ${
-                      isSelected ? 'border-accent-line bg-accent-wash' : 'border-line'
+                    className={`p-3.5 sm:p-4 rounded-xl border flex items-center justify-between gap-3 min-h-[64px] row-press transition-[border-color,background-color] duration-150 ${
+                      isSelected ? 'border-accent-line bg-accent-wash' : 'border-line bg-surface'
                     }`}
                   >
                     <button
                       type="button"
                       onClick={() => setSelectedPersonaId(persona.id)}
                       aria-pressed={isSelected}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left py-1"
                     >
-                      <div className="w-11 h-11 rounded-md overflow-hidden shrink-0 border border-line">
+                      <div className="w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-line">
                         <CharacterAvatar
                           name={persona.name}
                           avatarUrl={persona.avatar_url}
                           className="w-full h-full"
                         />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="font-serif text-[0.95rem] font-medium text-ink truncate">
                             {persona.name}
                           </span>
-                          {isSelected && <span className="chip-accent chip">Selected</span>}
+                          {isSelected && <span className="chip chip-accent shrink-0">Selected</span>}
                         </div>
                         <p className="type-meta line-clamp-1 mt-0.5">
                           {persona.description || 'No background yet.'}
@@ -385,84 +508,101 @@ export function PersonaModal({
                       </div>
                     </button>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEdit(persona);
+                        }}
+                        className="icon-btn min-h-11 min-w-11"
+                        aria-label={`Edit ${persona.name}`}
+                      >
+                        <Pencil className="w-4 h-4" aria-hidden="true" />
+                      </button>
                       {personas.length > 1 && (
                         <button
+                          type="button"
                           onClick={(e) => handleDeletePersona(persona.id, e)}
-                          className="icon-btn"
+                          className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-danger"
                           aria-label={`Delete ${persona.name}`}
                         >
-                          <Trash2 className="w-3.5 h-3.5" aria-hidden />
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
                         </button>
                       )}
                       <div
-                        aria-hidden
-                        className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                        aria-hidden="true"
+                        className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${
                           isSelected ? 'border-accent-line bg-accent-wash' : 'border-line-strong'
                         }`}
                       >
-                        {isSelected && <Check className="w-3 h-3 text-accent-text" aria-hidden />}
+                        {isSelected && <Check className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          ) : (
-            /* CREATE MODE */
-            <div className="space-y-4 animate-in fade-in duration-150">
-              {/* AI Generator Box */}
-              <div className="surface rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="type-sec flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-accent-text" aria-hidden />
-                    Persona generator
-                  </span>
-                  {character && <span className="type-meta">Matched to {character.name}</span>}
-                </div>
-
-                <p className="type-meta leading-relaxed">
-                  Describe who you want to play — anything you specify is used exactly, and the
-                  rest is filled in to fit {character ? character.name : 'your story'}. Or leave it
-                  blank and let the generator draft a counterpart for this story.
-                </p>
-
-                <div className="space-y-2">
-                  <label htmlFor="persona-ai-idea" className="type-label">
-                    Your idea
-                  </label>
-                  <textarea
-                    id="persona-ai-idea"
-                    rows={3}
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="Describe your idea, e.g. a cynical detective with an old silver lighter…"
-                    className="field resize-y min-h-[76px] max-h-[180px] text-xs leading-relaxed"
-                  />
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="type-meta">
-                      {aiPrompt.length > 0 ? `${aiPrompt.length} characters` : 'Optional'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleGenerateAI}
-                      disabled={aiLoading}
-                      className="btn btn-ghost disabled:opacity-50"
-                    >
-                      <Sparkles
-                        className={`w-3.5 h-3.5 text-accent-text ${aiLoading ? 'animate-spin' : ''}`}
-                        aria-hidden
-                      />
-                      {aiLoading ? 'Generating…' : 'Generate'}
-                    </button>
-                  </div>
-                </div>
+          </div>
+        ) : (
+          /* CREATE / EDIT MODE */
+          <div className="space-y-4">
+            {/* AI Generator Box */}
+            <div className="surface rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="type-sec flex items-center gap-1.5 text-sm sm:text-base">
+                  <Sparkles className="w-4 h-4 text-accent-text" aria-hidden="true" />
+                  Persona generator
+                </span>
+                {character && (
+                  <span className="type-meta truncate">Matched to {character.name}</span>
+                )}
               </div>
 
-              {/* Persona Fields */}
-              <div className="space-y-3 pt-1">
-                <div className="flex items-center gap-4">
-                  {/* Avatar Preview */}
+              <p className="type-meta leading-relaxed">
+                Describe who you want to play — anything you specify is used exactly, and the
+                rest is filled in to fit {character ? character.name : 'your story'}. Or leave it
+                blank and let the generator draft a counterpart for this story.
+              </p>
+
+              <div className="space-y-2">
+                <label htmlFor="persona-ai-idea" className="type-label block">
+                  Your idea
+                </label>
+                <textarea
+                  id="persona-ai-idea"
+                  rows={4}
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder="Describe your idea, e.g. a cynical detective with an old silver lighter…"
+                  className="field w-full resize-y min-h-[96px] leading-relaxed"
+                />
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <span className="type-meta">
+                    {aiPrompt.length > 0 ? `${aiPrompt.length} characters` : 'Optional'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleGenerateAI}
+                    disabled={aiLoading}
+                    className="btn btn-ghost min-h-11 disabled:opacity-50"
+                  >
+                    <Sparkles
+                      className={`w-4 h-4 text-accent-text ${aiLoading ? 'animate-spin' : ''}`}
+                      aria-hidden="true"
+                    />
+                    <span>{aiLoading ? 'Generating…' : 'Generate'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Persona Fields */}
+            <div className="space-y-4 pt-1">
+              {/* Avatar Preview & Actions */}
+              <div className="space-y-1.5">
+                <span className="type-label block">Avatar photo</span>
+                <div className="flex flex-wrap items-center gap-4">
                   <div className="w-16 h-16 rounded-md overflow-hidden shrink-0 border border-line relative">
                     <CharacterAvatar
                       name={name || 'Persona'}
@@ -472,90 +612,70 @@ export function PersonaModal({
                     />
                   </div>
 
-                  <div className="flex-1 space-y-1.5 min-w-0">
-                    <label htmlFor="persona-name" className="type-label">
-                      Persona name
-                    </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="btn btn-quiet min-h-11"
+                    >
+                      <ImageIcon className="w-4 h-4" aria-hidden="true" />
+                      <span>Upload photo</span>
+                    </button>
                     <input
-                      id="persona-name"
-                      type="text"
-                      placeholder="e.g. Alexander Vance"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="field font-medium"
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      aria-label="Upload persona photo"
                     />
+                    {avatarUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setAvatarUrl('')}
+                        className="btn btn-quiet text-danger min-h-11"
+                      >
+                        <span>Clear photo</span>
+                      </button>
+                    )}
                   </div>
                 </div>
+              </div>
 
-                {/* Avatar actions */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="btn btn-quiet"
-                  >
-                    <ImageIcon className="w-3.5 h-3.5" aria-hidden />
-                    Upload photo
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    aria-label="Upload persona photo"
-                  />
-                  {avatarUrl && (
-                    <button type="button" onClick={() => setAvatarUrl('')} className="btn btn-quiet text-danger">
-                      Clear photo
-                    </button>
-                  )}
-                </div>
+              {/* Persona Name */}
+              <div className="space-y-1.5">
+                <label htmlFor="persona-name" className="type-label block">
+                  Persona name
+                </label>
+                <input
+                  id="persona-name"
+                  type="text"
+                  placeholder="e.g. Alexander Vance"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="field w-full font-medium"
+                  autoComplete="name"
+                />
+              </div>
 
-                {/* Description / Backstory */}
-                <div className="space-y-1.5 pt-1">
-                  <label htmlFor="persona-backstory" className="type-label">
-                    Backstory and appearance
-                  </label>
-                  <textarea
-                    id="persona-backstory"
-                    rows={4}
-                    placeholder="How they look, what they do, how they know this story…"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="field text-xs leading-relaxed"
-                  />
-                </div>
+              {/* Description / Backstory */}
+              <div className="space-y-1.5">
+                <label htmlFor="persona-backstory" className="type-label block">
+                  Backstory and appearance
+                </label>
+                <textarea
+                  id="persona-backstory"
+                  rows={4}
+                  placeholder="How they look, what they do, how they know this story…"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="field w-full resize-y min-h-[96px] leading-relaxed"
+                />
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Modal Footer */}
-        <div className="p-4 sm:p-5 border-t border-line flex items-center justify-between gap-3">
-          {mode === 'list' ? (
-            <>
-              <p className="type-meta hidden sm:block min-w-0 truncate">
-                Selected: <strong className="text-ink-2">{chosenName}</strong>
-              </p>
-              <button onClick={handleConfirmSelection} className="btn btn-primary w-full sm:w-auto ml-auto">
-                <span>Start roleplay</span>
-                <ArrowRight className="w-4 h-4" aria-hidden />
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={() => setMode('list')} className="btn btn-quiet">
-                Cancel
-              </button>
-              <button type="button" onClick={handleSavePersona} className="btn btn-primary">
-                <Check className="w-3.5 h-3.5" aria-hidden />
-                Save and select
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+          </div>
+        )}
+      </Sheet>
+    </>
   );
 }
