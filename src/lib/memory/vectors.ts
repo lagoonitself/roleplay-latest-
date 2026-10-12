@@ -21,6 +21,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { formatHistoryText } from '@/lib/prompt/macros';
+import { MEMORY_COLUMNS } from '@/lib/memory/queries';
 import type { Memory, Message } from '@/lib/supabase/types';
 
 export const DEFAULT_VECTORS_TEMPLATE = 'Past events:\n{{text}}';
@@ -178,7 +179,13 @@ export async function retrieveVectorMemories(
   let candidates: Memory[] = [];
 
   if (options.memories) {
-    candidates = options.memories.filter((m) => !m.superseded_by && !m.pinned);
+    // Dedupe by id — a stale or merged local list can carry the same memory
+    // twice, and recall must not return duplicates.
+    const byId = new Map<string, Memory>();
+    for (const m of options.memories) {
+      if (m && typeof m === 'object' && m.id && !m.superseded_by && !m.pinned) byId.set(m.id, m);
+    }
+    candidates = Array.from(byId.values());
   } else {
     try {
       const supabase = options.supabase ?? (await createClient());
@@ -188,7 +195,7 @@ export async function retrieveVectorMemories(
         profile.names.length
           ? supabase
               .from('memories')
-              .select('*')
+              .select(MEMORY_COLUMNS)
               .eq('chat_id', chatId)
               .is('superseded_by', null)
               .eq('pinned', false)
@@ -197,7 +204,7 @@ export async function retrieveVectorMemories(
           : Promise.resolve({ data: [] as Memory[] }),
         supabase
           .from('memories')
-          .select('*')
+          .select(MEMORY_COLUMNS)
           .eq('chat_id', chatId)
           .is('superseded_by', null)
           .eq('pinned', false)
@@ -205,7 +212,7 @@ export async function retrieveVectorMemories(
           .limit(30),
         supabase
           .from('memories')
-          .select('*')
+          .select(MEMORY_COLUMNS)
           .eq('chat_id', chatId)
           .is('superseded_by', null)
           .eq('pinned', false)
@@ -213,10 +220,15 @@ export async function retrieveVectorMemories(
           .limit(20),
       ];
 
-      const results = await Promise.all(queries);
+      const results = await Promise.allSettled(queries);
       const byId = new Map<string, Memory>();
       for (const r of results) {
-        for (const row of (r.data || []) as Memory[]) byId.set(row.id, row);
+        // One failing query (e.g. the entities overlap) must not discard the
+        // rest of the recall for this turn.
+        if (r.status !== 'fulfilled') continue;
+        const rows = (r.value as unknown as { data?: Memory[] | null }).data;
+        if (!rows) continue;
+        for (const row of rows) byId.set(row.id, row);
       }
       candidates = Array.from(byId.values());
     } catch (err) {
@@ -240,7 +252,10 @@ export async function retrieveVectorMemories(
   if (scored.length === 0) return empty;
 
   const textItems = scored.map(({ memory }) => `- ${formatHistoryText(memory.content, charName, userName)}`);
-  const formattedText = template.replace(/\{\{\s*text\s*\}\}/gi, textItems.join('\n'));
+  // Function replacement: recalled memory text can contain `$&`, `$1`, `$'`…
+  // (prices, code, quotes) — a string replacement would interpret those as
+  // substitution patterns and corrupt the recalled block.
+  const formattedText = template.replace(/\{\{\s*text\s*\}\}/gi, () => textItems.join('\n'));
 
   // Touch access tracking so the recency signal in the store stays meaningful.
   // Touch access tracking without holding up the reply: it is best-effort only.

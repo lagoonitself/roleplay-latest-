@@ -96,6 +96,17 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     return () => clearTimeout(t);
   }, [settings, open]);
 
+  // Escape closes regardless of where focus is — a dialog's own onKeyDown only
+  // fires while focus is inside it.
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const handleSave = () => {
@@ -114,21 +125,29 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   };
 
   const handleGoogleLogin = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    if (error) {
-      toast.error('Google Sign-in failed: ' + error.message);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (error) {
+        toast.error('Google Sign-in failed: ' + error.message);
+      }
+    } catch (err) {
+      toast.error('Google Sign-in failed: ' + (err instanceof Error ? err.message : 'network error'));
     }
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    toast.info('Signed out');
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      toast.info('Signed out');
+    } catch {
+      toast.error('Sign-out failed — please try again');
+    }
   };
 
   const temperatureWord = temperature < 0.9 ? 'Grounded' : temperature > 1.25 ? 'Inventive' : 'Balanced';
@@ -137,9 +156,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
     >
       <div
         role="dialog"
@@ -160,7 +176,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         </div>
 
         {/* Content */}
-        <div className="py-5 space-y-4 max-h-[72vh] overflow-y-auto pr-1">
+        <div className="py-5 space-y-4 max-h-[72dvh] overflow-y-auto pr-1">
           {/* Account / Google OAuth */}
           <div className="surface rounded-lg p-4">
             <div className="flex items-center justify-between gap-3">

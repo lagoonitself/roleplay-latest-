@@ -37,7 +37,7 @@ interface ProfileViewProps {
 export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
   const supabase = createClient();
   const [settings, updateSettings] = useSettings();
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const usage = useTokenUsage();
 
   const [user, setUser] = useState<{ email?: string; name?: string; avatar?: string } | null>(null);
@@ -391,16 +391,16 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
           </button>
           <button
             type="button"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             className="flex w-full items-center justify-between p-3 text-left"
           >
             <span className="flex items-center gap-2.5">
-              {theme === 'dark' ? (
+              {resolvedTheme === 'dark' ? (
                 <Sun className="h-4 w-4 shrink-0 text-ink-2" aria-hidden />
               ) : (
                 <Moon className="h-4 w-4 shrink-0 text-ink-2" aria-hidden />
               )}
-              <span className="type-sec">{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+              <span className="type-sec">{resolvedTheme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
             </span>
             <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
           </button>

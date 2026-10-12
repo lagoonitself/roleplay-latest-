@@ -59,7 +59,7 @@ export interface ParsedCardResult {
 
 export function makeCharacter(overrides: Partial<Character>): Character {
   return {
-    id: overrides.id || `char-${Date.now()}`,
+    id: overrides.id || `char-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     user_id: overrides.user_id || 'guest',
     name: overrides.name || 'Unnamed Character',
     avatar_url: overrides.avatar_url || null,
@@ -93,7 +93,49 @@ export function makeCharacter(overrides: Partial<Character>): Character {
   };
 }
 
-const clean = (val: unknown): string => (typeof val === 'string' ? repairMojibake(val).trim() : '');
+const clean = (val: unknown): string => {
+  if (typeof val === 'string') return repairMojibake(val).trim();
+  // Some exporters put numbers/booleans in text fields — keep the data instead of
+  // silently dropping it. Everything else (objects, arrays, null) stays ''.
+  if (typeof val === 'number' && Number.isFinite(val)) return String(val);
+  if (typeof val === 'boolean') return String(val);
+  return '';
+};
+
+/** Hard caps so a hostile card cannot exhaust memory / localStorage / DB rows. */
+const MAX_CARD_JSON_CHARS = 20_000_000;
+const MAX_JSON_DEPTH = 30;
+const MAX_TEXT_FIELD_CHARS = 200_000;
+const MAX_ALT_GREETINGS = 50;
+const MAX_TAGS = 100;
+const MAX_BOOK_ENTRIES = 500;
+const MAX_KEYS_PER_ENTRY = 50;
+const MAX_ENTRY_CONTENT_CHARS = 20_000;
+
+const cleanCapped = (val: unknown, cap = MAX_TEXT_FIELD_CHARS): string => clean(val).slice(0, cap);
+
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Recursively drops prototype-pollution keys from untrusted parsed JSON and
+ * bounds the depth/size of what downstream code will walk. JSON.parse itself
+ * does not pollute, but these objects are merged/spread into app state later —
+ * never let hostile keys past the parser.
+ */
+function sanitizeParsedJson<T>(value: T, depth = 0): T {
+  if (depth > MAX_JSON_DEPTH || value === null || typeof value !== 'object') {
+    return (depth > MAX_JSON_DEPTH ? null : value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 10_000).map((v) => sanitizeParsedJson(v, depth + 1)) as unknown as T;
+  }
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
+    out[key] = sanitizeParsedJson((value as Record<string, unknown>)[key], depth + 1);
+  }
+  return out as unknown as T;
+}
 
 /**
  * Normalizes an embedded CharacterBook from SillyTavern or Chub card
@@ -102,26 +144,29 @@ export function normalizeCharacterBook(raw: unknown): CharacterBook | null {
   if (!raw || typeof raw !== 'object') return null;
   const rawBook = raw as Record<string, unknown>;
 
-  const entries: CharacterBookEntry[] = (Array.isArray(rawBook.entries) ? rawBook.entries : [])
+  const entries: CharacterBookEntry[] = (Array.isArray(rawBook.entries) ? rawBook.entries.slice(0, MAX_BOOK_ENTRIES) : [])
+    .filter((e: unknown): e is Record<string, unknown> => !!e && typeof e === 'object' && !Array.isArray(e))
     .map((e: Record<string, unknown>): CharacterBookEntry => {
-      const keys = Array.isArray(e.keys)
+      const keys = (Array.isArray(e.keys)
         ? e.keys.map(clean).filter(Boolean)
         : typeof e.key === 'string'
         ? e.key.split(',').map(clean).filter(Boolean)
-        : [];
+        : []
+      ).slice(0, MAX_KEYS_PER_ENTRY);
 
-      const secondaryKeys = Array.isArray(e.secondary_keys)
+      const secondaryKeys = (Array.isArray(e.secondary_keys)
         ? e.secondary_keys.map(clean).filter(Boolean)
         : typeof e.secondary_keys === 'string'
         ? e.secondary_keys.split(',').map(clean).filter(Boolean)
-        : [];
+        : []
+      ).slice(0, MAX_KEYS_PER_ENTRY);
 
       return {
         keys,
         secondary_keys: secondaryKeys,
-        content: clean(e.content),
-        name: clean(e.name || e.comment || e.title),
-        comment: clean(e.comment),
+        content: cleanCapped(e.content, MAX_ENTRY_CONTENT_CHARS),
+        name: clean(e.name || e.comment || e.title).slice(0, 200),
+        comment: clean(e.comment).slice(0, 500),
         enabled: e.enabled !== false,
         constant: Boolean(e.constant),
         selective: Boolean(e.selective),
@@ -147,20 +192,41 @@ export function normalizeCharacterBook(raw: unknown): CharacterBook | null {
 
 /**
  * Parses raw JSON string (or parsed object) of Character Card V2, V1, Tavern, or Janitor AI format.
+ * Input is size-capped, JSON is parsed defensively, and prototype-pollution keys
+ * are stripped before any of it reaches app state.
  */
 export function parseCharacterCardJson(raw: string | object): ParsedCardResult {
-  const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  let obj: unknown;
+  if (typeof raw === 'string') {
+    if (raw.length > MAX_CARD_JSON_CHARS) {
+      throw new Error('Character card is too large to import.');
+    }
+    try {
+      obj = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(
+        `File does not contain valid JSON character card data (${err instanceof Error ? err.message : 'parse error'}).`
+      );
+    }
+  } else {
+    obj = raw;
+  }
+  obj = sanitizeParsedJson(obj);
+  if (!obj || typeof obj !== 'object') {
+    return { character: {}, characterBook: null };
+  }
+  const record = obj as Record<string, unknown>;
   let characterBook: CharacterBook | null = null;
 
   // Character Card V2 spec format (Janitor AI, Chub AI, SillyTavern standard)
-  if (obj.spec === 'chara_card_v2' && obj.data) {
-    const d = obj.data;
-    const name = clean(d.name) || 'Unnamed Character';
-    const desc = clean(d.description);
-    const personality = clean(d.personality);
-    const scenario = clean(d.scenario);
-    const firstMes = clean(d.first_mes);
-    const notes = clean(d.creator_notes);
+  if (record.spec === 'chara_card_v2' && record.data && typeof record.data === 'object') {
+    const d = record.data as Record<string, unknown>;
+    const name = cleanCapped(d.name, 200) || 'Unnamed Character';
+    const desc = cleanCapped(d.description);
+    const personality = cleanCapped(d.personality);
+    const scenario = cleanCapped(d.scenario);
+    const firstMes = cleanCapped(d.first_mes);
+    const notes = cleanCapped(d.creator_notes);
     const tagline = notes ? (notes.length > 120 ? notes.slice(0, 117) + '...' : notes) : (personality.slice(0, 80) ? personality.slice(0, 80) + '...' : '');
 
     if (d.character_book) {
@@ -175,30 +241,32 @@ export function parseCharacterCardJson(raw: string | object): ParsedCardResult {
         personality,
         scenario,
         first_message: firstMes,
-        alternate_greetings: Array.isArray(d.alternate_greetings) ? d.alternate_greetings.map(clean).filter(Boolean) : [],
-        example_dialogue: clean(d.mes_example),
+        alternate_greetings: Array.isArray(d.alternate_greetings)
+          ? d.alternate_greetings.map((g) => cleanCapped(g)).filter(Boolean).slice(0, MAX_ALT_GREETINGS)
+          : [],
+        example_dialogue: cleanCapped(d.mes_example),
         creator_notes: notes,
-        system_prompt: clean(d.system_prompt),
-        post_history_instructions: clean(d.post_history_instructions),
-        speech_style: clean(d.extensions?.speech_style || d.extensions?.talkativeness || ''),
-        tags: Array.isArray(d.tags) ? d.tags.map(clean).filter(Boolean) : [],
+        system_prompt: cleanCapped(d.system_prompt),
+        post_history_instructions: cleanCapped(d.post_history_instructions),
+        speech_style: clean((d.extensions as Record<string, unknown> | undefined)?.speech_style || (d.extensions as Record<string, unknown> | undefined)?.talkativeness || ''),
+        tags: Array.isArray(d.tags) ? d.tags.map((t) => clean(t)).filter(Boolean).slice(0, MAX_TAGS) : [],
       },
       characterBook,
     };
   }
 
   // Legacy V1 / Chub / Tavern / Janitor simple format
-  const name = clean(obj.name || obj.char_name) || 'Unnamed Character';
-  const desc = clean(obj.description || obj.char_persona);
-  const personality = clean(obj.personality || desc);
-  const scenario = clean(obj.scenario || obj.world_scenario);
-  const firstMes = clean(obj.first_mes || obj.char_greeting || obj.greeting);
-  const dialogue = clean(obj.mes_example || obj.example_dialogue);
-  const notes = clean(obj.creator_notes);
+  const name = cleanCapped(record.name || record.char_name, 200) || 'Unnamed Character';
+  const desc = cleanCapped(record.description || record.char_persona);
+  const personality = cleanCapped(record.personality) || desc;
+  const scenario = cleanCapped(record.scenario || record.world_scenario);
+  const firstMes = cleanCapped(record.first_mes || record.char_greeting || record.greeting);
+  const dialogue = cleanCapped(record.mes_example || record.example_dialogue);
+  const notes = cleanCapped(record.creator_notes);
   const tagline = notes ? (notes.length > 120 ? notes.slice(0, 117) + '...' : notes) : (desc.slice(0, 80) ? desc.slice(0, 80) + '...' : '');
 
-  if (obj.character_book) {
-    characterBook = normalizeCharacterBook(obj.character_book);
+  if (record.character_book) {
+    characterBook = normalizeCharacterBook(record.character_book);
   }
 
   return {
@@ -209,13 +277,15 @@ export function parseCharacterCardJson(raw: string | object): ParsedCardResult {
       personality,
       scenario,
       first_message: firstMes,
-      alternate_greetings: Array.isArray(obj.alternate_greetings) ? obj.alternate_greetings.map(clean).filter(Boolean) : [],
+      alternate_greetings: Array.isArray(record.alternate_greetings)
+        ? record.alternate_greetings.map((g) => cleanCapped(g)).filter(Boolean).slice(0, MAX_ALT_GREETINGS)
+        : [],
       example_dialogue: dialogue,
       creator_notes: notes,
-      system_prompt: clean(obj.system_prompt),
-      post_history_instructions: clean(obj.post_history_instructions),
-      speech_style: clean(obj.speech_style || ''),
-      tags: Array.isArray(obj.tags) ? obj.tags.map(clean).filter(Boolean) : [],
+      system_prompt: cleanCapped(record.system_prompt),
+      post_history_instructions: cleanCapped(record.post_history_instructions),
+      speech_style: clean(record.speech_style || ''),
+      tags: Array.isArray(record.tags) ? record.tags.map((t) => clean(t)).filter(Boolean).slice(0, MAX_TAGS) : [],
     },
     characterBook,
   };
@@ -254,8 +324,12 @@ export function parseCharacterFromPng(buffer: ArrayBuffer): ParsedCardResult {
     ].join('');
     offset += 4;
 
-    if (typeChars === 'tEXt' && length > 0) {
-      const chunkData = bytes.slice(offset, offset + length);
+    // Trust the chunk length only within the bytes that actually exist — a
+    // hostile file can claim a 4 GB chunk and walk the parser off the buffer.
+    const dataLength = Math.min(length, bytes.length - offset - 4);
+
+    if (typeChars === 'tEXt' && dataLength > 0) {
+      const chunkData = bytes.slice(offset, offset + dataLength);
       let nullIndex = -1;
       for (let i = 0; i < chunkData.length; i++) {
         if (chunkData[i] === 0) {
@@ -269,24 +343,38 @@ export function parseCharacterFromPng(buffer: ArrayBuffer): ParsedCardResult {
         const textBytes = chunkData.slice(nullIndex + 1);
 
         if (keyword.toLowerCase() === 'chara' || keyword.toLowerCase() === 'ccv3') {
-          const rawText = new TextDecoder('utf-8').decode(textBytes);
+          // The chunk payload is base64 of UTF-8 JSON. atob yields a *binary*
+          // string, so non-ASCII characters would be mojibake — decode the
+          // bytes as UTF-8 instead. Unencoded payloads fall back to the raw text.
+          let decoded: string | null = null;
           try {
-            cardJsonStr = atob(rawText);
+            const binary = atob(new TextDecoder('latin1').decode(textBytes).trim());
+            const jsonBytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) jsonBytes[i] = binary.charCodeAt(i);
+            decoded = new TextDecoder('utf-8').decode(jsonBytes);
           } catch {
-            cardJsonStr = rawText;
+            decoded = null;
           }
+          const rawText = new TextDecoder('utf-8').decode(textBytes);
+          // Only trust the base64 decode when it actually produced JSON —
+          // some tools ship the payload unencoded, and pure-ASCII payloads can
+          // decode into garbage without throwing.
+          cardJsonStr = decoded && /^[\s\uFEFF]*[{[]/.test(decoded) ? decoded : rawText;
           break;
         }
       }
     }
 
+    if (length > bytes.length) break;
     offset += length + 4;
   }
 
-  // Create avatar data URL from the PNG
+  // Create avatar data URL from the PNG (chunked so multi-MB images can't
+  // blow the string builder or btoa's length limit).
   let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.byteLength; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)));
   }
   const avatarDataUrl = `data:image/png;base64,${btoa(binary)}`;
 
@@ -337,8 +425,8 @@ export async function saveEmbeddedCharacterBook(
 
     const lorebookId = bookRow.id;
 
-    // 2. Insert Entries
-    const entryRows = book.entries.map((e) => ({
+    // 2. Insert Entries (batched; every batch must land or the book is useless)
+    const entryRows = book.entries.slice(0, 500).map((e) => ({
       lorebook_id: lorebookId,
       user_id: userId,
       title: e.name || e.comment || 'Entry',
@@ -351,16 +439,28 @@ export async function saveEmbeddedCharacterBook(
       case_sensitive: Boolean(e.case_sensitive),
     }));
 
-    if (entryRows.length > 0) {
-      await supabase.from('lorebook_entries').insert(entryRows);
+    for (let i = 0; i < entryRows.length; i += 200) {
+      const { error: entryErr } = await supabase.from('lorebook_entries').insert(entryRows.slice(i, i + 200));
+      if (entryErr) {
+        console.warn('Failed to insert lorebook entries:', entryErr.message);
+        // Don't leave a half-written book behind — roll back and let the caller
+        // know the import failed instead of silently keeping partial data.
+        await supabase.from('lorebooks').delete().eq('id', lorebookId);
+        return null;
+      }
     }
 
     // 3. Link to Character
-    await supabase.from('character_lorebooks').upsert({
+    const { error: linkErr } = await supabase.from('character_lorebooks').upsert({
       character_id: characterId,
       lorebook_id: lorebookId,
       user_id: userId,
     });
+    if (linkErr) {
+      console.warn('Failed to link lorebook to character:', linkErr.message);
+      await supabase.from('lorebooks').delete().eq('id', lorebookId);
+      return null;
+    }
 
     return lorebookId;
   } catch (err) {

@@ -88,6 +88,7 @@ export function SillyTavernContextInspector({
   // Memory State
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [newMemoryText, setNewMemoryText] = useState('');
+  const [isAddingMemory, setIsAddingMemory] = useState(false);
   const [newMemoryKind, setNewMemoryKind] = useState<string>('fact');
   const [newMemoryImportance, setNewMemoryImportance] = useState(8);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
@@ -207,7 +208,8 @@ export function SillyTavernContextInspector({
 
   const handleAddMemory = async () => {
     const content = newMemoryText.trim();
-    if (!content) return;
+    if (!content || isAddingMemory) return;
+    setIsAddingMemory(true);
     try {
       const data = await memoryRequest({
         action: 'add_memory',
@@ -221,6 +223,8 @@ export function SillyTavernContextInspector({
       toast.success('Memory added — it will always be held in mind');
     } catch (e) {
       toast.error((e instanceof Error ? e.message : '') || 'Could not add memory');
+    } finally {
+      setIsAddingMemory(false);
     }
   };
 
@@ -298,7 +302,7 @@ export function SillyTavernContextInspector({
     ) : null;
 
   return (
-    <aside className="animate-in fade-in slide-in-from-right-2 absolute inset-0 z-30 flex h-full w-full shrink-0 flex-col border-l border-line bg-background duration-150 ease-out sm:relative sm:inset-auto sm:w-96">
+    <aside className="animate-in fade-in slide-in-from-right-2 fixed inset-0 z-30 flex h-full w-full shrink-0 flex-col border-l border-line bg-background pt-safe duration-150 ease-out sm:relative sm:inset-auto sm:w-96">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-line p-4">
         <div className="flex items-center gap-2">
@@ -309,8 +313,7 @@ export function SillyTavernContextInspector({
           type="button"
           onClick={onClose}
           aria-label="Close memory panel"
-          className="icon-btn"
-          style={{ width: 28, height: 28 }}
+          className="icon-btn w-8 h-8"
         >
           <X aria-hidden className="h-4 w-4" />
         </button>
@@ -377,7 +380,7 @@ export function SillyTavernContextInspector({
       </div>
 
       {/* Body Content */}
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div className="flex-1 space-y-4 overflow-y-auto p-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
         {/* TAB 1: CHAT SUMMARY */}
         {activeTab === 'summary' && (
           <div className="space-y-4">
@@ -389,7 +392,7 @@ export function SillyTavernContextInspector({
                 type="button"
                 onClick={() => setIsFrozen(!isFrozen)}
                 aria-pressed={isFrozen}
-                className={isFrozen ? 'chip chip-warn' : 'chip'}
+                className={isFrozen ? 'chip chip-warn min-h-8' : 'chip min-h-8'}
                 title="When frozen, automatic summarization will not overwrite your text"
               >
                 {isFrozen ? <Lock aria-hidden className="h-3 w-3" /> : <Unlock aria-hidden className="h-3 w-3" />}
@@ -435,7 +438,7 @@ export function SillyTavernContextInspector({
                 type="button"
                 onClick={() => setShowSummarySettings(!showSummarySettings)}
                 aria-expanded={showSummarySettings}
-                className="flex w-full items-center justify-between text-xs font-medium text-ink-2 transition-colors hover:text-ink"
+                className="flex min-h-8 w-full items-center justify-between text-xs font-medium text-ink-2 transition-colors hover:text-ink"
               >
                 <span className="flex items-center gap-1.5">
                   <SlidersHorizontal aria-hidden className="h-3.5 w-3.5" />
@@ -563,7 +566,7 @@ export function SillyTavernContextInspector({
                 <button
                   type="button"
                   onClick={handleAddMemory}
-                  disabled={!newMemoryText.trim()}
+                  disabled={!newMemoryText.trim() || isAddingMemory}
                   className="btn btn-primary ml-auto text-xs"
                 >
                   <Plus aria-hidden className="h-3.5 w-3.5" />
@@ -595,8 +598,7 @@ export function SillyTavernContextInspector({
                             setEditingMemoryText(memory.content);
                           }}
                           aria-label="Edit memory"
-                          className="icon-btn"
-                          style={{ width: 24, height: 24 }}
+                          className="icon-btn w-8 h-8"
                         >
                           <Pencil aria-hidden className="h-3 w-3" />
                         </button>
@@ -604,8 +606,7 @@ export function SillyTavernContextInspector({
                           type="button"
                           onClick={() => handleUpdateMemory(memory.id, { pinned: !memory.pinned })}
                           aria-label={memory.pinned ? 'Unpin memory' : 'Pin memory'}
-                          className="icon-btn"
-                          style={{ width: 24, height: 24 }}
+                          className="icon-btn w-8 h-8"
                         >
                           {memory.pinned ? <PinOff aria-hidden className="h-3 w-3" /> : <Pin aria-hidden className="h-3 w-3" />}
                         </button>
@@ -613,8 +614,7 @@ export function SillyTavernContextInspector({
                           type="button"
                           onClick={() => handleDeleteMemory(memory.id)}
                           aria-label="Forget memory"
-                          className="icon-btn text-danger-text"
-                          style={{ width: 24, height: 24 }}
+                          className="icon-btn text-danger w-8 h-8"
                         >
                           <Trash2 aria-hidden className="h-3 w-3" />
                         </button>

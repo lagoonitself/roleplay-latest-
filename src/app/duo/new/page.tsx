@@ -188,7 +188,7 @@ export default function DuoNewPage() {
   );
 
   return (
-    <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-5 pb-24">
+    <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-5 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)]">
       <div className="flex items-center gap-3">
         <Link href="/duo" className="icon-btn shrink-0" aria-label="Back to scenes">
           <ArrowLeft className="w-5 h-5" aria-hidden />
@@ -237,7 +237,7 @@ export default function DuoNewPage() {
                   key={s}
                   onClick={() => setFirstSpeaker(s)}
                   aria-pressed={firstSpeaker === s}
-                  className={`flex-1 px-3 py-1.5 rounded-full truncate ${
+                  className={`flex-1 min-h-8 px-3 py-1.5 rounded-full truncate ${
                     firstSpeaker === s ? 'bg-accent-wash text-accent-text' : 'text-ink-3'
                   }`}
                 >
@@ -259,7 +259,7 @@ export default function DuoNewPage() {
                 value={maxTurns}
                 aria-label={`Length, ${maxTurns} lines`}
                 onChange={(e) => setMaxTurns(Number(e.target.value))}
-                className="mt-3 w-full accent-[var(--accent)]"
+                className="mt-3 min-h-8 w-full accent-[var(--accent)]"
               />
               <span className="type-code shrink-0">{maxTurns}</span>
             </div>
@@ -278,7 +278,7 @@ export default function DuoNewPage() {
                 value={delayMs}
                 aria-label={`Pace, ${(delayMs / 1000).toFixed(1)} seconds between lines`}
                 onChange={(e) => setDelayMs(Number(e.target.value))}
-                className="mt-3 w-full accent-[var(--accent)]"
+                className="mt-3 min-h-8 w-full accent-[var(--accent)]"
               />
               <span className="type-code shrink-0">{(delayMs / 1000).toFixed(1)}s</span>
             </div>
@@ -315,7 +315,7 @@ export default function DuoNewPage() {
                 key={t}
                 onClick={() => setTab(t)}
                 aria-pressed={tab === t}
-                className={`px-3.5 py-1.5 rounded-full capitalize ${
+                className={`min-h-8 px-3.5 py-1.5 rounded-full capitalize ${
                   tab === t ? 'bg-accent-wash text-accent-text' : 'text-ink-3'
                 }`}
               >

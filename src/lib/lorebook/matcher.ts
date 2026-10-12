@@ -16,6 +16,7 @@
  */
 
 import { estimateTokens } from '@/lib/prompt/tokens';
+import { isSafeRegexPattern } from '@/lib/formatter/regex-engine';
 import type { LorebookEntry } from '@/lib/supabase/types';
 
 export enum SelectiveLogic {
@@ -67,6 +68,10 @@ export interface ActivatedLore {
   totalTokens: number;
 }
 
+/** Upper bound on the keyword-scan buffer and on keys considered per entry. */
+const MAX_SCAN_BUFFER_CHARS = 120_000;
+const MAX_KEYS_PER_ENTRY = 100;
+
 /**
  * Escapes regex special characters
  */
@@ -75,13 +80,17 @@ function escapeRegex(str: string): string {
 }
 
 /**
- * Checks if a pattern is a regex in /pattern/flags format
+ * Checks if a pattern is a regex in /pattern/flags format.
+ * User-supplied keys are screened against catastrophic backtracking (ReDoS) and
+ * compiled without the stateful `g`/`y` flags: `.test()` is called repeatedly and a
+ * shared lastIndex would silently skip matches on later calls.
  */
 function parseRegex(key: string): RegExp | null {
   const match = key.match(/^\/(.+)\/([gimsuy]*)$/);
   if (match) {
+    if (!isSafeRegexPattern(match[1])) return null;
     try {
-      return new RegExp(match[1], match[2]);
+      return new RegExp(match[1], match[2].replace(/[gy]/g, ''));
     } catch {
       return null;
     }
@@ -136,11 +145,11 @@ function isEntryTriggered(
   const matchWholeWords = entry.match_whole_words !== false; // Default true in modern ST
 
   // Primary keys test: ANY primary key must match
-  const primaryMatched = entry.keys.some((k) => testKey(k, text, caseSensitive, matchWholeWords));
+  const primaryMatched = entry.keys.slice(0, MAX_KEYS_PER_ENTRY).some((k) => testKey(k, text, caseSensitive, matchWholeWords));
   if (!primaryMatched) return false;
 
   // If no secondary keys or selective is disabled, primary match is sufficient
-  const secondaries = (entry.secondary_keys || []).map((k) => k.trim()).filter(Boolean);
+  const secondaries = (entry.secondary_keys || []).map((k) => k.trim()).filter(Boolean).slice(0, MAX_KEYS_PER_ENTRY);
   if (secondaries.length === 0 || entry.selective === false) {
     return true;
   }
@@ -200,6 +209,11 @@ export function scanWorldInfo(
   ].filter(Boolean);
 
   let currentScanBuffer = [...recentMessages, ...globalChunks].join('\n\n');
+  // Bound how much text keyword matching may scan — hostile lorebooks can embed
+  // huge entry contents that would otherwise grow the buffer without limit.
+  if (currentScanBuffer.length > MAX_SCAN_BUFFER_CHARS) {
+    currentScanBuffer = currentScanBuffer.slice(0, MAX_SCAN_BUFFER_CHARS);
+  }
 
   const activatedSet = new Map<string, WorldInfoScanEntry>();
   const entryKey = (e: WorldInfoScanEntry, idx: number) => e.id || `${e.title || 'entry'}-${idx}`;
@@ -228,7 +242,7 @@ export function scanWorldInfo(
 
     // Append newly activated entry contents into scan buffer
     const newContent = newlyActivatedThisCycle.map((e) => e.content || '').join('\n\n');
-    currentScanBuffer += '\n\n' + newContent;
+    currentScanBuffer = (currentScanBuffer + '\n\n' + newContent).slice(0, MAX_SCAN_BUFFER_CHARS);
     newlyActivatedThisCycle = [];
 
     // Scan remaining unactivated entries

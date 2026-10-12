@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -63,6 +64,10 @@ import { DEFAULT_PRESET_ID, SILLY_TAVERN_SYSTEM_PROMPT_PRESETS } from '@/lib/pro
 import { toast } from 'sonner';
 import type { Chat, Character, Persona, Message, Memory, Summary, ChatState } from '@/lib/supabase/types';
 import { resolveLlmKey, hasLlmCredentials, missingCredentialsMessage } from '@/lib/llm/credentials';
+import { MessageRow } from '@/components/chat/message-row';
+import { MessageActionsSheet } from '@/components/chat/message-actions-sheet';
+import { useEvent, useVisualViewportVars } from '@/lib/hooks';
+import { MEMORY_COLUMNS } from '@/lib/memory/queries';
 
 // Local temp ids (usr-/ast-/msg-) are never valid Supabase UUIDs.
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -87,6 +92,16 @@ function isAbortError(err: unknown): boolean {
     err !== null &&
     'name' in err &&
     (err as { name?: unknown }).name === 'AbortError'
+  );
+}
+
+// Smooth scrolling is motion too: honour prefers-reduced-motion for
+// programmatic scrolls (CSS scroll-behavior does not cover JS scroll APIs).
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
   );
 }
 
@@ -300,6 +315,21 @@ function makeRegenPlaceholder(chatId: string, parentId: string | null): Message 
   };
 }
 
+// Realtime events arrive in bursts; JSON.stringify-ing the whole transcript
+// per event is wasted main-thread work. Coalesce writes to one per 250ms.
+let localSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let localSavePending: { chatId: string; messages: Message[] } | null = null;
+function scheduleLocalSave(chatId: string, messages: Message[]) {
+  localSavePending = { chatId, messages };
+  if (localSaveTimer) return;
+  localSaveTimer = setTimeout(() => {
+    localSaveTimer = null;
+    const pending = localSavePending;
+    localSavePending = null;
+    if (pending) saveLocalMessages(pending.chatId, pending.messages);
+  }, 250);
+}
+
 export default function ChatPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -391,8 +421,16 @@ export default function ChatPage() {
 
   const handleDeleteCurrentChat = async () => {
     if (confirm('Delete this entire chat session? This cannot be undone.')) {
-      await deleteChat(chatId);
-      toast.success('Chat deleted');
+      try {
+        const ok = await deleteChat(chatId);
+        if (ok) {
+          toast.success('Chat deleted');
+        } else {
+          toast.error('Could not delete the chat — please try again');
+        }
+      } catch {
+        toast.error('Could not delete the chat — please try again');
+      }
       router.push('/?tab=chats');
     }
   };
@@ -476,14 +514,15 @@ export default function ChatPage() {
   };
 
   const scrollToBottom = (smooth = true) => {
+    const behavior: ScrollBehavior = smooth && !prefersReducedMotion() ? 'smooth' : 'instant';
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTo({
         top: chatContainerRef.current.scrollHeight,
-        behavior: smooth ? 'smooth' : 'instant',
+        behavior,
       });
       setIsAtBottom(true);
     } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
+      messagesEndRef.current?.scrollIntoView({ behavior });
       setIsAtBottom(true);
     }
   };
@@ -504,6 +543,11 @@ export default function ChatPage() {
 
   // 1. Load Persona, Character, Messages, State
   useEffect(() => {
+    // Guards against a slower stale load clobbering a newer chat (rapid
+    // navigation between chats used to cross-wire their transcripts) and
+    // against setting state after unmount.
+    let cancelled = false;
+
     async function initChat() {
       const isCloudChat = isUuid(chatId);
 
@@ -539,7 +583,7 @@ export default function ChatPage() {
         ? Promise.all([
             supabase
               .from('memories')
-              .select('*')
+              .select(MEMORY_COLUMNS)
               .eq('chat_id', chatId)
               .is('superseded_by', null)
               .order('importance', { ascending: false }),
@@ -576,6 +620,7 @@ export default function ChatPage() {
       if (dbChat) existingChat = dbChat;
 
       // Duo scenes live on /duo/[id] — bounce if this chat is one.
+      if (cancelled) return;
       if (
         existingChat &&
         ((existingChat as Chat).mode === 'duo' || (existingChat.settings as Record<string, unknown>)?.duo)
@@ -629,6 +674,7 @@ export default function ChatPage() {
         } catch {}
       }
 
+      if (cancelled) return;
       setActivePersona(resolvedPersona);
 
       // B. Load Character - Multi-tier reliable resolution
@@ -756,6 +802,7 @@ export default function ChatPage() {
         });
       }
 
+      if (cancelled) return;
       setCharacter(charObj);
 
       // C. Load Messages & History
@@ -876,6 +923,7 @@ export default function ChatPage() {
               .single()
           )
             .then(({ data: dbGreeting }) => {
+              if (cancelled) return;
               if (dbGreeting?.id) {
                 setMessages((prev) =>
                   prev.map((m) => (m.id === 'msg-greeting' ? { ...m, id: dbGreeting.id } : m))
@@ -957,6 +1005,9 @@ export default function ChatPage() {
     }
 
     initChat();
+    return () => {
+      cancelled = true;
+    };
     // initChat is a mount-time chat initializer; re-running it when the router or the active
     // persona changes would reload and rewrite the conversation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1006,7 +1057,7 @@ export default function ChatPage() {
               } else {
                 updated = [...prev, newMsg];
               }
-              saveLocalMessages(chatId, updated);
+              scheduleLocalSave(chatId, updated);
               return updated;
             });
           } else if (payload.eventType === 'UPDATE') {
@@ -1016,7 +1067,7 @@ export default function ChatPage() {
               const local = prev.find((m) => m.id === updatedMsg.id);
               if (local && local.status === 'streaming') return prev;
               const updated = prev.map((m) => (m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m));
-              saveLocalMessages(chatId, updated);
+              scheduleLocalSave(chatId, updated);
               return updated;
             });
           } else if (payload.eventType === 'DELETE') {
@@ -1024,7 +1075,7 @@ export default function ChatPage() {
             if (oldId) {
               setMessages((prev) => {
                 const updated = prev.filter((m) => m.id !== oldId);
-                saveLocalMessages(chatId, updated);
+                scheduleLocalSave(chatId, updated);
                 return updated;
               });
             }
@@ -1105,6 +1156,15 @@ export default function ChatPage() {
       }
     }
   }, [messages, isGenerating, isAtBottom]);
+
+  // Abort any in-flight generation when the chat unmounts (navigating away
+  // must not leave a stream writing into a dead page), and when the tracked
+  // controller is swapped out.
+  useEffect(() => {
+    return () => {
+      abortController?.abort();
+    };
+  }, [abortController]);
 
   // Auto-resize textarea
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -1477,7 +1537,7 @@ export default function ChatPage() {
 
         const { data: memData } = await supabase
           .from('memories')
-          .select('*')
+          .select(MEMORY_COLUMNS)
           .eq('chat_id', chatId)
           .is('superseded_by', null);
         if (memData) setMemories(memData as Memory[]);
@@ -1529,7 +1589,14 @@ export default function ChatPage() {
 
   // Swipes (navigate between alternative greetings/responses)
   const handleSwipe = (msgIndex: number, direction: 'prev' | 'next') => {
+    // Swiping mid-stream would redirect the live stream into another swipe
+    // slot and corrupt both versions — same guard as edit/delete.
+    if (isGenerating) {
+      toast.error('Stop generation before switching versions');
+      return;
+    }
     const msg = messages[msgIndex];
+    if (!msg) return;
     const swipes = msg.meta?.swipes || [msg.content];
     const reasoningSwipes = msg.meta?.reasoning_swipes || [];
     const reasoningDurations = msg.meta?.reasoning_durations || [];
@@ -1812,11 +1879,11 @@ export default function ChatPage() {
           const finalVal = formatRoleplayText(m.content, charName, userName);
           sList[newSwipeIndex] = finalVal;
 
-          const rList = m.meta?.reasoning_swipes ? [...m.meta.reasoning_swipes] : [streamedReasoning];
-          rList[newSwipeIndex] = streamedReasoning || m.reasoning || null;
+            const rList = m.meta?.reasoning_swipes ? [...m.meta.reasoning_swipes] : [streamedReasoning];
+            rList[newSwipeIndex] = streamedReasoning || m.reasoning || null;
 
-          const dList = m.meta?.reasoning_durations ? [...(m.meta.reasoning_durations || [])] : [];
-          dList[newSwipeIndex] = reasoningDuration || m.meta?.reasoning_duration_seconds || undefined;
+            const dList = m.meta?.reasoning_durations ? [...(m.meta.reasoning_durations || [])] : [];
+            dList[newSwipeIndex] = reasoningDuration || m.meta?.reasoning_duration_seconds || undefined;
 
           return {
             ...m,
@@ -1860,21 +1927,20 @@ export default function ChatPage() {
         const reason = (err instanceof Error && err.message) || 'The reply could not be generated.';
         if (retryInPlace) {
           // Still failing: keep the error card (with its retry) instead of a blank reply.
-          setMessages((prev) => {
-            const next = prev.map((m, i) =>
+          const failed = commitMessages((prev) =>
+            prev.map((m, i) =>
               i === assistantMsgIndex ? { ...m, status: 'error' as const, meta: { ...m.meta, error: reason } } : m
-            );
-            saveLocalMessages(chatId, next);
-            return next;
-          });
+            )
+          );
+          if (failed) saveLocalMessages(chatId, failed);
         } else {
           toast.error(reason);
-          setMessages((prev) =>
+          const restored = commitMessages((prev) =>
             prev.map((m, i) =>
               i === assistantMsgIndex
                 ? {
                     ...m,
-                    status: 'done',
+                    status: 'done' as const,
                     content: prevSwipes[prevSwipes.length - 1] || m.content,
                     meta: {
                       ...m.meta,
@@ -1885,7 +1951,31 @@ export default function ChatPage() {
                 : m
             )
           );
+          if (restored) saveLocalMessages(chatId, restored);
         }
+      } else {
+        // Stopped by the user: keep any partial retry as a finished message,
+        // otherwise restore the previous swipe — never leave a spinner up.
+        const stopped = commitMessages((prev) =>
+          prev.map((m, i) => {
+            if (i !== assistantMsgIndex) return m;
+            const partial = m.meta?.swipes?.[newSwipeIndex];
+            if (partial?.trim() || m.reasoning?.trim()) {
+              return { ...m, status: 'stopped' as const };
+            }
+            return {
+              ...m,
+              status: 'done' as const,
+              content: prevSwipes[prevSwipes.length - 1] || m.content,
+              meta: {
+                ...m.meta,
+                swipes: prevSwipes,
+                active_swipe_index: Math.max(0, prevSwipes.length - 1),
+              },
+            };
+          })
+        );
+        if (stopped) saveLocalMessages(chatId, stopped);
       }
     } finally {
       setIsGenerating(false);
@@ -2381,10 +2471,13 @@ export default function ChatPage() {
 
   // Copy message
   const handleCopyMessage = (text: string) => {
-    navigator.clipboard.writeText(
-      formatRoleplayText(text, character?.name || 'Character', activePersona?.name || 'User')
-    );
-    toast.success('Copied');
+    const value = formatRoleplayText(text, character?.name || 'Character', activePersona?.name || 'User');
+    // Clipboard access rejects without permission/secure context — report the
+    // real outcome instead of claiming success over a failed write.
+    navigator.clipboard
+      ?.writeText(value)
+      .then(() => toast.success('Copied'))
+      .catch(() => toast.error('Could not copy to clipboard'));
   };
 
   // SillyTavern-style Continue and Impersonate. Both send a hidden instruction
@@ -2553,10 +2646,52 @@ export default function ChatPage() {
   const handleContinue = () => runAssistMode('continue');
   const handleImpersonate = () => runAssistMode('impersonate');
 
+  // ── Message actions: one mode at a time keeps a long transcript quiet ──
+  const [sheetMsgId, setSheetMsgId] = useState<string | null>(null);
+  const sheetMessage = useMemo(
+    () => (sheetMsgId ? messages.find((m) => m.id === sheetMsgId) || null : null),
+    [messages, sheetMsgId]
+  );
+  const actionsHidden = Boolean(editingMsgId) || Boolean(deleteConfirmId) || Boolean(sheetMsgId);
+
+  // Stable-identity handlers (see src/lib/hooks.ts): memoized rows then skip
+  // re-rendering on composer keystrokes and streaming frames.
+  const onSwipe = useEvent(handleSwipe);
+  const onStartEdit = useEvent(handleStartEdit);
+  const onSaveEdit = useEvent(handleSaveEdit);
+  const onCancelEdit = useEvent(handleCancelEdit);
+  const onDeleteRequest = useEvent(handleDeleteMessage);
+  const onCancelDelete = useEvent(handleCancelDelete);
+  const onCopy = useEvent(handleCopyMessage);
+  const onRegenerate = useEvent(handleRegenerate);
+  const onOpenActions = useEvent((msg: Message) => setSheetMsgId(msg.id));
+
+  // Track the visual viewport so the composer never hides behind the iOS keyboard.
+  useVisualViewportVars();
+
+  // A forgotten armed confirm must not eat a tap later.
+  useEffect(() => {
+    if (!deleteConfirmId) return;
+    const t = setTimeout(() => setDeleteConfirmId(null), 8000);
+    return () => clearTimeout(t);
+  }, [deleteConfirmId]);
+
+  // Keep the inline editor in view when it opens.
+  useEffect(() => {
+    if (!editingMsgId) return;
+    const raf = requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-msg-id="${editingMsgId}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [editingMsgId]);
+
+
   return (
     <div
-      className="flex flex-col h-[100dvh] w-full overflow-hidden bg-background select-none"
-      style={keyboardViewportHeight ? { height: keyboardViewportHeight } : undefined}
+      className="flex flex-col w-full overflow-hidden bg-background select-none"
+      style={{ height: 'var(--app-height, 100dvh)', transform: 'translateY(var(--app-offset-top, 0px))' }}
     >
       {/* Mobile-First Immersive Top Header */}
       <header className="pt-safe px-1.5 sm:px-6 bg-background border-b border-line shrink-0 z-30">
@@ -2707,375 +2842,35 @@ export default function ChatPage() {
           onScroll={handleChatScroll}
           role="log"
           aria-label="Conversation"
-          className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-6 space-y-5 scroll-smooth overscroll-contain"
+          className="flex-1 overflow-y-auto overscroll-contain px-3 sm:px-6 py-4 sm:py-6 space-y-5 scroll-smooth"
         >
-          <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end space-y-5 pb-2 sm:pb-6">
-            {messages.map((message, index) => {
-              const isAssistant = message.role === 'assistant';
-              const swipes = message.meta?.swipes || [message.content];
-              const swipeIndex = message.meta?.active_swipe_index ?? 0;
-              const isFailed = message.status === 'error';
-              const isStreamingMsg = message.status === 'streaming';
-
-              return (
-                <div
-                  key={message.id || index}
-                  className={`msg-row flex flex-col group ${isAssistant ? 'items-start' : 'items-end'}`}
-                >
-                  {isAssistant ? (
-                    /* Assistant Roleplay Prose (Spacious & Mobile-Optimized) */
-                    <div className="w-full space-y-1.5">
-                      {/* Author Line & Swipes */}
-                      <div className="flex items-center justify-between px-1">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-md overflow-hidden shrink-0 border border-line">
-                            <CharacterAvatar
-                              name={character?.name || 'Character'}
-                              avatarUrl={character?.avatar_url}
-                              accentColor={character?.accent_color}
-                              className="w-full h-full"
-                            />
-                          </div>
-                          <span className="text-xs font-medium text-ink-2">
-                            {character?.name}
-                          </span>
-                        </div>
-
-                        {/* Swipes Controller */}
-                        {swipes.length > 1 && (
-                          <div className="chip font-mono">
-                            <button
-                              onClick={() => handleSwipe(index, 'prev')}
-                              disabled={swipeIndex === 0}
-                              aria-label="Previous version"
-                              className="icon-btn w-6 h-6 disabled:opacity-30"
-                            >
-                              <ChevronLeft className="w-3 h-3" aria-hidden />
-                            </button>
-                            <span>
-                              {swipeIndex + 1}/{swipes.length}
-                            </span>
-                            <button
-                              onClick={() => handleSwipe(index, 'next')}
-                              disabled={swipeIndex === swipes.length - 1}
-                              aria-label="Next version"
-                              className="icon-btn w-6 h-6 disabled:opacity-30"
-                            >
-                              <ChevronRight className="w-3 h-3" aria-hidden />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Narrative Bubble or Inline Editor */}
-                      {editingMsgId === message.id ? (
-                        <div className="surface w-full space-y-2 p-3 sm:p-4 border-accent-line animate-in fade-in duration-150">
-                          <textarea
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Escape') handleCancelEdit();
-                              else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit();
-                            }}
-                            rows={4}
-                            className="field resize-y text-base sm:text-sm leading-relaxed"
-                            placeholder="Edit character response…"
-                            autoFocus
-                          />
-                          <p className="type-meta px-0.5">
-                            Edits only this response — messages after it stay untouched.
-                          </p>
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={handleCancelEdit}
-                              className="btn btn-quiet"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={handleSaveEdit}
-                              disabled={isGenerating || !editingText.trim()}
-                              className="btn btn-primary"
-                            >
-                              <Check className="w-3.5 h-3.5" aria-hidden /> Save
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="w-full space-y-2">
-                          {/* Live Model Thinking Stream & Collapsible Disclosure Widget */}
-                          <ThinkingProcess
-                            reasoning={message.reasoning}
-                            isStreaming={message.status === 'streaming'}
-                            hasContent={Boolean(message.content && message.content.trim().length > 0)}
-                            durationSeconds={message.meta?.reasoning_duration_seconds}
-                            characterName={character?.name}
-                          />
-
-                          {isFailed && (
-                            <div
-                              role="alert"
-                              className="surface border-danger-line flex flex-col gap-2.5 rounded-lg p-3.5 sm:flex-row sm:items-center sm:justify-between"
-                            >
-                              <div className="flex min-w-0 items-start gap-2">
-                                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden />
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold text-danger">This reply didn’t come through</p>
-                                  <p className="type-meta mt-0.5 break-words">
-                                    {message.meta?.error || 'The connection dropped before the reply finished.'}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-1.5 self-start sm:self-auto">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRegenerate(index)}
-                                  disabled={isGenerating}
-                                  className="btn btn-ghost"
-                                >
-                                  <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-                                  Try again
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Roleplay Prose Bubble */}
-                          {isFailed && !message.content ? null : (message.content || (!message.reasoning && !isStreamingMsg)) ? (
-                            <div className="prose-rp w-full max-w-[62ch] border-t border-line pt-2.5 sm:pt-3 select-text">
-                              <RoleplayMessageContent
-                                content={message.content}
-                                characterName={character?.name || 'Character'}
-                                userName={activePersona?.name || 'User'}
-                                accentColor={character?.accent_color}
-                                role="assistant"
-                                isStreaming={message.status === 'streaming'}
-                                scripts={regexScripts}
-                              />
-                            </div>
-                          ) : (
-                            /* Fallback if a previous response ended with reasoning but empty text */
-                            !message.content && message.reasoning && message.status !== 'streaming' && (
-                              <div className="surface border-warn-line bg-warn-wash p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                                <div>
-                                  <p className="text-xs font-semibold text-warn">Response stopped after reasoning</p>
-                                  <p className="type-meta mt-0.5">The model finished thinking without writing any prose.</p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRegenerate(index)}
-                                  className="btn btn-ghost self-start sm:self-auto"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5" aria-hidden />
-                                  <span>Regenerate</span>
-                                </button>
-                              </div>
-                            )
-                          )}
-                        </div>
-                      )}
-
-                      {/* Action Bar (Copy, Edit, Regenerate, Delete from here) */}
-                      {deleteConfirmId === message.id ? (
-                        <div className="flex flex-wrap items-center gap-2 px-2.5 py-1.5 mt-1 rounded-xl border border-danger-line bg-danger-wash text-danger animate-in fade-in slide-in-from-top-1 duration-150">
-                          <span className="type-meta text-danger font-medium">
-                            {messages.length - index - 1 > 0
-                              ? `Delete this and the ${messages.length - index - 1} after it?`
-                              : 'Delete this response?'}
-                          </span>
-                          <button
-                            onClick={() => handleDeleteMessage(message.id)}
-                            className="btn btn-danger px-2.5 py-1 text-[11px]"
-                          >
-                            Delete
-                          </button>
-                          <button
-                            onClick={handleCancelDelete}
-                            className="btn btn-quiet px-2.5 py-1 text-[11px]"
-                          >
-                            Keep
-                          </button>
-                        </div>
-                      ) : isStreamingMsg || (isFailed && !message.content) ? null : (
-                      <div className="flex items-center gap-1 px-1 pt-1 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-[opacity] duration-150">
-                        {message.content && (
-                          <span className="type-meta mr-auto hidden select-none pl-1 sm:inline">
-                            {message.content.trim().split(/\s+/).filter(Boolean).length} words
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handleCopyMessage(message.content)}
-                          className="icon-btn w-7 h-7"
-                          title="Copy message"
-                          aria-label="Copy message"
-                        >
-                          <Copy className="w-3.5 h-3.5" aria-hidden />
-                        </button>
-                        <button
-                          onClick={() => handleStartEdit(message)}
-                          disabled={isGenerating}
-                          className="icon-btn w-7 h-7 disabled:opacity-40"
-                          title="Edit response"
-                          aria-label="Edit response"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" aria-hidden />
-                        </button>
-                        <button
-                          onClick={() => handleRegenerate(index)}
-                          disabled={isGenerating}
-                          className="icon-btn w-7 h-7 disabled:opacity-40"
-                          title="Regenerate response"
-                          aria-label="Regenerate response"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" aria-hidden />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMessage(message.id)}
-                          disabled={isGenerating}
-                          className="icon-btn w-7 h-7 hover:text-danger disabled:opacity-40"
-                          title="Delete from here — removes this and everything after it"
-                          aria-label="Delete from here — removes this and everything after it"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" aria-hidden />
-                        </button>
-                      </div>
-                      )}
-                    </div>
-                  ) : (
-                    /* User Response Bubble */
-                    <div className="max-w-[85%] sm:max-w-[72%] space-y-1">
-                      {/* Persona Name & Monogram */}
-                      <div className="flex items-center justify-end gap-1.5 px-1">
-                        <span className="type-meta">
-                          {activePersona?.name || 'You'}
-                        </span>
-                        <div className="w-5 h-5 rounded-md overflow-hidden shrink-0 border border-line">
-                          <CharacterAvatar
-                            name={activePersona?.name || 'User'}
-                            avatarUrl={activePersona?.avatar_url}
-                            className="w-full h-full"
-                          />
-                        </div>
-                      </div>
-
-                      {/* User Message Card or Inline Editor */}
-                      {editingMsgId === message.id ? (
-                        <div className="surface w-full space-y-2 p-3 border-accent-line animate-in fade-in duration-150">
-                          {messages.length - index - 1 > 0 && (
-                            <div className="flex items-start gap-1.5 px-1 pt-0.5 type-meta">
-                              <GitBranch className="w-3.5 h-3.5 mt-px shrink-0" aria-hidden />
-                              <span>
-                                Saving deletes the {messages.length - index - 1} message{messages.length - index - 1 === 1 ? '' : 's'} after this and writes a new reply.
-                              </span>
-                            </div>
-                          )}
-                          <textarea
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Escape') handleCancelEdit();
-                              else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveEdit();
-                            }}
-                            rows={3}
-                            className="field resize-y text-base sm:text-sm"
-                            placeholder="Edit your message…"
-                            aria-label="Edit your message"
-                            autoFocus
-                          />
-                          <div className="flex items-center justify-between gap-2 px-0.5">
-                            <span className="type-meta hidden sm:inline">
-                              Ctrl + Enter to save…
-                            </span>
-                            <div className="flex items-center gap-2 ml-auto">
-                              <button
-                                onClick={handleCancelEdit}
-                                className="btn btn-quiet"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                onClick={handleSaveEdit}
-                                disabled={isGenerating || !editingText.trim()}
-                                className="btn btn-primary"
-                              >
-                                <Send className="w-3.5 h-3.5" aria-hidden />
-                                {messages.length - index - 1 > 0 ? 'Save and regenerate' : 'Save'}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rp-user-bubble prose-rp rounded-xl rounded-tr-sm px-3.5 py-3 sm:px-4 text-[0.95rem] leading-[1.7] select-text">
-                          <RoleplayMessageContent
-                            content={message.content}
-                            characterName={character?.name || 'Character'}
-                            userName={activePersona?.name || 'User'}
-                            role="user"
-                            scripts={regexScripts}
-                          />
-                        </div>
-                      )}
-
-                      {deleteConfirmId === message.id ? (
-                        <div className="flex flex-wrap justify-end items-center gap-2 px-2.5 py-1.5 mt-1 rounded-xl border border-danger-line bg-danger-wash text-danger animate-in fade-in slide-in-from-top-1 duration-150">
-                          <span className="type-meta text-danger font-medium">
-                            {messages.length - index - 1 > 0
-                              ? `Delete this and the ${messages.length - index - 1} after it?`
-                              : 'Delete this message?'}
-                          </span>
-                          <button
-                            onClick={() => handleDeleteMessage(message.id)}
-                            className="btn btn-danger px-2.5 py-1 text-[11px]"
-                          >
-                            Delete
-                          </button>
-                          <button
-                            onClick={handleCancelDelete}
-                            className="btn btn-quiet px-2.5 py-1 text-[11px]"
-                          >
-                            Keep
-                          </button>
-                        </div>
-                      ) : (
-                      <div className="flex justify-end items-center gap-1 px-1 pt-1 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-[opacity] duration-150">
-                        {message.content && (
-                          <span className="type-meta mr-auto hidden select-none pl-1 sm:inline">
-                            {message.content.trim().split(/\s+/).filter(Boolean).length} words
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handleCopyMessage(message.content)}
-                          className="icon-btn w-7 h-7"
-                          title="Copy"
-                          aria-label="Copy message"
-                        >
-                          <Copy className="w-3 h-3" aria-hidden />
-                        </button>
-                        <button
-                          onClick={() => handleStartEdit(message)}
-                          disabled={isGenerating}
-                          className="icon-btn w-7 h-7 disabled:opacity-40"
-                          title="Edit and regenerate from here"
-                          aria-label="Edit and regenerate from here"
-                        >
-                          <Edit2 className="w-3 h-3" aria-hidden />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMessage(message.id)}
-                          disabled={isGenerating}
-                          className="icon-btn w-7 h-7 hover:text-danger disabled:opacity-40"
-                          title="Delete from here — removes this and everything after it"
-                          aria-label="Delete from here — removes this and everything after it"
-                        >
-                          <Trash2 className="w-3 h-3" aria-hidden />
-                        </button>
-                      </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end space-y-5 pb-6">
+            {messages.map((message, index) => (
+              <MessageRow
+                key={message.id || index}
+                message={message}
+                index={index}
+                downstreamCount={messages.length - index - 1}
+                character={character}
+                activePersona={activePersona}
+                regexScripts={regexScripts}
+                isGenerating={isGenerating}
+                editingMsgId={editingMsgId}
+                editingText={editingMsgId === message.id ? editingText : ''}
+                deleteConfirmId={deleteConfirmId}
+                actionsHidden={actionsHidden}
+                onStartEdit={onStartEdit}
+                onSaveEdit={onSaveEdit}
+                onCancelEdit={onCancelEdit}
+                onEditingTextChange={setEditingText}
+                onDeleteRequest={onDeleteRequest}
+                onCancelDelete={onCancelDelete}
+                onCopy={onCopy}
+                onRegenerate={onRegenerate}
+                onSwipe={onSwipe}
+                onOpenActions={onOpenActions}
+              />
+            ))}
             <div ref={messagesEndRef} />
           </div>
         </div>
@@ -3252,6 +3047,18 @@ export default function ChatPage() {
       </footer>
 
       {/* Universal Persona Selection & AI Generator Modal */}
+      {/* Mobile message actions sheet (⋯ on a message row) */}
+      {sheetMessage && (
+        <MessageActionsSheet
+          message={sheetMessage}
+          onClose={() => setSheetMsgId(null)}
+          onCopy={onCopy}
+          onEdit={() => onStartEdit(sheetMessage)}
+          onRegenerate={() => onRegenerate(messages.findIndex((m) => m.id === sheetMessage.id))}
+          onDelete={() => onDeleteRequest(sheetMessage.id)}
+        />
+      )}
+
       <PersonaModal
         open={personaModalOpen}
         onClose={() => setPersonaModalOpen(false)}

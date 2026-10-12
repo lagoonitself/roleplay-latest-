@@ -38,7 +38,15 @@
  */
 
 import { buildSystemPrompt, VERBOSITY_GUIDE } from './system-prompt';
-import { substituteMacros, formatRoleplayText, formatHistoryText, type MacroContext } from './macros';
+import {
+  substituteMacros,
+  formatRoleplayText,
+  formatHistoryText,
+  escapeBlockContent,
+  escapeLabelContent,
+  escapeInlineText,
+  type MacroContext,
+} from './macros';
 import { estimateTokens, truncateToTokens, computeContextBudget, MIN_HISTORY_TOKENS } from './tokens';
 import type { ActivatedLore, WorldInfoScanEntry } from '@/lib/lorebook/matcher';
 import type { VectorRetrievalResult } from '@/lib/memory/vectors';
@@ -109,12 +117,16 @@ const CHARACTER_FIELD_CAP = 3500;
 const REPETITION_LOOKBACK = 3;
 
 function tag(name: string, body: string, attrs = ''): string {
-  const trimmed = body.trim();
+  // Bodies carry attacker-controllable text (imported cards, lorebook entries,
+  // LLM-written memories). Neutralize markup so nothing inside can close the
+  // block early (a literal "</creator_directives>") or impersonate structure.
+  const trimmed = escapeBlockContent(body.trim());
   return trimmed ? `<${name}${attrs ? ' ' + attrs : ''}>\n${trimmed}\n</${name}>` : '';
 }
 
 function escapeAttr(v: string): string {
-  return v.replace(/"/g, "'");
+  // Attribute values are names: keep them from terminating the opening tag.
+  return escapeInlineText(v).replace(/"/g, "'").replace(/>/g, '\uFF1E');
 }
 
 /**
@@ -175,7 +187,7 @@ export function populateInChatInjections(
   messages: ChatMessage[],
   injections: InChatInjection[]
 ): ChatMessage[] {
-  if (!injections.length || !messages.length) return [...messages];
+  if (!injections.length) return [...messages];
 
   const result = [...messages];
   const maxDepth = Math.max(...injections.map((i) => i.depth), 0);
@@ -190,7 +202,10 @@ export function populateInChatInjections(
     const combinedContent = depthPrompts.map((p) => p.content.trim()).join('\n\n');
     const primaryRole = depthPrompts[0].role || 'system';
 
-    const insertIndex = Math.max(0, result.length - depth);
+    // Index against the ORIGINAL message count: shallower injections were
+    // spliced in earlier at larger indices, and counting them (via
+    // result.length) would slide every deeper injection one slot too shallow.
+    const insertIndex = Math.max(0, messages.length - depth);
     result.splice(insertIndex, 0, {
       role: primaryRole,
       content: combinedContent,
@@ -237,8 +252,10 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     vectorsDepth = 2,
   } = params;
 
-  const charName = character.name || 'Character';
-  const userName = persona?.name || 'User';
+  // Names are card- and persona-controlled and land in the system prompt and in
+  // attribute slots: one line, no markup, bounded length.
+  const charName = escapeInlineText(character.name || 'Character').slice(0, 120) || 'Character';
+  const userName = escapeInlineText(persona?.name || 'User').slice(0, 120) || 'User';
 
   const macroCtx: MacroContext = {
     charName,
@@ -283,6 +300,26 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     .join('\n\n');
   const wiBeforeBlock = wiBeforeContent ? tag('world_info_before', fmt(wiBeforeContent)) : '';
 
+  // Lorebook fallback when the World Info scanner wasn't available. It belongs
+  // with the other world info in the static prefix: appending it after the
+  // budget was measured would silently overflow the window and place world lore
+  // after the example dialogue, violating the documented block order.
+  let loreFallbackBlock = '';
+  if (!activatedLore && triggeredLore.length > 0) {
+    const loreTokenBudget = params.loreTokenBudget ?? DEFAULT_LORE_TOKEN_BUDGET;
+    const sorted = [...triggeredLore].sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+    let loreUsed = 0;
+    const loreParts: string[] = [];
+    for (const l of sorted) {
+      const body = fmt(l.content);
+      const cost = estimateTokens(body) + estimateTokens(l.title) + 4;
+      if (loreUsed + cost > loreTokenBudget) continue;
+      loreUsed += cost;
+      loreParts.push(l.title ? `## ${l.title}\n${body}` : body);
+    }
+    if (loreParts.length) loreFallbackBlock = tag('world_lore', loreParts.join('\n\n'));
+  }
+
   const personaBlock = persona?.description?.trim()
     ? tag('user_persona', fmt(persona.description), `name="${escapeAttr(userName)}"`)
     : `<user_persona name="${escapeAttr(userName)}">No details provided. Do not invent facts about ${userName}; learn them from the story.</user_persona>`;
@@ -323,6 +360,7 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
   const staticPrefix = [
     baseSystemPrompt,
     wiBeforeBlock,
+    loreFallbackBlock,
     personaBlock,
     charBlock,
     styleBlock,
@@ -338,12 +376,14 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
   const verbosity = character.behavior?.verbosity || 'medium';
   const maxResponseTokens = params.maxResponseTokens ?? (VERBOSITY_GUIDE[verbosity] ?? VERBOSITY_GUIDE.medium).maxTokens;
 
+  // Everything the recall blocks want to inject. Triggered lore is not counted
+  // here: it is either rendered in the static prefix (fallback above) or already
+  // counted there via the World Info scanner output.
   const requestedRecall =
     estimateTokens(summary?.content) +
     estimateTokens(vectorMemories?.formattedText) +
     estimateTokens(authorsNote) +
-    estimateTokens(retrievedMemories.map((m) => m.content).join('\n')) +
-    estimateTokens(triggeredLore.map((l) => l.content).join('\n'));
+    estimateTokens(retrievedMemories.map((m) => m.content).join('\n'));
 
   const budget = computeContextBudget({
     model: params.model,
@@ -355,7 +395,6 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
   });
 
   const historyTokenBudget = params.historyTokenBudget ?? budget.historyBudget;
-  const loreTokenBudget = params.loreTokenBudget ?? Math.max(DEFAULT_LORE_TOKEN_BUDGET, Math.floor(budget.recallBudget * 0.5));
 
   const messages: ChatMessage[] = [{ role: 'system', content: staticPrefix }];
 
@@ -419,7 +458,12 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
       inChatInjections.push({
         identifier: 'authorsNote',
         role: 'system',
-        content: SILLY_TAVERN_PROMPT_DEFAULTS.authorsNoteTemplate.replace('{{note}}', formattedNote),
+        // Replacer function, not a string: "$&"/"$'" in the note must be inserted
+        // literally, never parsed as a replacement pattern. The note is escaped
+        // so a "]" can't close the bracket early and impersonate another format.
+        content: SILLY_TAVERN_PROMPT_DEFAULTS.authorsNoteTemplate.replace('{{note}}', () =>
+          escapeLabelContent(formattedNote)
+        ),
         depth: authorsNoteDepth,
         order: 100,
       });
@@ -432,7 +476,11 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
       inChatInjections.push({
         identifier: 'summary',
         role: 'system',
-        content: SILLY_TAVERN_PROMPT_DEFAULTS.summaryTemplate.replace('{{summary}}', formattedSummary),
+        // Replacer function keeps "$&"/"$'" literal (the summary is LLM-written);
+        // escaping stops "]" breakout / "[Author's note: …]" impersonation.
+        content: SILLY_TAVERN_PROMPT_DEFAULTS.summaryTemplate.replace('{{summary}}', () =>
+          escapeLabelContent(formattedSummary)
+        ),
         depth: summaryDepth,
         order: 90,
       });
@@ -444,7 +492,9 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     : retrievedMemories.length > 0
       ? `Past events:\n${retrievedMemories.map((m) => `- ${formatHistoryText(m.content, macroCtx)}`).join('\n')}`
       : '';
-  const recallUsed = spend(recallText, 600);
+  // Memory records are LLM-written and can carry indirect injections; keep them
+  // from impersonating the bracketed note formats.
+  const recallUsed = spend(escapeLabelContent(recallText), 600);
   if (recallUsed) {
     inChatInjections.push({
       identifier: 'vectorsMemory',
@@ -455,30 +505,18 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     });
   }
 
-  // Lorebook fallback when the World Info scanner wasn't available.
-  if (!activatedLore && triggeredLore.length > 0) {
-    const sorted = [...triggeredLore].sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
-    let loreUsed = 0;
-    const loreParts: string[] = [];
-    for (const l of sorted) {
-      const body = formatRoleplayText(l.content, macroCtx);
-      const cost = estimateTokens(body) + estimateTokens(l.title) + 4;
-      if (loreUsed + cost > loreTokenBudget) continue;
-      loreUsed += cost;
-      loreParts.push(l.title ? `## ${l.title}\n${body}` : body);
-    }
-    if (loreParts.length) {
-      messages[0].content += '\n\n' + tag('world_lore', loreParts.join('\n\n'));
-    }
-  }
-
   if (activatedLore?.inChatEntries?.length) {
     for (const entry of activatedLore.inChatEntries) {
       if (!entry.content?.trim()) continue;
+      // Same macro handling as the other world info, then label escaping so a
+      // "]" in the title or content can't close the bracket early.
+      const loreBody = fmt(entry.content);
       inChatInjections.push({
         identifier: entry.id || `lore-${entry.title}`,
         role: 'system',
-        content: entry.title ? `[${entry.title}: ${entry.content}]` : entry.content,
+        content: entry.title
+          ? `[${escapeLabelContent(entry.title)}: ${escapeLabelContent(loreBody)}]`
+          : escapeLabelContent(loreBody),
         depth: entry.depth ?? 4,
         order: entry.order ?? 100,
       });
@@ -535,7 +573,7 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
       'ooc_note',
       [
         `For this one message only, write ${userName}'s next turn instead of ${charName}'s. This replaces the usual rule against writing ${userName}.`,
-        `Match how ${userName} has been writing in this chat — their voice, length, and formatting — and stay true to <user_persona>.`,
+        `Match how ${userName} has been writing in this chat — their voice, length, and formatting — and stay true to the user persona sent above.`,
         `Write only ${userName}'s own words and actions. Don't write ${charName}'s dialogue or decide ${charName}'s reactions. Keep it to one short paragraph.`,
         `Output the message itself, with no name prefix or commentary.`,
       ].join('\n')
@@ -543,7 +581,9 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
   } else {
     const sceneBlock =
       chatState?.state && Object.keys(chatState.state).length > 0
-        ? `${tag('scene_state', formatSceneState(chatState.state, charName))}\n\n`
+        ? // State values are LLM-written: escapeLabelContent keeps them from
+          // impersonating "[Author's note: …]" / "[Summary: …]" note formats.
+          `${tag('scene_state', escapeLabelContent(formatSceneState(chatState.state, charName)))}\n\n`
         : '';
 
     const reminder = [

@@ -127,10 +127,14 @@ function RoleplayCard({
 
   const handleCopy = () => {
     if (typeof children === 'string') {
-      navigator.clipboard.writeText(children);
-      setCopied(true);
-      toast.success('Card copied to clipboard');
-      setTimeout(() => setCopied(false), 2000);
+      navigator.clipboard
+        ?.writeText(children)
+        .then(() => {
+          setCopied(true);
+          toast.success('Card copied to clipboard');
+          setTimeout(() => setCopied(false), 2000);
+        })
+        .catch(() => toast.error('Could not copy to clipboard'));
     }
   };
 
@@ -165,8 +169,11 @@ function RoleplayCard({
             onClick={handleCopy}
             aria-label="Copy card text"
             title="Copy card text"
-            className="icon-btn opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            style={{ width: 24, height: 24 }}
+            /* Always visible on touch (below sm — no hover to reveal it there);
+               hover/focus reveal at sm:+. ≥32px hit area, and pointer-events
+               are dropped along with the opacity so it can never be an
+               invisible tap target. */
+            className="icon-btn w-8 h-8 opacity-100 sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto sm:focus-visible:opacity-100 sm:focus-visible:pointer-events-auto focus-visible:opacity-100"
           >
             {copied ? <Check aria-hidden className="h-3.5 w-3.5" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
           </button>
@@ -363,9 +370,11 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
     return processDisplayTime(content, scripts, role === 'user' ? 'user' : 'assistant', ctx);
   }, [content, scripts, role, characterName, userName]);
 
-  // Dynamic CSS variables for character dialogue hue
+  // Dynamic CSS variables for character dialogue hue.
+  // Character cards are attacker-controlled: only strict hex is accepted so a
+  // crafted `accent_color` can never inject extra CSS into the style value.
   const styleVars = useMemo(() => {
-    if (accentColor && accentColor.startsWith('#')) {
+    if (accentColor && /^#[0-9a-fA-F]{3,8}$/.test(accentColor)) {
       return { '--rp-dialogue-color': accentColor } as React.CSSProperties;
     }
     return undefined;

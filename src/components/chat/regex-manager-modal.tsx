@@ -92,6 +92,17 @@ export function RegexManagerModal({
 
   const activeCount = useMemo(() => scripts.filter((s) => s.enabled).length, [scripts]);
 
+  // Escape closes regardless of where focus is (the modal previously had no
+  // keyboard way to dismiss it at all).
+  React.useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
   // Filtered scripts list
   const filteredScripts = useMemo(() => {
     return scripts.filter((script) => {
@@ -121,7 +132,9 @@ export function RegexManagerModal({
     a.href = url;
     a.download = `cadenza-regex-scripts-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Deferred revoke: revoking synchronously can cancel the download in
+    // some browsers before it starts.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast.success('Regex scripts exported (SillyTavern compatible)');
   };
 
@@ -138,6 +151,9 @@ export function RegexManagerModal({
       } else {
         toast.error(`Import failed: ${res.error}`);
       }
+    };
+    reader.onerror = () => {
+      toast.error('Could not read that file — please try another');
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -200,7 +216,12 @@ export function RegexManagerModal({
 
   return (
     <div className="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_oklab,var(--ink)_45%,transparent)] p-3 duration-200 sm:p-6">
-      <div className="panel animate-in fade-in relative flex h-[90vh] max-h-[820px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border-line bg-raised shadow-float duration-200">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Regex scripts and formatters"
+        className="panel animate-in fade-in relative flex h-[90dvh] max-h-[820px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border-line bg-raised shadow-float duration-200 pt-safe"
+      >
         {/* Header */}
         <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -440,7 +461,7 @@ export function RegexManagerModal({
                           aria-label={`Edit rule ${script.name}`}
                           title="Edit rule"
                           className="icon-btn"
-                          style={{ width: 28, height: 28 }}
+                          style={{ width: 32, height: 32 }}
                         >
                           <Edit2 aria-hidden className="h-4 w-4" />
                         </button>
@@ -457,7 +478,7 @@ export function RegexManagerModal({
                             aria-label={`Delete rule ${script.name}`}
                             title="Delete rule"
                             className="icon-btn"
-                            style={{ width: 28, height: 28 }}
+                            style={{ width: 32, height: 32 }}
                           >
                             <Trash2 aria-hidden className="h-4 w-4" />
                           </button>
@@ -589,13 +610,13 @@ export function RegexManagerModal({
                   onClick={() => setIsEditorOpen(false)}
                   aria-label="Close rule editor"
                   className="icon-btn"
-                  style={{ width: 28, height: 28 }}
+                  style={{ width: 32, height: 32 }}
                 >
                   <X aria-hidden className="h-4 w-4" />
                 </button>
               </div>
 
-              <div className="max-h-[65vh] space-y-3.5 overflow-y-auto pr-1 text-xs">
+              <div className="max-h-[65dvh] space-y-3.5 overflow-y-auto pr-1 text-xs">
                 {/* Rule Name */}
                 <div className="space-y-1">
                   <label className="type-label" htmlFor="regex-rule-name">Rule name</label>

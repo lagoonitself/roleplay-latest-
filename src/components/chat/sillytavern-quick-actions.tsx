@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Popover } from 'radix-ui';
 import {
   Play,
@@ -72,6 +72,17 @@ export function SillyTavernQuickActions({
   const [presetOpen, setPresetOpen] = useState(false);
   const [diceOpen, setDiceOpen] = useState(false);
 
+  // These two come from localStorage-backed stores, which resolve differently
+  // on the server render and the hydration render. Hold the server's defaults
+  // until mount so hydration stays clean (same pattern as Navbar).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(t);
+  }, []);
+  const soundOn = mounted ? soundEnabled : true;
+  const thinkingOn = mounted ? thinkingEnabled : false;
+
   const presets = Object.values(SILLY_TAVERN_SYSTEM_PROMPT_PRESETS);
   const activePreset = presets.find((p) => p.id === currentPresetId) || presets[0];
 
@@ -81,7 +92,7 @@ export function SillyTavernQuickActions({
       aria-label="Story tools"
       className="scrollbar-none -mx-1 flex items-center gap-0.5 overflow-x-auto px-1"
     >
-      <button type="button" onClick={onContinue} disabled={isGenerating} className="tool" title="Extend the last reply">
+      <button type="button" onClick={onContinue} disabled={isGenerating} className="tool min-h-8" title="Extend the last reply">
         <Play aria-hidden className="h-3 w-3" />
         Continue
       </button>
@@ -90,7 +101,7 @@ export function SillyTavernQuickActions({
         type="button"
         onClick={onImpersonate}
         disabled={isGenerating}
-        className="tool"
+        className="tool min-h-8"
         title="Draft your next turn into the composer"
       >
         <UserPen aria-hidden className="h-3.5 w-3.5" />
@@ -101,7 +112,7 @@ export function SillyTavernQuickActions({
         type="button"
         onClick={onToggleAuthorsNote}
         aria-pressed={authorsNoteActive || authorsNoteOpen}
-        className="tool"
+        className="tool min-h-8"
         title={authorsNoteActive ? "Author's note is steering the scene" : "Add an author's note to steer the scene"}
       >
         <Bookmark aria-hidden className="h-3.5 w-3.5" />
@@ -112,9 +123,9 @@ export function SillyTavernQuickActions({
       <button
         type="button"
         onClick={onToggleThinking}
-        aria-pressed={thinkingEnabled}
-        className="tool"
-        title={thinkingEnabled ? 'Thinking is on: slower, more deliberate replies' : 'Let the model think before it writes'}
+        aria-pressed={thinkingOn}
+        className="tool min-h-8"
+        title={thinkingOn ? 'Thinking is on: slower, more deliberate replies' : 'Let the model think before it writes'}
       >
         <Brain aria-hidden className="h-3.5 w-3.5" />
         Think
@@ -122,7 +133,7 @@ export function SillyTavernQuickActions({
 
       <Popover.Root open={presetOpen} onOpenChange={setPresetOpen}>
         <Popover.Trigger asChild>
-          <button type="button" className="tool" title="House style layered on the character">
+          <button type="button" className="tool min-h-8" title="House style layered on the character">
             <span className="max-w-[9rem] truncate">Style: {activePreset.name}</span>
             <ChevronDown aria-hidden className="h-3 w-3 opacity-60" />
           </button>
@@ -151,7 +162,7 @@ export function SillyTavernQuickActions({
                       onSelectPreset(preset);
                       setPresetOpen(false);
                     }}
-                    className={`flex w-full items-start justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 hover:bg-sunken ${
+                    className={`flex min-h-8 w-full items-start justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 hover:bg-sunken ${
                       active ? 'text-accent-text' : 'text-ink-2 hover:text-ink'
                     }`}
                   >
@@ -174,7 +185,7 @@ export function SillyTavernQuickActions({
         type="button"
         disabled={isGenerating}
         onClick={() => onFormat('“', '”')}
-        className="tool px-2"
+        className="tool min-h-8 min-w-8 px-2 justify-center"
         title="Dialogue: wrap in quotes"
         aria-label="Wrap in quotes"
       >
@@ -184,7 +195,7 @@ export function SillyTavernQuickActions({
         type="button"
         disabled={isGenerating}
         onClick={() => onFormat('*', '*')}
-        className="tool px-2"
+        className="tool min-h-8 min-w-8 px-2 justify-center"
         title="Action: wrap in asterisks"
         aria-label="Wrap in asterisks"
       >
@@ -194,7 +205,7 @@ export function SillyTavernQuickActions({
         type="button"
         disabled={isGenerating}
         onClick={() => onFormat('(( ', ' ))')}
-        className="tool px-2"
+        className="tool min-h-8 min-w-8 px-2 justify-center"
         title="Out of character: a note to the AI"
         aria-label="Out-of-character note"
       >
@@ -204,7 +215,7 @@ export function SillyTavernQuickActions({
         type="button"
         disabled={isGenerating}
         onClick={() => onFormat('||', '||')}
-        className="tool px-2"
+        className="tool min-h-8 min-w-8 px-2 justify-center"
         title="Spoiler: hidden until tapped"
         aria-label="Wrap as spoiler"
       >
@@ -213,7 +224,7 @@ export function SillyTavernQuickActions({
 
       <Popover.Root open={diceOpen} onOpenChange={setDiceOpen}>
         <Popover.Trigger asChild>
-          <button type="button" disabled={isGenerating} className="tool px-2" aria-label="Insert a dice roll" title="Insert a dice roll">
+          <button type="button" disabled={isGenerating} className="tool min-h-8 min-w-8 px-2 justify-center" aria-label="Insert a dice roll" title="Insert a dice roll">
             <Dices aria-hidden className="h-3.5 w-3.5" />
           </button>
         </Popover.Trigger>
@@ -237,7 +248,7 @@ export function SillyTavernQuickActions({
                     onFormat(`{{roll::${d.formula}}}`, '', '');
                     setDiceOpen(false);
                   }}
-                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-ink-2 transition-colors duration-150 hover:bg-sunken hover:text-ink"
+                  className="flex min-h-8 w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-ink-2 transition-colors duration-150 hover:bg-sunken hover:text-ink"
                 >
                   <span className="font-mono font-semibold text-accent-text">{d.formula}</span>
                   <span className="text-[11px] text-ink-3">{d.desc}</span>
@@ -252,11 +263,11 @@ export function SillyTavernQuickActions({
         <button
           type="button"
           onClick={onToggleSound}
-          className="tool ml-auto px-2"
-          aria-label={soundEnabled ? 'Mute sound effects' : 'Turn on sound effects'}
-          title={soundEnabled ? 'Mute sound effects' : 'Turn on sound effects'}
+          className="tool min-h-8 min-w-8 ml-auto px-2 justify-center"
+          aria-label={soundOn ? 'Mute sound effects' : 'Turn on sound effects'}
+          title={soundOn ? 'Mute sound effects' : 'Turn on sound effects'}
         >
-          {soundEnabled ? <Volume2 aria-hidden className="h-3.5 w-3.5" /> : <VolumeX aria-hidden className="h-3.5 w-3.5" />}
+          {soundOn ? <Volume2 aria-hidden className="h-3.5 w-3.5" /> : <VolumeX aria-hidden className="h-3.5 w-3.5" />}
         </button>
       )}
     </div>

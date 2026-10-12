@@ -81,7 +81,16 @@ export default function PersonasPage() {
     try {
       localStorage.setItem('cadenza_local_personas', JSON.stringify(updated));
     } catch {}
-    await supabase.from('personas').delete().eq('id', id);
+    try {
+      const { error } = await supabase.from('personas').delete().eq('id', id);
+      if (error) {
+        toast.warning('Persona removed locally, but the cloud copy could not be deleted');
+        return;
+      }
+    } catch {
+      toast.warning('Persona removed locally, but the cloud copy could not be deleted');
+      return;
+    }
     toast.info('Persona removed');
   };
 

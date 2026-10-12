@@ -133,8 +133,14 @@
   --color-card-foreground: var(--ink);
 
   --color-danger: var(--danger-text);
+  --color-danger-line: var(--danger-line);
+  --color-danger-wash: var(--danger-wash);
   --color-warn: var(--warn-text);
+  --color-warn-line: var(--warn-line);
+  --color-warn-wash: var(--warn-wash);
   --color-ok: var(--ok-text);
+  --color-ok-line: var(--ok-line);
+  --color-ok-wash: var(--ok-wash);
 
   /* Nested radius scale — child radius <= parent radius */
   --radius-xs: 4px;

@@ -197,15 +197,25 @@ export default function CharacterProfilePage() {
     a.href = url;
     a.download = `${character.name.toLowerCase().replace(/\s+/g, '_')}_card.json`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Deferred revoke: revoking synchronously can cancel the download in
+    // some browsers before it starts.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast.success('Character Card V2 JSON downloaded!');
   };
 
   const handleDeleteCharacter = async () => {
     if (!character) return;
     if (window.confirm(`Permanently delete "${character.name}" and all associated chats? This cannot be undone.`)) {
-      await deleteCharacter(character.id);
-      toast.success(`Deleted "${character.name}"`);
+      try {
+        const ok = await deleteCharacter(character.id);
+        if (ok) {
+          toast.success(`Deleted "${character.name}"`);
+        } else {
+          toast.error(`Could not delete "${character.name}" — please try again`);
+        }
+      } catch {
+        toast.error(`Could not delete "${character.name}" — please try again`);
+      }
       router.push('/');
     }
   };

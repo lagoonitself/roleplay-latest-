@@ -15,7 +15,10 @@ export async function getRequestUser(req: NextRequest): Promise<{ supabase: Supa
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const { data } = await supabase.auth.getUser(bearerToken);
-    return { supabase, userId: data?.user?.id ?? null };
+    // A stale/expired bearer header must not lock out a valid cookie session.
+    if (data?.user?.id) {
+      return { supabase, userId: data.user.id };
+    }
   }
 
   const supabase = await createClient();

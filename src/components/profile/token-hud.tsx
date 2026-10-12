@@ -17,29 +17,38 @@ interface TokenHudProps {
  * Strict contract: no model names, no monetary costs.
  */
 export function TokenHud({ input, output, total, loading, syncedWithAccount }: TokenHudProps) {
-  const safeTotal = Math.max(0, total);
-  const inShare = safeTotal > 0 ? Math.round((input / safeTotal) * 100) : 0;
+  // Clamp to finite non-negative integers — values arrive from storage and the
+  // server, and a bad payload must not render "140% input / -40% output".
+  const safeInput = Number.isFinite(input) && input > 0 ? Math.floor(input) : 0;
+  const safeOutput = Number.isFinite(output) && output > 0 ? Math.floor(output) : 0;
+  const safeTotal = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0;
+
+  // The bar splits input vs output, so its basis must be their sum — using an
+  // independent `total` let the two halves not add up to the bar. Gated on
+  // `loading` so server render and hydration render the same placeholder.
+  const parts = safeInput + safeOutput;
+  const inShare = loading ? 0 : parts > 0 ? Math.min(100, Math.max(0, Math.round((safeInput / parts) * 100))) : 0;
 
   const tiles = [
     {
       key: 'input',
       label: 'Input tokens',
       hint: 'Prompts sent',
-      value: input,
+      value: safeInput,
       icon: ArrowDownToLine,
     },
     {
       key: 'output',
       label: 'Output tokens',
       hint: 'Replies and thinking',
-      value: output,
+      value: safeOutput,
       icon: ArrowUpFromLine,
     },
     {
       key: 'total',
       label: 'Total tokens',
       hint: 'All time',
-      value: total,
+      value: safeTotal,
       icon: Sigma,
     },
   ] as const;
@@ -69,12 +78,12 @@ export function TokenHud({ input, output, total, loading, syncedWithAccount }: T
               <Icon className="h-4 w-4 text-ink-3" aria-hidden />
               <div
                 className="mt-2 font-serif text-2xl tabular-nums text-ink truncate"
-                title={formatTokenCount(t.value)}
+                title={loading ? undefined : formatTokenCount(t.value)}
               >
                 {loading ? '…' : formatCompactTokenCount(t.value)}
               </div>
               <div className="type-label mt-1">{t.label}</div>
-              <div className="type-meta" title={formatTokenCount(t.value)}>
+              <div className="type-meta" title={loading ? undefined : formatTokenCount(t.value)}>
                 {t.hint}
               </div>
             </div>

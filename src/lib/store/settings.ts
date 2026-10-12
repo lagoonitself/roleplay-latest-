@@ -43,12 +43,33 @@ export const DEFAULT_SETTINGS: UserAppSettings = {
 
 const STORAGE_KEY = 'cadenza_user_settings';
 
+/**
+ * Validates one persisted settings blob field-by-field. Anything with the wrong
+ * type (old schema versions, hand-edited storage, corrupted JSON fragments) is
+ * dropped back to its default instead of flowing into the app unchecked.
+ */
+function normalizeSettings(raw: unknown): UserAppSettings {
+  const out: UserAppSettings = { ...DEFAULT_SETTINGS };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.opencodeApiKey === 'string') out.opencodeApiKey = s.opencodeApiKey;
+  if (typeof s.opencodeEndpoint === 'string' && s.opencodeEndpoint.trim()) out.opencodeEndpoint = s.opencodeEndpoint;
+  if (typeof s.opencodeModel === 'string' && s.opencodeModel.trim()) out.opencodeModel = s.opencodeModel;
+  if (typeof s.uncensoredMode === 'boolean') out.uncensoredMode = s.uncensoredMode;
+  if (typeof s.activePersonaId === 'string' || s.activePersonaId === null) out.activePersonaId = s.activePersonaId as string | null;
+  if (typeof s.defaultTemperature === 'number' && Number.isFinite(s.defaultTemperature)) {
+    out.defaultTemperature = Math.min(2, Math.max(0, s.defaultTemperature));
+  }
+  if (typeof s.thinkingEnabled === 'boolean') out.thinkingEnabled = s.thinkingEnabled;
+  return out;
+}
+
 export function getSavedSettings(): UserAppSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    return normalizeSettings(JSON.parse(raw));
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -57,12 +78,19 @@ export function getSavedSettings(): UserAppSettings {
 export function saveSettings(settings: Partial<UserAppSettings>): UserAppSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
   const current = getSavedSettings();
-  const updated = { ...current, ...settings };
+  const updated = normalizeSettings({ ...current, ...settings });
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     window.dispatchEvent(new Event('cadenza-settings-changed'));
   } catch (err) {
     console.error('Failed to save settings:', err);
+    try {
+      window.dispatchEvent(
+        new CustomEvent('cadenza-storage-error', {
+          detail: { scope: 'settings', quota: err instanceof DOMException && err.name === 'QuotaExceededError' },
+        })
+      );
+    } catch {}
   }
   return updated;
 }

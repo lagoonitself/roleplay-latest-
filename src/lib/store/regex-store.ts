@@ -6,6 +6,7 @@ import {
   DEFAULT_REGEX_SCRIPTS,
   exportToSillyTavernJson,
   importFromRegexJson,
+  sanitizeRegexScriptEntry,
 } from '@/lib/formatter/regex-engine';
 
 const STORAGE_KEY = 'cadenza_regex_scripts';
@@ -33,6 +34,8 @@ function upgradeLegacyPreset(script: RegexScript): RegexScript {
 /**
  * Loads saved scripts from localStorage and merges with DEFAULT_REGEX_SCRIPTS.
  * Ensures newly introduced presets are preserved while keeping user preferences.
+ * Entries are validated: corrupted or hand-edited storage falls back per-entry
+ * (and to the presets wholesale if nothing is salvageable).
  */
 export function getSavedRegexScripts(): RegexScript[] {
   if (typeof window === 'undefined') return DEFAULT_REGEX_SCRIPTS;
@@ -42,8 +45,15 @@ export function getSavedRegexScripts(): RegexScript[] {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_REGEX_SCRIPTS));
       return DEFAULT_REGEX_SCRIPTS;
     }
-    const saved = JSON.parse(raw) as RegexScript[];
-    if (!Array.isArray(saved)) return DEFAULT_REGEX_SCRIPTS;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_REGEX_SCRIPTS;
+
+    // Validate each entry — never let corrupted persisted state reach the regex
+    // engine (wrong-typed fields would crash or miscompile downstream).
+    const saved = parsed
+      .map((item, i) => sanitizeRegexScriptEntry(item, i))
+      .filter((s): s is RegexScript => s !== null);
+    if (saved.length === 0 && parsed.length > 0) return DEFAULT_REGEX_SCRIPTS;
 
     // Merge: keep all saved scripts (including custom ones), and ensure any missing presets are appended
     const existingIds = new Set(saved.map((s) => s.id));
@@ -72,6 +82,13 @@ export function saveRegexScripts(scripts: RegexScript[]): RegexScript[] {
     window.dispatchEvent(new Event(EVENT_NAME));
   } catch (err) {
     console.error('Failed to save regex scripts:', err);
+    try {
+      window.dispatchEvent(
+        new CustomEvent('cadenza-storage-error', {
+          detail: { scope: 'regex scripts', quota: err instanceof DOMException && err.name === 'QuotaExceededError' },
+        })
+      );
+    } catch {}
   }
   return scripts;
 }

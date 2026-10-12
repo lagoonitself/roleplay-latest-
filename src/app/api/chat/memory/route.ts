@@ -1,9 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
-import { runMemoryPass, shouldRunMemoryPass, MEMORY_KINDS, type MemoryKind } from '@/lib/memory/engine';
+import { readJsonBody } from '@/lib/api/request';
+import { rateLimit, rateLimitKey } from '@/lib/api/rate-limit';
+import {
+  apiKeyString,
+  boundedNumber,
+  clientCharacterSchema,
+  clientMemorySchema,
+  clientPersonaSchema,
+  clientStateSchema,
+  clientSummarySchema,
+  historySchema,
+  intBetween,
+  lenientString,
+} from '@/lib/api/schemas';
+import { runMemoryPass, shouldRunMemoryPass, MEMORY_KINDS, MAX_ACTIVE_MEMORIES, type MemoryKind } from '@/lib/memory/engine';
 import { saveSummaryEdit } from '@/lib/memory/summarizer';
 import { retrieveContextForChat } from '@/lib/memory/retriever';
+import { MEMORY_COLUMNS, MEMORY_LIST_LIMIT } from '@/lib/memory/queries';
 import type { Memory, Message, Summary, ChatState, Character, Persona } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -13,6 +29,37 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 const cleanStr = (v: unknown): string | undefined =>
   typeof v === 'string' && v.trim() && !/^(null|none)$/i.test(v.trim()) ? v.trim() : undefined;
+
+/** Bounded request schema — every action's inputs validated before they touch the DB or a prompt. */
+const memoryRequestSchema = z.object({
+  action: lenientString(30).optional(),
+  chatId: z.string().min(1).max(200),
+  // NOTE: body.userId is deliberately not part of the schema — the caller's
+  // identity comes from the session only and can never be spoofed.
+  content: lenientString(20_000).optional(),
+  id: lenientString(200).optional(),
+  kind: lenientString(40).optional(),
+  importance: boundedNumber(1, 10),
+  pinned: z.boolean().nullish(),
+  entities: z.array(lenientString(120)).transform((a) => a.slice(0, 8)).optional(),
+  memories: z.array(clientMemorySchema).transform((a) => a.slice(0, 300)).optional(),
+  summary: clientSummarySchema.nullish(),
+  state: clientStateSchema.nullish(),
+  history: historySchema.optional(),
+  includeRecall: z.boolean().nullish(),
+  character: clientCharacterSchema.nullish(),
+  persona: clientPersonaSchema.nullish(),
+  latestUserMessage: lenientString(40_000).optional(),
+  charName: lenientString(120).optional(),
+  userName: lenientString(120).optional(),
+  cursorMessageId: lenientString(200).nullish(),
+  frozen: z.boolean().nullish(),
+  force: z.boolean().nullish(),
+  summaryWords: intBetween(100, 500),
+  intervalMessages: intBetween(3, 30),
+  summaryInterval: intBetween(3, 30),
+  apiKey: apiKeyString,
+});
 
 /**
  * Memory API — everything the story remembers, in one place.
@@ -29,7 +76,20 @@ const cleanStr = (v: unknown): string | undefined =>
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const parsedBody = await readJsonBody(req);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: parsedBody.error }, { status: parsedBody.status });
+    }
+    const parsedRequest = memoryRequestSchema.safeParse(parsedBody.body);
+    if (!parsedRequest.success) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+    // Validated values win over the raw payload; `body.userId` is dropped on purpose.
+    const body = {
+      ...(parsedBody.body as Record<string, unknown>),
+      ...parsedRequest.data,
+      userId: undefined,
+    };
     const action = body.action || 'regenerate';
     const chatId: string = body.chatId || '';
     if (!chatId) {
@@ -58,14 +118,37 @@ export async function POST(req: NextRequest) {
       userId = authData?.user?.id;
     }
 
-    const isDbBacked = !!(userId && UUID_REGEX.test(chatId) && UUID_REGEX.test(userId));
-    const effectiveUserId = userId || body.userId || 'guest';
+    const isUuidChat = UUID_REGEX.test(chatId);
+    // Never trust body.userId — identity comes from the session only.
+    const effectiveUserId = userId || 'guest';
+
+    // DB mode only for the caller's own chat: verify ownership before any read or
+    // write touches chat-scoped rows (memories, summaries, state, settings).
+    let isDbBacked = !!(userId && isUuidChat && UUID_REGEX.test(userId));
+    if (isDbBacked) {
+      const { data: chatRow } = await supabase
+        .from('chats')
+        .select('id, user_id')
+        .eq('id', chatId)
+        .maybeSingle();
+      if (chatRow && chatRow.user_id !== userId) {
+        return NextResponse.json({ error: 'This chat does not belong to you.' }, { status: 403 });
+      }
+      if (!chatRow) {
+        // No owned chat row (local-first id, or one that was never synced):
+        // operate locally instead of failing on foreign-key inserts.
+        isDbBacked = false;
+      }
+    }
 
     // ── list ────────────────────────────────────────────────────────────────
     if (action === 'list') {
-      const clientMemories: Memory[] = Array.isArray(body.memories) ? body.memories : [];
-      const clientSummary: Summary | null = body.summary || null;
-      const clientState: ChatState['state'] = body.state || {};
+      const clientMemories: Memory[] = Array.isArray(body.memories)
+        ? (body.memories as unknown as Memory[])
+        : [];
+      const clientSummary: Summary | null = (body.summary as unknown as Summary) || null;
+      const clientState: ChatState['state'] =
+        (body.state as unknown as ChatState['state'] | undefined) || {};
 
       let memories = clientMemories;
       let summary = clientSummary;
@@ -73,9 +156,9 @@ export async function POST(req: NextRequest) {
 
       if (isDbBacked) {
         const [memRes, sumRes, stateRes] = await Promise.all([
-          supabase.from('memories').select('*').eq('chat_id', chatId).is('superseded_by', null).order('created_at', { ascending: false }),
-          supabase.from('summaries').select('*').eq('chat_id', chatId).eq('superseded', false).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-          supabase.from('chat_state').select('*').eq('chat_id', chatId).maybeSingle(),
+          supabase.from('memories').select(MEMORY_COLUMNS).eq('chat_id', chatId).eq('user_id', effectiveUserId).is('superseded_by', null).order('created_at', { ascending: false }).limit(MEMORY_LIST_LIMIT),
+          supabase.from('summaries').select('*').eq('chat_id', chatId).eq('user_id', effectiveUserId).eq('superseded', false).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+          supabase.from('chat_state').select('*').eq('chat_id', chatId).eq('user_id', effectiveUserId).maybeSingle(),
         ]);
         memories = (memRes.data as Memory[]) || clientMemories;
         summary = (sumRes.data as Summary) || clientSummary;
@@ -90,15 +173,18 @@ export async function POST(req: NextRequest) {
         try {
           const ctx = await retrieveContextForChat({
             chatId,
-            character: body.character as Character,
-            persona: (body.persona as Persona) || null,
-            history: body.history as Message[],
+            character: body.character as unknown as Character,
+            persona: (body.persona as unknown as Persona) || null,
+            history: body.history as unknown as Message[],
             latestUserMessage: body.latestUserMessage || '',
             supabase,
+            // We just read the memories/summary/state above — reuse them instead
+            // of re-fetching the same rows inside the retriever.
+            reuseClientContext: true,
             clientContext: {
               memories,
               summary,
-              chatState: { state } as ChatState,
+              chatState: { state } as unknown as ChatState,
             },
           });
           recalled = (ctx.vectorMemories?.memories || []).map((m, i) => ({
@@ -124,7 +210,13 @@ export async function POST(req: NextRequest) {
     if (action === 'save_summary') {
       const content = cleanStr(body.content);
       if (!content) return NextResponse.json({ error: 'content is required' }, { status: 400 });
-      const summary = await saveSummaryEdit({ chatId, userId: effectiveUserId, content });
+      // Only a verified, owned DB chat is ever persisted; the guest path (and any
+      // un-owned chat id) gets the local summary row back and nothing is written.
+      const summary = await saveSummaryEdit({
+        chatId,
+        userId: isDbBacked ? effectiveUserId : 'guest',
+        content,
+      });
       return NextResponse.json({ summary });
     }
 
@@ -141,7 +233,14 @@ export async function POST(req: NextRequest) {
       if (action === 'delete_memory') {
         const id = cleanStr(body.id);
         if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
-        if (isDbBacked) await supabase.from('memories').delete().eq('id', id).eq('chat_id', chatId);
+        if (isDbBacked) {
+          await supabase
+            .from('memories')
+            .delete()
+            .eq('id', id)
+            .eq('chat_id', chatId)
+            .eq('user_id', effectiveUserId);
+        }
         return NextResponse.json({ deleted: id });
       }
 
@@ -173,8 +272,8 @@ export async function POST(req: NextRequest) {
             } as Memory,
           });
         }
-        const { data, error } = await supabase.from('memories').insert(row).select('*').single();
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        const { data, error } = await supabase.from('memories').insert(row).select(MEMORY_COLUMNS).single();
+        if (error) return NextResponse.json({ error: 'Could not save the memory.' }, { status: 500 });
         return NextResponse.json({ memory: data });
       }
 
@@ -191,8 +290,16 @@ export async function POST(req: NextRequest) {
       if (!isDbBacked) {
         return NextResponse.json({ memory: { id, ...patch } });
       }
-      const { data, error } = await supabase.from('memories').update(patch).eq('id', id).eq('chat_id', chatId).select('*').single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      const { data, error } = await supabase
+        .from('memories')
+        .update(patch)
+        .eq('id', id)
+        .eq('chat_id', chatId)
+        .eq('user_id', effectiveUserId)
+        .select(MEMORY_COLUMNS)
+        .maybeSingle();
+      if (error) return NextResponse.json({ error: 'Could not update the memory.' }, { status: 500 });
+      if (!data) return NextResponse.json({ error: 'Memory not found.' }, { status: 404 });
       return NextResponse.json({ memory: data });
     }
 
@@ -208,9 +315,18 @@ export async function POST(req: NextRequest) {
       }
       if (Object.keys(settings).length) {
         try {
-          const { data: chatRow } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
+          const { data: chatRow } = await supabase
+            .from('chats')
+            .select('settings')
+            .eq('id', chatId)
+            .eq('user_id', effectiveUserId)
+            .maybeSingle();
           const existing = (chatRow?.settings as Record<string, unknown>) || {};
-          await supabase.from('chats').update({ settings: { ...existing, ...settings } }).eq('id', chatId);
+          await supabase
+            .from('chats')
+            .update({ settings: { ...existing, ...settings } })
+            .eq('id', chatId)
+            .eq('user_id', effectiveUserId);
         } catch (err) {
           console.warn('memory/save_settings failed:', err);
         }
@@ -219,18 +335,23 @@ export async function POST(req: NextRequest) {
     }
 
     // ── regenerate ──────────────────────────────────────────────────────────
-    const history: Message[] = Array.isArray(body.history) ? body.history : [];
+    const history: Message[] = Array.isArray(body.history)
+      ? (body.history as unknown as Message[])
+      : [];
 
-    let memories: Memory[] = Array.isArray(body.memories) ? body.memories : [];
-    let summary: Summary | null = body.summary || null;
-    let currentState: ChatState['state'] = body.state || {};
+    let memories: Memory[] = Array.isArray(body.memories)
+      ? (body.memories as unknown as Memory[])
+      : [];
+    let summary: Summary | null = (body.summary as unknown as Summary) || null;
+    let currentState: ChatState['state'] =
+      (body.state as unknown as ChatState['state'] | undefined) || {};
 
     if (isDbBacked) {
       try {
         const [memRes, sumRes, stateRes] = await Promise.all([
-          supabase.from('memories').select('*').eq('chat_id', chatId).is('superseded_by', null).order('created_at', { ascending: false }).limit(300),
-          supabase.from('summaries').select('*').eq('chat_id', chatId).eq('superseded', false).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-          supabase.from('chat_state').select('*').eq('chat_id', chatId).maybeSingle(),
+          supabase.from('memories').select(MEMORY_COLUMNS).eq('chat_id', chatId).eq('user_id', effectiveUserId).is('superseded_by', null).order('created_at', { ascending: false }).limit(300),
+          supabase.from('summaries').select('*').eq('chat_id', chatId).eq('user_id', effectiveUserId).eq('superseded', false).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+          supabase.from('chat_state').select('*').eq('chat_id', chatId).eq('user_id', effectiveUserId).maybeSingle(),
         ]);
         if (memRes.data?.length) memories = memRes.data as Memory[];
         if (sumRes.data) summary = sumRes.data as Summary;
@@ -243,7 +364,12 @@ export async function POST(req: NextRequest) {
     let cursorId: string | null = body.cursorMessageId ?? null;
     if (!cursorId && isDbBacked) {
       try {
-        const { data: chatRow } = await supabase.from('chats').select('memory_cursor_id').eq('id', chatId).maybeSingle();
+        const { data: chatRow } = await supabase
+          .from('chats')
+          .select('memory_cursor_id')
+          .eq('id', chatId)
+          .eq('user_id', effectiveUserId)
+          .maybeSingle();
         cursorId = (chatRow?.memory_cursor_id as string) || null;
       } catch {
         // fall back to the summary cursor below
@@ -270,6 +396,15 @@ export async function POST(req: NextRequest) {
     const charName = cleanStr(body.charName) || 'Character';
     const userName = cleanStr(body.userName) || 'User';
 
+    // The memory pass calls the LLM — same abuse ceiling as the other proxies.
+    const limit = rateLimit(`memory:${rateLimitKey(req, userId)}`, 10, 60_000);
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many memory passes. Please wait a moment and try again.' },
+        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } }
+      );
+    }
+
     const result = await runMemoryPass(
       {
         chatId,
@@ -288,32 +423,37 @@ export async function POST(req: NextRequest) {
       { supabase, isDbBacked }
     );
 
-    // Return the resulting memory bank in one round trip.
-    let finalMemories = memories;
-    if (isDbBacked) {
+    // Compose the resulting memory bank from what we already fetched plus what
+    // the pass just wrote — it reports its inserts, revisions and supersessions,
+    // so no second bank read is needed (same merge the guest path has always
+    // used).
+    const superseded = new Set(result.supersededMemoryIds);
+    let finalMemories: Memory[] = [
+      ...result.newMemories,
+      ...memories
+        .filter((m) => !superseded.has(m.id))
+        .map((m) => {
+          const revision = result.revisions.find((r) => r.id === m.id);
+          return revision ? { ...m, content: revision.content } : m;
+        }),
+    ];
+    // The one thing the pass does NOT report: it may PRUNE the oldest low-value
+    // rows once the bank outgrows MAX_ACTIVE_MEMORIES (engine.pruneMemoryBank).
+    // Only in that case is a re-read needed to return exact server state.
+    const activePrePass = memories.filter((m) => !m.superseded_by && !m.pinned).length;
+    if (isDbBacked && activePrePass > MAX_ACTIVE_MEMORIES) {
       try {
         const { data } = await supabase
           .from('memories')
-          .select('*')
+          .select(MEMORY_COLUMNS)
           .eq('chat_id', chatId)
+          .eq('user_id', effectiveUserId)
           .is('superseded_by', null)
           .order('created_at', { ascending: false });
         if (data) finalMemories = data as Memory[];
       } catch {
-        // merge locally as a fallback
+        // keep the locally merged bank as a fallback
       }
-    }
-    if (!isDbBacked) {
-      const superseded = new Set(result.supersededMemoryIds);
-      finalMemories = [
-        ...result.newMemories,
-        ...memories
-          .filter((m) => !superseded.has(m.id))
-          .map((m) => {
-            const revision = result.revisions.find((r) => r.id === m.id);
-            return revision ? { ...m, content: revision.content } : m;
-          }),
-      ];
     }
 
     return NextResponse.json({
@@ -326,8 +466,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('API /api/chat/memory error:', error);
+    // Never echo internals back to the caller.
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: 'The memory request failed. Please try again.' },
       { status: 500 }
     );
   }

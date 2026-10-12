@@ -21,6 +21,26 @@
 
 import { repairMojibake } from './macros';
 
+const FULLWIDTH_LT = '\uFF1C';
+
+/**
+ * Imported card/profile text (Janitor AI, Chub, pasted bios) is attacker-
+ * controlled. Neutralize the wrapper tags it is spliced into — a literal
+ * "</input>" or a fake "<player_request>" would let the pasted text break out of
+ * its block and rewrite the generator's own rules (the generated card then
+ * carries the hijack into every chat). Other markup, notably the "<START>"
+ * example-dialogue separators the converter must keep seeing, is left intact.
+ */
+function escapeWrapperTags(text: string, tags: string[]): string {
+  let out = text;
+  for (const name of tags) {
+    out = out.replace(new RegExp(`</?\\s*${name}\\b`, 'gi'), (m) => m.replace('<', FULLWIDTH_LT));
+  }
+  return out;
+}
+
+const GENERATOR_WRAPPER_TAGS = ['input', 'player_request', 'partner_character', 'system'];
+
 export const CHARACTER_GENERATOR_SYSTEM = `You are a veteran character designer for interactive fiction and roleplay. You turn an idea — or text copied from another platform — into a character card that another AI will use to play the character convincingly across a long story.
 
 # Instruction hierarchy (highest priority first)
@@ -71,7 +91,7 @@ Two rules that override your defaults:
 - Invent only what is missing, keeping every invention adjacent to the concept. Do not pad fields with unrequested lore, subplots, or extra tropes.
 
 <input>
-${idea.trim()}
+${escapeWrapperTags(idea.trim(), GENERATOR_WRAPPER_TAGS)}
 </input>`;
 }
 
@@ -119,24 +139,27 @@ export function buildPersonaGeneratorUser(
   idea: string,
   character?: PartnerCharacterContext | null
 ): string {
-  const clip = (s?: string, n = 1200) => (s && s.length > n ? s.slice(0, n) + '…' : s || '');
+  // Partner character fields and the player's idea are untrusted text spliced
+  // into wrapper blocks: escape the wrapper tags in every interpolated value.
+  const clip = (s?: string, n = 1200) =>
+    escapeWrapperTags(s && s.length > n ? s.slice(0, n) + '…' : s || '', GENERATOR_WRAPPER_TAGS);
 
   const partner = character?.name
     ? `<partner_character>
-Name: ${character.name}
+Name: ${escapeWrapperTags(character.name, GENERATOR_WRAPPER_TAGS)}
 Tagline: ${clip(character.tagline, 200) || 'n/a'}
 Description (appearance & background): ${clip(character.description) || 'n/a'}
 Personality: ${clip(character.personality) || 'n/a'}
 Scenario: ${clip(character.scenario, 900) || 'n/a'}
 Opening message (tone reference only — never copy it): ${clip(character.first_message, 800) || 'n/a'}
 Speech style: ${clip(character.speech_style, 400) || 'n/a'}
-Genre/tags: ${(character.tags || []).filter(Boolean).join(', ') || 'n/a'}
-Content rating: ${character.content_rating || 'n/a'}
+Genre/tags: ${escapeWrapperTags((character.tags || []).filter(Boolean).join(', '), GENERATOR_WRAPPER_TAGS) || 'n/a'}
+Content rating: ${escapeWrapperTags(character.content_rating || '', GENERATOR_WRAPPER_TAGS) || 'n/a'}
 </partner_character>`
     : '<partner_character>None selected. Build a self-contained, setting-neutral persona that can fit many stories; keep it free of setting-specific lore.</partner_character>';
 
   const request = idea.trim()
-    ? `<player_request>\n${idea.trim()}\n</player_request>`
+    ? `<player_request>\n${escapeWrapperTags(idea.trim(), GENERATOR_WRAPPER_TAGS)}\n</player_request>`
     : '<player_request>No specific idea given. Design a persona with natural chemistry or productive tension with the partner and the scenario.</player_request>';
 
   return `${partner}

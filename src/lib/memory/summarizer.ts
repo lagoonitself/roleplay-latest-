@@ -32,7 +32,10 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 /** Formats summary into prompt text using the SillyTavern template. */
 export function formatSummaryPrompt(summaryContent: string, template: string = DEFAULT_SUMMARY_TEMPLATE): string {
   if (!summaryContent?.trim()) return '';
-  return template.replace(/\{\{\s*summary\s*\}\}/gi, summaryContent.trim());
+  // Function replacement: a summary containing `$&`, `$1`, `$'`… is user-edited
+  // story text and must be inserted literally — a string replacement would
+  // interpret those as substitution patterns and corrupt the prompt.
+  return template.replace(/\{\{\s*summary\s*\}\}/gi, () => summaryContent.trim());
 }
 
 export interface SummarizeNowParams extends Omit<MemoryPassInput, 'summaryWords'> {
@@ -70,7 +73,7 @@ export async function saveSummaryEdit(params: {
   if (!content) return null;
 
   const summaryRow: Summary = {
-    id: `sum-${Date.now()}`,
+    id: `sum-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     chat_id: params.chatId,
     user_id: params.userId,
     level: 'chunk',
@@ -88,19 +91,10 @@ export async function saveSummaryEdit(params: {
 
   try {
     const supabase = await createClient();
-    const { data: activeSummary } = await supabase
-      .from('summaries')
-      .select('*')
-      .eq('chat_id', params.chatId)
-      .eq('superseded', false)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
 
-    if (activeSummary?.id) {
-      await supabase.from('summaries').update({ superseded: true }).eq('id', activeSummary.id);
-    }
-
+    // Insert the new row FIRST and only then supersede the previous one: if the
+    // insert fails, the existing active summary must survive — superseding first
+    // and failing after would leave the chat with no summary at all.
     const { data: newRow, error } = await supabase
       .from('summaries')
       .insert({
@@ -113,8 +107,23 @@ export async function saveSummaryEdit(params: {
       })
       .select()
       .single();
+    if (error || !newRow) throw new Error(error?.message || 'summary insert failed');
 
-    if (!error && newRow) return newRow as Summary;
+    const { data: activeSummary } = await supabase
+      .from('summaries')
+      .select('*')
+      .eq('chat_id', params.chatId)
+      .eq('superseded', false)
+      .neq('id', (newRow as Summary).id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeSummary?.id) {
+      await supabase.from('summaries').update({ superseded: true }).eq('id', activeSummary.id);
+    }
+
+    return newRow as Summary;
   } catch (err) {
     console.warn('saveSummaryEdit: falling back to local summary:', err);
   }

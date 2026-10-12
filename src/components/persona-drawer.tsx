@@ -31,7 +31,7 @@ interface PersonaDrawerProps {
 
 export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDrawerProps) {
   const [settings, updateSettings] = useSettings();
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const supabase = createClient();
 
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -137,7 +137,7 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
           aria-modal="true"
           aria-label="Your personas"
           onClick={(e) => e.stopPropagation()}
-          className="panel relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in slide-in-from-bottom duration-200 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]"
+          className="panel relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[85dvh] overflow-hidden animate-in slide-in-from-bottom duration-200 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]"
         >
           {/* Handle */}
           <div className="w-8 h-1 rounded-full bg-line-strong mx-auto mt-3 mb-2" aria-hidden />
@@ -267,11 +267,11 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
                 </button>
 
                 <button
-                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                  onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
                   className="surface rounded-lg flex items-center gap-2.5 p-3 text-xs font-medium text-ink-2 text-left"
-                  aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                  aria-label={resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
                 >
-                  {theme === 'dark' ? (
+                  {resolvedTheme === 'dark' ? (
                     <>
                       <Sun className="w-4 h-4 text-ink-2 shrink-0" aria-hidden />
                       <span>Light theme</span>

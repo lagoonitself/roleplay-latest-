@@ -6,11 +6,12 @@ import { usePathname } from 'next/navigation';
 import { Plus, Sun, Moon, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { SettingsDialog } from '@/components/settings-dialog';
+import { IOSInstallPrompt } from '@/components/ios-install-prompt';
 
 export function Navbar() {
   const pathname = usePathname();
   const isChatPage = pathname.startsWith('/chat/');
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -84,12 +85,12 @@ export function Navbar() {
             )}
 
             <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
               aria-label="Toggle theme"
               className="icon-btn"
             >
               {mounted ? (
-                theme === 'dark' ? (
+                resolvedTheme === 'dark' ? (
                   <Sun className="h-4 w-4" aria-hidden="true" />
                 ) : (
                   <Moon className="h-4 w-4" aria-hidden="true" />
@@ -111,6 +112,7 @@ export function Navbar() {
       </header>
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <IOSInstallPrompt />
     </>
   );
 }

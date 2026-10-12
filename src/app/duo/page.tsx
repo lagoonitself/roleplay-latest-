@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -31,13 +31,19 @@ export default function DuoListPage() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
-    setLoading(true);
+  const loadSeqRef = useRef(0);
+  const firstLoadDoneRef = useRef(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Monotonic sequence: a slow response can never overwrite newer state.
+  const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
+    if (!firstLoadDoneRef.current) setLoading(true);
     try {
       const { data: auth } = await supabase.auth.getUser();
+      if (seq !== loadSeqRef.current) return;
       if (!auth.user) {
         setChats([]);
-        setLoading(false);
         return;
       }
       // mode column may not exist on older DBs — fall back to settings scan.
@@ -51,6 +57,7 @@ export default function DuoListPage() {
       if (!attempt.error && attempt.data) {
         rows = attempt.data as Chat[];
       } else {
+        if (seq !== loadSeqRef.current) return;
         const fallback = await supabase
           .from('chats')
           .select('*')
@@ -58,23 +65,47 @@ export default function DuoListPage() {
           .limit(120);
         rows = ((fallback.data || []) as Chat[]).filter((c) => parseDuo(c.settings));
       }
+      if (seq !== loadSeqRef.current) return;
       setChats(rows);
     } catch (e) {
       console.error(e);
     } finally {
-      setLoading(false);
+      // Only the freshest load settles the loading state.
+      if (seq === loadSeqRef.current) {
+        firstLoadDoneRef.current = true;
+        setLoading(false);
+      }
     }
-  };
+  }, [supabase]);
+
+  // Duo runs write chats.settings on every step — coalesce realtime bursts
+  // into one trailing refresh instead of refetching per event.
+  const scheduleLoad = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      void load();
+    }, 600);
+  }, [load]);
+
+  const loadNow = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    void load();
+  }, [load]);
 
   useEffect(() => {
     // Data fetch on mount — the standard pattern used across this app.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
+    loadNow();
     const channel = supabase
       .channel('duo-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => scheduleLoad())
       .subscribe();
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,13 +113,21 @@ export default function DuoListPage() {
 
   const remove = async (id: string) => {
     if (!window.confirm('Delete this scene and its transcript?')) return;
-    await supabase.from('chats').delete().eq('id', id);
-    toast.success('Scene deleted');
-    load();
+    try {
+      const { error } = await supabase.from('chats').delete().eq('id', id);
+      if (error) {
+        toast.error('Could not delete the scene — please try again');
+        return;
+      }
+      toast.success('Scene deleted');
+      loadNow();
+    } catch {
+      toast.error('Could not delete the scene — please try again');
+    }
   };
 
   return (
-    <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6 pb-24">
+    <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)]">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/" className="icon-btn shrink-0" aria-label="Back home">

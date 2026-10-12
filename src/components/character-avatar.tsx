@@ -26,8 +26,11 @@ export function CharacterAvatar({
 
   // The only colour on this plate: the author's accent folded
   // into the metadata ink at low opacity. Falls back to plain ink-2.
-  const tint = accentColor
-    ? `color-mix(in oklab, ${accentColor} 30%, var(--ink-3))`
+  // Strict hex only — `accent_color` comes from imported character cards and
+  // is interpolated into a CSS value, so anything else must not be trusted.
+  const safeAccent = accentColor && /^#[0-9a-fA-F]{3,8}$/.test(accentColor) ? accentColor : null;
+  const tint = safeAccent
+    ? `color-mix(in oklab, ${safeAccent} 30%, var(--ink-3))`
     : 'var(--ink-2)';
 
   // If valid image provided and not errored, render it

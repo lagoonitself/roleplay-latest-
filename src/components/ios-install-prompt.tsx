@@ -8,13 +8,20 @@ interface IOSInstallPromptProps {
   onClose?: () => void;
 }
 
+const DISMISS_KEY = 'cadenza_ios_pwa_dismissed';
+// Re-offer the sheet ~30 days after the last dismissal.
+const DISMISS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 export function IOSInstallPrompt({ forceOpen = false, onClose }: IOSInstallPromptProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    // Check if device is iOS (iPhone/iPad/iPod)
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // iOS devices: iPhone/iPad/iPod UAs, plus iPadOS 13+ which reports a
+    // Macintosh UA with touch. No navigator.platform (deprecated).
+    const userAgent = window.navigator.userAgent;
+    const isIOSDevice =
+      /iphone|ipad|ipod/i.test(userAgent) ||
+      (/macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1);
     const standaloneMode = (window.navigator as Navigator & { standalone?: boolean }).standalone === true || window.matchMedia('(display-mode: standalone)').matches;
 
     if (forceOpen) {
@@ -22,10 +29,12 @@ export function IOSInstallPrompt({ forceOpen = false, onClose }: IOSInstallPromp
       return () => clearTimeout(t);
     }
 
-    // Auto show once for iOS users not in standalone mode
+    // Auto show for iOS users not in standalone mode, unless dismissed recently
     if (isIOSDevice && !standaloneMode) {
-      const dismissed = localStorage.getItem('cadenza_ios_pwa_dismissed');
-      if (!dismissed) {
+      const dismissedAt = Number(localStorage.getItem(DISMISS_KEY));
+      const dismissalExpired =
+        !Number.isFinite(dismissedAt) || Date.now() - dismissedAt > DISMISS_TTL_MS;
+      if (dismissalExpired) {
         // Show after 3 seconds for a smooth intro
         const timer = setTimeout(() => setIsOpen(true), 3000);
         return () => clearTimeout(timer);
@@ -35,21 +44,25 @@ export function IOSInstallPrompt({ forceOpen = false, onClose }: IOSInstallPromp
 
   const handleDismiss = useCallback(() => {
     setIsOpen(false);
-    localStorage.setItem('cadenza_ios_pwa_dismissed', 'true');
+    try {
+      localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    } catch {
+      // Private mode / locked storage: dismissal just won't persist.
+    }
     onClose?.();
   }, [onClose]);
 
   // Escape closes the sheet without recording a dismissal beyond handleDismiss.
   useEffect(() => {
-    if (!isOpen && !forceOpen) return;
+    if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') handleDismiss();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, forceOpen, handleDismiss]);
+  }, [isOpen, handleDismiss]);
 
-  if (!isOpen && !forceOpen) return null;
+  if (!isOpen) return null;
 
   const steps = [
     {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { getRequestUser } from '@/lib/duo/auth';
 import { claimTurn, executeClaimedTurn, loadOwnedAgent, mergeDuo } from '@/lib/duo/engine';
+import { LlmError } from '@/lib/llm/client';
+import { readJsonBody } from '@/lib/api/request';
+import { rateLimit, rateLimitKey } from '@/lib/api/rate-limit';
 import {
   DUO_CONTINUE_TURNS,
   DUO_DEFAULT_DELAY_MS,
@@ -15,9 +18,29 @@ import {
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function llmKey(req: NextRequest): string | undefined {
   const key = req.headers.get('x-llm-key')?.trim();
   return key || undefined;
+}
+
+/**
+ * Origin for the self-calling turn chain. The request's own origin is derived
+ * from host headers, which a caller can spoof — prefer configured deployment
+ * URLs so credentials (authorization, x-llm-key) are never POSTed off-host.
+ */
+function selfOrigin(req: NextRequest): string {
+  const configured =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+  try {
+    const url = new URL(configured);
+    if (url.protocol === 'https:' || url.protocol === 'http:') return url.origin;
+  } catch {
+    // fall through to the request origin
+  }
+  return req.nextUrl.origin;
 }
 
 function kick(origin: string, chatId: string, runId: string, auth: string | null, key?: string) {
@@ -28,6 +51,8 @@ function kick(origin: string, chatId: string, runId: string, auth: string | null
     method: 'POST',
     headers,
     body: JSON.stringify({ action: 'step', chatId, runId }),
+    // Never follow a redirect that could bounce the auth headers elsewhere.
+    redirect: 'error',
   }).catch((err) => {
     console.error('duo chain failed', err);
   });
@@ -36,19 +61,38 @@ function kick(origin: string, chatId: string, runId: string, auth: string | null
 function isRef(value: unknown): value is DuoAgentRef {
   if (!value || typeof value !== 'object') return false;
   const ref = value as DuoAgentRef;
-  return (ref.kind === 'character' || ref.kind === 'persona') && typeof ref.id === 'string' && ref.id.length > 0;
+  return (
+    (ref.kind === 'character' || ref.kind === 'persona') &&
+    typeof ref.id === 'string' &&
+    ref.id.length > 0 &&
+    ref.id.length <= 200
+  );
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const parsedBody = await readJsonBody(req);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: parsedBody.error }, { status: parsedBody.status });
+    }
+    const body = (parsedBody.body ?? {}) as Record<string, any>;
     const { supabase, userId } = await getRequestUser(req);
     if (!userId) {
       return NextResponse.json({ error: 'Sign in to run a scene.' }, { status: 401 });
     }
 
+    // Steps chain rapidly during a run, so the ceiling is generous — but a scene
+    // is still an LLM proxy and must not be hammerable without a user session.
+    const limit = rateLimit(`duo:${rateLimitKey(req, userId)}`, 120, 60_000);
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many scene requests. Please wait a moment.' },
+        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } }
+      );
+    }
+
     const action = body?.action;
-    const origin = req.nextUrl.origin;
+    const origin = selfOrigin(req);
     const auth = req.headers.get('authorization');
     const key = llmKey(req);
 
@@ -124,7 +168,8 @@ export async function POST(req: NextRequest) {
       }
 
       if (!chat) {
-        return NextResponse.json({ error: insertError?.message || 'Could not start the scene.' }, { status: 500 });
+        console.error('duo start insert failed', insertError);
+        return NextResponse.json({ error: 'Could not start the scene.' }, { status: 500 });
       }
 
       after(() => kick(origin, chat.id, runId, auth, key));
@@ -132,7 +177,7 @@ export async function POST(req: NextRequest) {
     }
 
     const chatId = typeof body?.chatId === 'string' ? body.chatId : '';
-    if (!chatId) {
+    if (!chatId || !UUID_REGEX.test(chatId)) {
       return NextResponse.json({ error: 'Missing scene.' }, { status: 400 });
     }
 
@@ -197,7 +242,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'step') {
-      const runId = typeof body?.runId === 'string' ? body.runId : '';
+      const runId = typeof body?.runId === 'string' ? body.runId.slice(0, 200) : '';
       const claimed = await claimTurn(supabase, chatId, userId, runId);
       if (!claimed) {
         return NextResponse.json({ skipped: true });
@@ -214,7 +259,11 @@ export async function POST(req: NextRequest) {
                   ...current,
                   status: 'error',
                   busyUntil: null,
-                  lastError: err instanceof Error ? err.message.slice(0, 240) : 'The scene stopped.',
+                  // Only provider-written messages reach the UI; internal errors stay in logs.
+                  lastError:
+                    err instanceof LlmError
+                      ? err.message.slice(0, 240)
+                      : 'The scene stopped unexpectedly.',
                 }
               : current
           );
@@ -226,9 +275,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
   } catch (err) {
     console.error('duo route error', err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Something went wrong.' },
-      { status: 500 }
-    );
+    // Never echo internals back to the caller.
+    return NextResponse.json({ error: 'Something went wrong.' }, { status: 500 });
   }
 }

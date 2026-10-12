@@ -1,10 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import {
   TOKEN_USAGE_EVENT,
   getLocalUsage,
   reconcileLocalUsage,
+  syncUsageOwner,
   type TokenUsage,
 } from './tokens';
 
@@ -26,6 +28,14 @@ export function useTokenUsage(): UseTokenUsageResult {
   const [syncedWithAccount, setSyncedWithAccount] = useState(false);
 
   const refresh = useCallback(async () => {
+    // Drop the local cache when it belongs to a different signed-in account
+    // before reading it — guests and accounts must never share totals.
+    let userId: string | null = null;
+    try {
+      const { data } = await createClient().auth.getSession();
+      userId = data.session?.user?.id ?? null;
+    } catch {}
+    syncUsageOwner(userId);
     const local = getLocalUsage();
     try {
       const res = await fetch('/api/usage', { method: 'GET' });

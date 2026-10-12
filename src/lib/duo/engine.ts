@@ -4,7 +4,7 @@ import { VERBOSITY_GUIDE } from '@/lib/prompt/system-prompt';
 import { formatRoleplayText } from '@/lib/prompt/macros';
 import { estimateTokens } from '@/lib/prompt/tokens';
 import { streamChatCompletions, getLlmApiKey, getLlmModel } from '@/lib/llm/client';
-import { ThinkingStreamParser } from '@/lib/llm/stream-parser';
+import { ThinkingStreamParser, SseEventParser, type SseMessage } from '@/lib/llm/stream-parser';
 import { sanitizeModelOutput } from '@/lib/formatter/regex-engine';
 import type { Character, Message } from '@/lib/supabase/types';
 import { agentAsCharacter, agentAsPersona, otherLabel, ratingFloor, type LoadedAgent } from './agents';
@@ -196,70 +196,90 @@ async function consumeStream(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   const parser = new ThinkingStreamParser();
-  let buffer = '';
+  const sse = new SseEventParser();
   let text = '';
   let reasoning = '';
   let promptTokens = 0;
   let completionTokens = 0;
   let cachedTokens = 0;
+  let done = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data: ') || trimmed === 'data: [DONE]') continue;
-      let data: {
-        usage?: {
-          prompt_tokens?: number;
-          input_tokens?: number;
-          completion_tokens?: number;
-          output_tokens?: number;
-          prompt_tokens_details?: { cached_tokens?: number };
-          prompt_cache_hit_tokens?: number;
-        };
-        choices?: {
-          delta?: {
-            content?: string | null;
-            reasoning_content?: string | null;
-            reasoning?: string | null;
-          };
-        }[];
+  const handleEvent = (msg: SseMessage) => {
+    if (done) return;
+    if (msg.data.trim() === '[DONE]') {
+      done = true;
+      return;
+    }
+    let data: {
+      error?: { message?: string } | string;
+      usage?: {
+        prompt_tokens?: number;
+        input_tokens?: number;
+        completion_tokens?: number;
+        output_tokens?: number;
+        prompt_tokens_details?: { cached_tokens?: number };
+        prompt_cache_hit_tokens?: number;
       };
-      try {
-        data = JSON.parse(trimmed.slice(6));
-      } catch {
-        continue;
-      }
-      const usage = data?.usage;
-      if (usage && typeof usage === 'object') {
-        const p = usage.prompt_tokens ?? usage.input_tokens ?? 0;
-        const c = usage.completion_tokens ?? usage.output_tokens ?? 0;
-        const cached = usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0;
-        if (Number(p) > 0) promptTokens = Math.floor(Number(p));
-        if (Number(c) > 0) completionTokens = Math.floor(Number(c));
-        if (Number(cached) >= 0) cachedTokens = Math.floor(Number(cached));
-        if (!data.choices?.[0]?.delta) continue;
-      }
-      const delta = data.choices?.[0]?.delta;
-      if (!delta) continue;
-      for (const chunk of parser.process({
-        content: delta.content,
-        reasoning_content: delta.reasoning_content,
-        reasoning: delta.reasoning,
-      })) {
-        if (chunk.reasoning) reasoning += chunk.reasoning;
-        if (chunk.text) {
-          text += chunk.text;
-          onText(text);
-        }
+      choices?: {
+        delta?: {
+          content?: string | null;
+          reasoning_content?: string | null;
+          reasoning?: string | null;
+        };
+      }[];
+    };
+    try {
+      data = JSON.parse(msg.data);
+    } catch {
+      return;
+    }
+    // An error event (or an error payload) must surface, not vanish into a
+    // silently-truncated reply.
+    if (msg.event === 'error' || data?.error) {
+      const errPayload = data?.error;
+      const detail =
+        typeof errPayload === 'string'
+          ? errPayload
+          : (errPayload as { message?: string } | undefined)?.message || 'The model stream failed.';
+      throw new Error(detail.slice(0, 240));
+    }
+    const usage = data?.usage;
+    if (usage && typeof usage === 'object') {
+      const p = usage.prompt_tokens ?? usage.input_tokens ?? 0;
+      const c = usage.completion_tokens ?? usage.output_tokens ?? 0;
+      const cached = usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0;
+      if (Number(p) > 0) promptTokens = Math.floor(Number(p));
+      if (Number(c) > 0) completionTokens = Math.floor(Number(c));
+      // Only record a cache count when the provider actually reported one —
+      // an absent value must not overwrite an earlier real count with 0.
+      if (Number.isFinite(Number(cached)) && Number(cached) > 0) cachedTokens = Math.floor(Number(cached));
+    }
+    const delta = data.choices?.[0]?.delta;
+    if (!delta) return;
+    for (const chunk of parser.process({
+      content: delta.content,
+      reasoning_content: delta.reasoning_content,
+      reasoning: delta.reasoning,
+    })) {
+      if (chunk.reasoning) reasoning += chunk.reasoning;
+      if (chunk.text) {
+        text += chunk.text;
+        onText(text);
       }
     }
+  };
+
+  while (!done) {
+    const { done: readDone, value } = await reader.read();
+    if (readDone) break;
+    for (const msg of sse.push(decoder.decode(value, { stream: true }))) {
+      handleEvent(msg);
+    }
   }
+  // Flush decoder + parser tails so text that ended exactly at the stream edge
+  // is not lost.
+  for (const msg of sse.push(decoder.decode())) handleEvent(msg);
+  for (const msg of sse.flush()) handleEvent(msg);
 
   return { text, reasoning, promptTokens, completionTokens, cachedTokens };
 }
@@ -515,6 +535,15 @@ export async function executeClaimedTurn(opts: {
     })
     .then(() => undefined, () => undefined);
 
+  // The per-side secret is private direction for one model only. It travels in
+  // the prompt, so before anything is persisted to llm_logs (viewable alongside
+  // the other side's turns) every copy of it is redacted.
+  const redactSecret = (s: string) =>
+    speakerSecret ? s.split(speakerSecret).join('[private direction redacted]') : s;
+  const logMessages = speakerSecret
+    ? assembled.map((m) => ({ ...m, content: redactSecret(m.content) }))
+    : assembled;
+
   void supabase
     .from('llm_logs')
     .insert({
@@ -524,10 +553,10 @@ export async function executeClaimedTurn(opts: {
       kind: 'chat',
       model,
       params: { temperature: speakingAs.behavior?.temperature ?? 1, max_tokens: maxTokens, thinking: false, duo: true },
-      request_messages: assembled,
+      request_messages: logMessages,
       user_message: latest,
-      output: cleaned,
-      reasoning: reasoning || null,
+      output: redactSecret(cleaned),
+      reasoning: reasoning ? redactSecret(reasoning) : null,
       prompt_tokens: finalPrompt,
       completion_tokens: finalCompletion,
       cached_tokens: cachedTokens,

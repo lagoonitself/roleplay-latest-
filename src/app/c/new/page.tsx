@@ -61,6 +61,8 @@ export default function CreateCharacterPage() {
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  // Guards the save buttons against double-submit while a write is in flight.
+  const [saving, setSaving] = useState(false);
 
   // Direct avatar file upload
   const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -197,6 +199,7 @@ export default function CreateCharacterPage() {
 
   // Save Character
   const handleSaveCharacter = async () => {
+    if (saving) return;
     if (!name.trim()) {
       toast.error('Character Name is required');
       return;
@@ -206,6 +209,17 @@ export default function CreateCharacterPage() {
       return;
     }
 
+    setSaving(true);
+    try {
+      await saveCharacter();
+    } catch {
+      toast.error('Could not save the character — please try again');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveCharacter = async () => {
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData.user?.id;
 
@@ -359,10 +373,11 @@ export default function CreateCharacterPage() {
           <button
             type="button"
             onClick={handleSaveCharacter}
-            className="btn btn-primary flex items-center gap-1.5"
+            disabled={saving}
+            className="btn btn-primary flex items-center gap-1.5 disabled:opacity-50"
           >
             <Check className="w-3.5 h-3.5" aria-hidden />
-            <span>Save and start</span>
+            <span>{saving ? 'Saving…' : 'Save and start'}</span>
           </button>
         </div>
       </div>
@@ -799,10 +814,11 @@ export default function CreateCharacterPage() {
             <button
               type="button"
               onClick={handleSaveCharacter}
-              className="btn btn-primary flex items-center gap-2 shrink-0"
+              disabled={saving}
+              className="btn btn-primary flex items-center gap-2 shrink-0 disabled:opacity-50"
             >
               <Check className="w-4 h-4" aria-hidden />
-              <span>Save and start roleplay</span>
+              <span>{saving ? 'Saving…' : 'Save and start roleplay'}</span>
             </button>
           </div>
         </div>

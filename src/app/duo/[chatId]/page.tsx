@@ -7,6 +7,7 @@ import { ArrowLeft, Pause, Play, Square, Plus, Loader2, AlertTriangle, Megaphone
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
 import { useRegexScripts } from '@/lib/store/regex-store';
+import { useVisualViewportVars } from '@/lib/hooks';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { RoleplayMessageContent } from '@/components/chat/roleplay-message-content';
 import { DUO_CONTINUE_TURNS, DUO_MAX_TURNS_CAP, parseDuo, type DuoSession } from '@/lib/duo/types';
@@ -45,44 +46,69 @@ export default function DuoWatchPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const lastActivityRef = useRef<number>(0);
+  const lastStepRef = useRef<number>(0);
   const duoRef = useRef<DuoSession | null>(null);
+  const settingsRef = useRef(settings);
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
+
+  // Keep the shell sized to the *visible* viewport so the director fields stay
+  // above the iOS keyboard instead of behind it.
+  useVisualViewportVars();
 
   useEffect(() => {
     duoRef.current = duo;
   }, [duo]);
 
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   const scrollToBottom = useCallback((smooth = true) => {
     if (!isAtBottom) return;
-    endRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
+    // Smooth scrolling is motion too — honour prefers-reduced-motion.
+    const reduce =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    endRef.current?.scrollIntoView({ behavior: smooth && !reduce ? 'smooth' : 'auto', block: 'end' });
   }, [isAtBottom]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  const load = useCallback(async () => {
-    const { data: chatRow } = await supabase.from('chats').select('*').eq('id', chatId).maybeSingle();
-    if (chatRow) {
-      setChat(chatRow as Chat);
-      setDuo(parseDuo((chatRow as Chat).settings));
+  // Coalesced: concurrent callers share one in-flight fetch, so background
+  // ticks can never stack full chat + transcript refetches before one lands.
+  const load = useCallback(() => {
+    if (!loadPromiseRef.current) {
+      const run = (async () => {
+        const { data: chatRow } = await supabase.from('chats').select('*').eq('id', chatId).maybeSingle();
+        if (chatRow) {
+          setChat(chatRow as Chat);
+          setDuo(parseDuo((chatRow as Chat).settings));
+        }
+        const { data: rows } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: true })
+          .limit(400);
+        if (rows) {
+          setMessages(rows as Message[]);
+          lastActivityRef.current = Date.now();
+        }
+      })();
+      loadPromiseRef.current = run.finally(() => {
+        loadPromiseRef.current = null;
+      });
     }
-    const { data: rows } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: true })
-      .limit(400);
-    if (rows) {
-      setMessages(rows as Message[]);
-      lastActivityRef.current = Date.now();
-    }
+    return loadPromiseRef.current;
   }, [chatId, supabase]);
 
   useEffect(() => {
     lastActivityRef.current = Date.now();
     // Data fetch on mount — the standard pattern used across this app.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
+    void load().catch(() => {});
   }, [load]);
 
   // Live: message inserts/updates + duo state changes.
@@ -126,33 +152,62 @@ export default function DuoWatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
 
-  // Gentle state refresh + watchdog: revive a stalled chain.
+  // Gentle state refresh + watchdog: revive a stalled chain. Ticks are cheap
+  // and pause while the tab is hidden: no settings poll unless a run is live,
+  // and none within a few seconds of a step request — the step response and
+  // the realtime channels already carry the fresh state.
   useEffect(() => {
-    const timer = setInterval(async () => {
-      const current = duoRef.current;
-      if (!current) {
-        load();
-        return;
+    let tickInFlight = false;
+    const tick = async () => {
+      if (tickInFlight || document.hidden) return;
+      tickInFlight = true;
+      try {
+        const current = duoRef.current;
+        if (!current) {
+          // Nothing loaded yet — full reload, coalesced by load().
+          await load();
+          return;
+        }
+        if (current.status !== 'running') return;
+        const now = Date.now();
+        if (now - lastActivityRef.current > 45000) {
+          // Stalled — ask the server for the next line to revive the chain.
+          try {
+            const headers = await getAuthHeaders(supabase);
+            if (settingsRef.current.opencodeApiKey) headers['x-llm-key'] = settingsRef.current.opencodeApiKey;
+            const res = await fetch('/api/duo', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ action: 'step', chatId, runId: current.runId }),
+            });
+            lastActivityRef.current = now;
+            lastStepRef.current = now;
+            const json = await res.json().catch(() => null);
+            if (json?.duo) setDuo(json.duo as DuoSession);
+          } catch {}
+        } else if (now - lastStepRef.current > 5000) {
+          // Keep the header counters fresh without a full reload.
+          const { data } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
+          if (data) setDuo(parseDuo((data as { settings: unknown }).settings));
+        }
+      } catch {
+        // A failed background tick must never become an unhandled rejection.
+      } finally {
+        tickInFlight = false;
       }
-      if (current.status === 'running' && Date.now() - lastActivityRef.current > 45000) {
-        try {
-          const headers = await getAuthHeaders(supabase);
-          const llmKey = await resolveLlmKey(settings);
-          if (llmKey) headers['x-llm-key'] = llmKey;
-          await fetch('/api/duo', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ action: 'step', chatId, runId: current.runId }),
-          });
-          lastActivityRef.current = Date.now();
-        } catch {}
-      } else if (current.status === 'running') {
-        // Keep the header counters fresh without a full reload.
-        const { data } = await supabase.from('chats').select('settings').eq('id', chatId).maybeSingle();
-        if (data) setDuo(parseDuo((data as { settings: unknown }).settings));
-      }
+    };
+    const timer = setInterval(() => {
+      void tick().catch(() => {});
     }, 8000);
-    return () => clearInterval(timer);
+    // Pause while the tab is hidden; resume with a tick as soon as it shows.
+    const onVisibilityChange = () => {
+      if (!document.hidden) void tick().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
 
@@ -224,9 +279,10 @@ export default function DuoWatchPage() {
   const status = duo?.status || 'running';
 
   return (
-    <div className="flex-1 flex flex-col w-full max-w-4xl mx-auto min-h-0 pb-6">
+    <div className="flex-1 flex flex-col w-full max-w-4xl mx-auto min-h-0 max-h-[calc(var(--app-height,100dvh)+var(--app-offset-top,0px)-env(safe-area-inset-top,0px)-3.5rem)] pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
       {/* Header */}
-      <div className="sticky top-14 z-30 bg-background border-b border-line">
+      {/* Sticky under the navbar, which is safe-top + 3.5rem tall on notched phones. */}
+      <div className="sticky top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-30 bg-background border-b border-line">
         <div className="px-4 sm:px-6 py-3 flex items-center gap-3">
           <Link href="/duo" className="icon-btn shrink-0" aria-label="All scenes">
             <ArrowLeft className="w-5 h-5" aria-hidden />

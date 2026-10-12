@@ -10,17 +10,28 @@ export async function updateSession(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: {
+      // Refreshed session cookies: never sent over plain HTTP in production.
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+    },
     cookies: {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, headers) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         supabaseResponse = NextResponse.next({
           request,
         });
         cookiesToSet.forEach(({ name, value, options }) =>
           supabaseResponse.cookies.set(name, value, options)
+        );
+        // Responses that carry refreshed auth cookies must never be cached by
+        // a CDN/proxy, or one user's session token can be served to another.
+        Object.entries(headers ?? {}).forEach(([key, value]) =>
+          supabaseResponse.headers.set(key, value)
         );
       },
     },

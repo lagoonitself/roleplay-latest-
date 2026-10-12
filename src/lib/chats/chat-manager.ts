@@ -15,10 +15,39 @@ export function isUuid(id: string | null | undefined): boolean {
   return typeof id === 'string' && UUID_REGEX.test(id);
 }
 
+// Characters being migrated can be referenced by several chats at once (and the
+// migration itself can re-run); cache what we have already created so concurrent
+// calls cannot insert duplicate rows for the same character.
+const ensuredCharacters = new Map<string, Character>();
+const ensuredInFlight = new Map<string, Promise<Character>>();
+
 export async function ensureCharacterInCloud(
   character: Character,
   userId: string,
   supabaseClient?: SupabaseClient
+): Promise<Character> {
+  const cacheKey = `${userId}:${character.id}`;
+  const cached = ensuredCharacters.get(cacheKey);
+  if (cached) return cached;
+  // Serialize concurrent calls for the same character — without this, two
+  // simultaneous migrations both see "not found" and both insert.
+  const inflight = ensuredInFlight.get(cacheKey);
+  if (inflight) return inflight;
+
+  const work = ensureCharacterInCloudUncached(character, userId, supabaseClient, cacheKey);
+  ensuredInFlight.set(cacheKey, work);
+  try {
+    return await work;
+  } finally {
+    ensuredInFlight.delete(cacheKey);
+  }
+}
+
+async function ensureCharacterInCloudUncached(
+  character: Character,
+  userId: string,
+  supabaseClient: SupabaseClient | undefined,
+  cacheKey: string
 ): Promise<Character> {
   const supabase = supabaseClient || createClient();
 
@@ -29,7 +58,28 @@ export async function ensureCharacterInCloud(
         .select('*')
         .eq('id', character.id)
         .maybeSingle();
-      if (data) return data as Character;
+      if (data) {
+        ensuredCharacters.set(cacheKey, data as Character);
+        return data as Character;
+      }
+    } catch {}
+  }
+
+  // Non-UUID (local) ids: reuse an existing cloud character with the same name
+  // before inserting, otherwise every migration pass clones the character.
+  if (character.name) {
+    try {
+      const { data } = await supabase
+        .from('characters')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('name', character.name)
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        ensuredCharacters.set(cacheKey, data as Character);
+        return data as Character;
+      }
     } catch {}
   }
 
@@ -60,6 +110,7 @@ export async function ensureCharacterInCloud(
       .single();
 
     if (!error && savedChar) {
+      ensuredCharacters.set(cacheKey, savedChar as Character);
       if (typeof window !== 'undefined') {
         try {
           const localChars: Character[] = JSON.parse(localStorage.getItem('cadenza_local_characters') || '[]');
@@ -94,16 +145,60 @@ export function notifyChatsChanged() {
 }
 
 /**
- * Get all local chats stored in localStorage
+ * Reports a persistence failure to the console and to any listening UI
+ * (e.g. a toast on 'cadenza-storage-error'), so silent quota losses are
+ * at least observable instead of looking like successful saves.
  */
-export function getLocalChats(): Chat[] {
+function reportStorageError(scope: string, err: unknown): void {
+  console.error(`Failed to save ${scope}:`, err);
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('cadenza-storage-error', {
+          detail: { scope, quota: err instanceof DOMException && err.name === 'QuotaExceededError' },
+        })
+      );
+    } catch {}
+  }
+}
+
+/**
+ * Reads a JSON array from localStorage. Corrupted or non-array payloads fall
+ * back to [] — a bad write must never crash the app on the next load.
+ */
+function readJsonArray<T>(key: string): T[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(LOCAL_CHATS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed.filter((x) => x && typeof x === 'object') as T[]) : [];
   } catch {
     return [];
   }
+}
+
+/**
+ * Reads a JSON object from localStorage. Corrupted, array or primitive payloads
+ * fall back to null/default.
+ */
+function readJsonObject<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get all local chats stored in localStorage
+ */
+export function getLocalChats(): Chat[] {
+  return readJsonArray<Chat>(LOCAL_CHATS_KEY);
 }
 
 /**
@@ -184,7 +279,7 @@ export function saveLocalChat(chat: Partial<Chat> & { id: string }): void {
     localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(updated));
     notifyChatsChanged();
   } catch (err) {
-    console.error('Failed to save local chat:', err);
+    reportStorageError('chat list', err);
   }
 }
 
@@ -193,12 +288,7 @@ export function saveLocalChat(chat: Partial<Chat> & { id: string }): void {
  */
 export function getLocalMessages(chatId: string): Message[] {
   if (typeof window === 'undefined' || !chatId) return [];
-  try {
-    const raw = localStorage.getItem(`${LOCAL_MESSAGES_PREFIX}${chatId}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return readJsonArray<Message>(`${LOCAL_MESSAGES_PREFIX}${chatId}`);
 }
 
 /**
@@ -209,7 +299,7 @@ export function saveLocalMessages(chatId: string, messages: Message[]): void {
   try {
     localStorage.setItem(`${LOCAL_MESSAGES_PREFIX}${chatId}`, JSON.stringify(messages));
   } catch (err) {
-    console.error('Failed to save local messages:', err);
+    reportStorageError(`messages for chat ${chatId}`, err);
   }
 }
 
@@ -218,12 +308,7 @@ export function saveLocalMessages(chatId: string, messages: Message[]): void {
  */
 export function getLocalMemories(chatId: string): Memory[] {
   if (typeof window === 'undefined' || !chatId) return [];
-  try {
-    const raw = localStorage.getItem(`${LOCAL_MEMORIES_PREFIX}${chatId}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return readJsonArray<Memory>(`${LOCAL_MEMORIES_PREFIX}${chatId}`);
 }
 
 /**
@@ -234,7 +319,7 @@ export function saveLocalMemories(chatId: string, memories: Memory[]): void {
   try {
     localStorage.setItem(`${LOCAL_MEMORIES_PREFIX}${chatId}`, JSON.stringify(memories));
   } catch (err) {
-    console.error('Failed to save local memories:', err);
+    reportStorageError(`memories for chat ${chatId}`, err);
   }
 }
 
@@ -243,12 +328,7 @@ export function saveLocalMemories(chatId: string, memories: Memory[]): void {
  */
 export function getLocalChatState(chatId: string): Record<string, unknown> {
   if (typeof window === 'undefined' || !chatId) return {};
-  try {
-    const raw = localStorage.getItem(`${LOCAL_STATE_PREFIX}${chatId}`);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+  return readJsonObject<Record<string, unknown>>(`${LOCAL_STATE_PREFIX}${chatId}`) || {};
 }
 
 /**
@@ -259,7 +339,7 @@ export function saveLocalChatState(chatId: string, state: Record<string, unknown
   try {
     localStorage.setItem(`${LOCAL_STATE_PREFIX}${chatId}`, JSON.stringify(state));
   } catch (err) {
-    console.error('Failed to save local chat state:', err);
+    reportStorageError(`chat state for chat ${chatId}`, err);
   }
 }
 
@@ -268,12 +348,7 @@ export function saveLocalChatState(chatId: string, state: Record<string, unknown
  */
 export function getLocalSummary(chatId: string): Summary | null {
   if (typeof window === 'undefined' || !chatId) return null;
-  try {
-    const raw = localStorage.getItem(`${LOCAL_SUMMARY_PREFIX}${chatId}`);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  return readJsonObject<Summary>(`${LOCAL_SUMMARY_PREFIX}${chatId}`);
 }
 
 /**
@@ -288,7 +363,7 @@ export function saveLocalSummary(chatId: string, summary: Summary | null): void 
       localStorage.removeItem(`${LOCAL_SUMMARY_PREFIX}${chatId}`);
     }
   } catch (err) {
-    console.error('Failed to save local summary:', err);
+    reportStorageError(`summary for chat ${chatId}`, err);
   }
 }
 
@@ -305,12 +380,7 @@ export interface LocalAuthorsNote {
  */
 export function getLocalAuthorsNote(chatId: string): LocalAuthorsNote | null {
   if (typeof window === 'undefined' || !chatId) return null;
-  try {
-    const raw = localStorage.getItem(`${LOCAL_AUTHORS_NOTE_PREFIX}${chatId}`);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  return readJsonObject<LocalAuthorsNote>(`${LOCAL_AUTHORS_NOTE_PREFIX}${chatId}`);
 }
 
 /**
@@ -321,7 +391,7 @@ export function saveLocalAuthorsNote(chatId: string, note: LocalAuthorsNote): vo
   try {
     localStorage.setItem(`${LOCAL_AUTHORS_NOTE_PREFIX}${chatId}`, JSON.stringify(note));
   } catch (err) {
-    console.error('Failed to save local author note:', err);
+    reportStorageError(`author note for chat ${chatId}`, err);
   }
 }
 
@@ -380,12 +450,28 @@ export async function getUnifiedChats(charactersList: Character[] = []): Promise
                   meta: m.meta || {},
                   created_at: m.created_at || new Date().toISOString(),
                 }));
-                if (msgPayloads.length > 0) {
-                  await supabase.from('messages').insert(msgPayloads);
+                // Batched, and the local copy is only deleted once every message
+                // is safely in the database — a failed insert must never eat the
+                // user's chat history.
+                let migrated = true;
+                for (let i = 0; i < msgPayloads.length && migrated; i += 200) {
+                  const { error: msgErr } = await supabase
+                    .from('messages')
+                    .insert(msgPayloads.slice(i, i + 200));
+                  if (msgErr) {
+                    console.warn('Error migrating messages for local chat:', msgErr.message);
+                    migrated = false;
+                  }
                 }
-                saveLocalMessages(newDbChat.id, msgs);
-                deleteChat(lc.id);
-                dbChats.unshift({ ...(newDbChat as Chat), character: cloudChar });
+                if (migrated) {
+                  saveLocalMessages(newDbChat.id, msgs);
+                  deleteChat(lc.id);
+                  dbChats.unshift({ ...(newDbChat as Chat), character: cloudChar });
+                } else {
+                  // Roll the half-written cloud chat back so the untouched local
+                  // chat remains the single source of truth and migration can retry.
+                  await supabase.from('chats').delete().eq('id', newDbChat.id);
+                }
               }
             }
           } catch (e) {
@@ -489,10 +575,22 @@ export async function getUnifiedChats(charactersList: Character[] = []): Promise
     }
   }
 
-  // If we enriched any local chats with proper characters, persist it
+  // If we enriched any local chats with proper characters, persist it. Re-read
+  // the current list first: this function awaits network calls, and writes made
+  // in the meantime (new chats, edits) must not be clobbered by this stale copy.
   if (hasLocalUpdates && typeof window !== 'undefined') {
     try {
-      localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(localList));
+      const current = getLocalChats();
+      const enriched = new Map(localList.map((c) => [c.id, c]));
+      // Only the enriched character fields are written back; titles, timestamps
+      // and deletions keep whatever is freshest on disk.
+      const merged = current.map((c) => {
+        const e = enriched.get(c.id);
+        return e?.character && (!c.character || !c.character.avatar_url)
+          ? { ...c, character: e.character, character_id: e.character_id }
+          : c;
+      });
+      localStorage.setItem(LOCAL_CHATS_KEY, JSON.stringify(merged));
     } catch {}
   }
 
@@ -540,6 +638,8 @@ export async function deleteChat(chatId: string): Promise<boolean> {
       localStorage.removeItem(`${LOCAL_MESSAGES_PREFIX}${chatId}`);
       localStorage.removeItem(`${LOCAL_STATE_PREFIX}${chatId}`);
       localStorage.removeItem(`${LOCAL_MEMORIES_PREFIX}${chatId}`);
+      localStorage.removeItem(`${LOCAL_SUMMARY_PREFIX}${chatId}`);
+      localStorage.removeItem(`${LOCAL_AUTHORS_NOTE_PREFIX}${chatId}`);
       success = true;
     } catch (err) {
       console.error('Failed to delete chat from localStorage:', err);
@@ -577,6 +677,8 @@ export async function deleteChatsForCharacter(characterId: string, chatIds: stri
           localStorage.removeItem(`${LOCAL_MESSAGES_PREFIX}${c.id}`);
           localStorage.removeItem(`${LOCAL_STATE_PREFIX}${c.id}`);
           localStorage.removeItem(`${LOCAL_MEMORIES_PREFIX}${c.id}`);
+          localStorage.removeItem(`${LOCAL_SUMMARY_PREFIX}${c.id}`);
+          localStorage.removeItem(`${LOCAL_AUTHORS_NOTE_PREFIX}${c.id}`);
         }
         return !match;
       });

@@ -16,10 +16,28 @@ interface UsageRow {
   completion_tokens: number | null;
 }
 
+interface UsageTotalsRow {
+  input?: unknown;
+  output?: unknown;
+  turns?: unknown;
+}
+
 function toCount(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.floor(n);
+}
+
+/** PGRST202 = PostgREST "function not found", 42883 = Postgres "function does not exist". */
+function isMissingFunction(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = String((err as { code?: unknown }).code ?? '');
+  const message = String((err as { message?: unknown }).message ?? '');
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    /could not find the function|function .*get_usage_totals.* (does not exist|not found)/i.test(message)
+  );
 }
 
 export async function GET() {
@@ -31,7 +49,20 @@ export async function GET() {
       return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
     }
 
-    // Paginate in chunks so lifetime totals stay exact past 1000 rows.
+    // Preferred: lifetime totals in ONE aggregate query (SECURITY INVOKER,
+    // RLS-respecting — see supabase/migrations/20261012000001_usage_totals.sql).
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_usage_totals');
+    if (!rpcError) {
+      const row = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as UsageTotalsRow | null | undefined;
+      const input = toCount(row?.input);
+      const output = toCount(row?.output);
+      const turns = toCount(row?.turns);
+      return NextResponse.json({ input, output, total: input + output, turns });
+    }
+    // Un-migrated database: keep the old behaviour below instead of failing.
+    if (!isMissingFunction(rpcError)) throw rpcError;
+
+    // Fallback: paginate in chunks so lifetime totals stay exact past 1000 rows.
     let input = 0;
     let output = 0;
     let turns = 0;
@@ -58,7 +89,7 @@ export async function GET() {
 
     return NextResponse.json({ input, output, total: input + output, turns });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to load usage';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('API /api/usage error:', err);
+    return NextResponse.json({ error: 'Failed to load usage' }, { status: 500 });
   }
 }

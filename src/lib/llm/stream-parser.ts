@@ -4,6 +4,110 @@ export interface ParsedStreamChunk {
   reasoningDone?: boolean;
 }
 
+export interface SseMessage {
+  /** `event:` field value, or 'message' when the producer omitted it. */
+  event: string;
+  /** All `data:` field values joined with '\n' (spec: multi-line data fields). */
+  data: string;
+  id?: string;
+}
+
+/**
+ * Incremental Server-Sent Events parser.
+ *
+ * Feed it decoded text as network chunks arrive; it returns complete events and
+ * holds back whatever is still incomplete. Specifically handles what naive
+ * `buffer.split('\n')` loops get wrong:
+ *  - event boundaries split across arbitrary network reads (partial lines buffered)
+ *  - CRLF, LF and lone-CR line endings, including `\r\n` split across reads
+ *  - `data:foo` (no space) as well as `data: foo` (one leading space is stripped)
+ *  - multi-line `data:` fields joined with a newline
+ *  - comment lines (`:`) and unknown fields
+ *  - end-of-stream flush of a trailing event without a blank-line terminator
+ */
+export class SseEventParser {
+  private lineBuffer = '';
+  private dataLines: string[] = [];
+  private eventName = '';
+  private id: string | undefined;
+  private ended = false;
+
+  /** Feed a decoded chunk; returns every event completed by it. */
+  push(text: string): SseMessage[] {
+    const events: SseMessage[] = [];
+    this.lineBuffer += text;
+
+    while (true) {
+      const nl = this.lineBuffer.search(/\r\n|\n|\r/);
+      if (nl === -1) break;
+      const sepLen = this.lineBuffer.slice(nl, nl + 2) === '\r\n' ? 2 : 1;
+      // A lone '\r' at the very end may be the first half of a '\r\n' that got
+      // split across reads — hold it back until the next push resolves it.
+      // A trailing '\n' is always a complete terminator.
+      if (sepLen === 1 && this.lineBuffer[nl] === '\r' && nl === this.lineBuffer.length - 1 && !this.ended) break;
+      const line = this.lineBuffer.slice(0, nl);
+      this.lineBuffer = this.lineBuffer.slice(nl + sepLen);
+      const msg = this.handleLine(line);
+      if (msg) events.push(msg);
+    }
+
+    return events;
+  }
+
+  /** Signals end-of-stream: resolves any buffered partial line / pending event. */
+  flush(): SseMessage[] {
+    this.ended = true;
+    const events: SseMessage[] = [];
+    if (this.lineBuffer) {
+      const msg = this.handleLine(this.lineBuffer);
+      this.lineBuffer = '';
+      if (msg) events.push(msg);
+    }
+    const pending = this.dispatch();
+    if (pending) events.push(pending);
+    return events;
+  }
+
+  private handleLine(line: string): SseMessage | null {
+    if (line === '') return this.dispatch();
+    if (line.startsWith(':')) return null; // comment / keep-alive
+
+    const colon = line.indexOf(':');
+    const field = colon === -1 ? line : line.slice(0, colon);
+    let value = colon === -1 ? '' : line.slice(colon + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+
+    switch (field) {
+      case 'data':
+        this.dataLines.push(value);
+        break;
+      case 'event':
+        this.eventName = value;
+        break;
+      case 'id':
+        this.id = value;
+        break;
+      case 'retry':
+        break; // reconnection delay — not relevant to one-shot streams
+      default:
+        break; // unknown field: ignore per spec
+    }
+    return null;
+  }
+
+  private dispatch(): SseMessage | null {
+    if (this.dataLines.length === 0 && !this.eventName) return null;
+    const msg: SseMessage = {
+      event: this.eventName || 'message',
+      data: this.dataLines.join('\n'),
+      ...(this.id !== undefined ? { id: this.id } : {}),
+    };
+    this.dataLines = [];
+    this.eventName = '';
+    return msg;
+  }
+}
+
 /**
  * Robust stream parser that demultiplexes reasoning tokens and final answer tokens.
  * Handles:

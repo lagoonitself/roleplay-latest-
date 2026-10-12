@@ -7,9 +7,29 @@ export interface TokenUsage {
 }
 
 export const TOKEN_USAGE_STORAGE_KEY = 'cadenza_token_usage';
+export const TOKEN_USAGE_OWNER_KEY = 'cadenza_token_usage_owner';
 export const TOKEN_USAGE_EVENT = 'cadenza-usage-changed';
 
 const EMPTY: TokenUsage = { input: 0, output: 0, total: 0 };
+
+/**
+ * Keep the local cache from leaking between accounts on a shared browser.
+ * When the cache was last owned by a *different* signed-in user it is dropped,
+ * so one account's token totals can never show up on another account's HUD.
+ * A first owner (guest -> sign-in) adopts the cache untouched, so usage
+ * recorded before signing up survives the transition.
+ */
+export function syncUsageOwner(userId: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!userId) return; // guests share the local profile by definition
+    const owner = localStorage.getItem(TOKEN_USAGE_OWNER_KEY);
+    if (owner && owner !== userId) {
+      localStorage.removeItem(TOKEN_USAGE_STORAGE_KEY);
+    }
+    localStorage.setItem(TOKEN_USAGE_OWNER_KEY, userId);
+  } catch {}
+}
 
 function sanitize(n: unknown): number {
   const v = typeof n === 'number' ? n : Number(n);

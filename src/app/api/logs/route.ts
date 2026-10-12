@@ -3,14 +3,28 @@ import { createClient } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Developer LLM logs — server-persisted half of the logging feature.
  * Local guests rely on localStorage (see lib/logs/llm-log-store); this route
  * serves the Supabase `llm_logs` rows for signed-in users.
  *
- * GET /api/logs?chatId=<uuid>&limit=50  → newest-first rows (own rows only via RLS)
+ * GET /api/logs?chatId=<uuid>&limit=50  → newest-first rows (own rows only)
+ * GET /api/logs?includePrompts=1        → full rows including `request_messages`
+ * GET /api/logs?id=<row id>             → one full row (prompt included)
  * DELETE /api/logs?chatId=<uuid>        → delete own rows (optionally scoped to a chat)
+ *
+ * By default `request_messages` — the entire assembled prompt, tens of KB per
+ * row — is NOT shipped. Rows carry `request_message_count` instead, and the
+ * logs page fetches the prompt per entry when it is expanded (or when a search
+ * needs to match prompt text).
  */
+const LOG_COLUMNS =
+  'id, created_at, chat_id, character_id, kind, model, params, user_message, output, reasoning, prompt_tokens, completion_tokens, cached_tokens, latency_ms';
+const LOG_COLUMNS_WITH_COUNT = `${LOG_COLUMNS}, request_message_count`;
+const LOG_COLUMNS_WITH_PROMPT = `${LOG_COLUMNS}, request_messages`;
+
 export async function GET(req: NextRequest) {
   try {
     const supabase = await createClient();
@@ -20,25 +34,59 @@ export async function GET(req: NextRequest) {
     }
     const { searchParams } = new URL(req.url);
     const chatId = searchParams.get('chatId');
+    if (chatId && !UUID_REGEX.test(chatId)) {
+      return NextResponse.json({ error: 'chatId must be a UUID' }, { status: 400 });
+    }
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50));
+    const idParam = searchParams.get('id');
+    const includePrompts =
+      searchParams.get('includePrompts') === '1' || searchParams.get('includePrompts') === 'true';
 
-    let query = supabase
-      .from('llm_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (chatId) query = query.eq('chat_id', chatId);
+    const rowId = idParam !== null && idParam !== '' ? Number(idParam) : null;
+    if (rowId !== null && (!Number.isInteger(rowId) || rowId < 1)) {
+      return NextResponse.json({ logs: [], authenticated: true });
+    }
+    const single = rowId !== null;
 
-    const { data, error } = await query;
+    // Logs contain full prompts and replies — always scoped to the caller.
+    const buildQuery = (columns: string) => {
+      let query = supabase
+        .from('llm_logs')
+        .select(columns)
+        .eq('user_id', authData.user.id)
+        .order('created_at', { ascending: false });
+      if (single) query = query.eq('id', rowId as number).limit(1);
+      else query = query.limit(limit);
+      if (chatId) query = query.eq('chat_id', chatId);
+      return query;
+    };
+
+    let { data, error } = await buildQuery(
+      single || includePrompts ? LOG_COLUMNS_WITH_PROMPT : LOG_COLUMNS_WITH_COUNT
+    );
+    if (error && (error.code === 'PGRST204' || error.code === '42703') && !single && !includePrompts) {
+      // `request_message_count` arrives with migration 20261012000001 — an
+      // un-migrated database still serves the list, just without the count.
+      ({ data, error } = await buildQuery(LOG_COLUMNS));
+    }
     if (error) {
       // Table missing (migration not applied yet) — not fatal.
       if (error.code === '42P01') return NextResponse.json({ logs: [], authenticated: true });
       throw error;
     }
-    return NextResponse.json({ logs: data ?? [], authenticated: true });
+    const logs = ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
+      ...row,
+      request_message_count:
+        typeof row.request_message_count === 'number'
+          ? row.request_message_count
+          : Array.isArray(row.request_messages)
+            ? row.request_messages.length
+            : null,
+    }));
+    return NextResponse.json({ logs, authenticated: true });
   } catch (e) {
     console.error('API /api/logs GET error:', e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load logs' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to load logs' }, { status: 500 });
   }
 }
 
@@ -51,6 +99,9 @@ export async function DELETE(req: NextRequest) {
     }
     const { searchParams } = new URL(req.url);
     const chatId = searchParams.get('chatId');
+    if (chatId && !UUID_REGEX.test(chatId)) {
+      return NextResponse.json({ error: 'chatId must be a UUID' }, { status: 400 });
+    }
     let query = supabase.from('llm_logs').delete().eq('user_id', authData.user.id);
     if (chatId) query = query.eq('chat_id', chatId);
     const { error } = await query;
@@ -58,6 +109,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error('API /api/logs DELETE error:', e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to delete logs' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to delete logs' }, { status: 500 });
   }
 }

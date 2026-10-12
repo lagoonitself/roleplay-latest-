@@ -18,6 +18,8 @@ export interface StreamChatOptions {
   thinking?: boolean;
   stop?: string[];
   signal?: AbortSignal;
+  /** Optional wall-clock limit for non-streaming calls (or the whole stream). */
+  timeoutMs?: number;
 }
 
 export const DEFAULT_OPENCODE_ENDPOINT = 'https://opencode.ai/zen/go/v1/chat/completions';
@@ -26,7 +28,15 @@ export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4.1-flash';
 /** Extra completion budget granted when reasoning ("thinking") is enabled, since reasoning tokens count toward max_tokens. */
 export const THINKING_TOKEN_ALLOWANCE = 8192;
 
-const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+/** Timeouts for the non-streaming helpers when the caller supplies no signal. */
+export const DEFAULT_TEXT_TIMEOUT_MS = 60_000;
+export const DEFAULT_JSON_TIMEOUT_MS = 120_000;
+
+// Only statuses where the provider is known NOT to have processed the request
+// (rate limits / bad gateways). 500/408/409 are excluded on purpose: a
+// completion that ran and failed mid-flight must not be silently re-run — these
+// calls are not idempotent (they cost tokens and drive memory extraction).
+const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 
 /**
  * Returns the effective API key (from parameter or env). Empty string if missing.
@@ -85,9 +95,10 @@ async function postWithRetry(
         signal,
       });
     } catch (err) {
-      // Network-level failure (DNS, reset, etc.) — retryable unless aborted by the caller.
+      // Network-level failure (DNS, reset, etc.) — retryable unless aborted by
+      // the caller or by a timeout (a timed-out request must not be re-run).
       const errName = (err as { name?: unknown } | null | undefined)?.name;
-      if (errName === 'AbortError') throw err;
+      if (errName === 'AbortError' || errName === 'TimeoutError') throw err;
       lastError = err;
       if (attempt === retries) break;
       await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
@@ -132,8 +143,11 @@ function describeLlmError(status: number, body: string): string {
     const parsed = JSON.parse(body);
     detail = String(parsed?.error?.message || parsed?.message || '');
   } catch {
-    detail = body.slice(0, 200);
+    detail = body;
   }
+  // Never echo raw provider bodies into the UI: strip control characters, cap
+  // the length, and keep it plain text (it can contain anything up-stream sent).
+  detail = detail.replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
   if (status === 401 || status === 403) return 'The model provider rejected the API key. Check it in Settings.';
   if (status === 429 && /usage.?limit|quota|insufficient|billing|credit/i.test(body)) {
     return 'The model provider’s usage limit is used up. Add your own API key in Settings, or try again once the limit resets.';
@@ -195,7 +209,11 @@ export async function streamChatCompletions(
 
   applyThinking(payload, options.thinking);
 
-  return postWithRetry(endpoint, headers, payload, { signal: options.signal });
+  return postWithRetry(endpoint, headers, payload, {
+    // A stalled provider must not hang the caller forever; 5 minutes is well
+    // beyond any legitimate generation. Callers can override via timeoutMs.
+    signal: options.signal ?? AbortSignal.timeout(options.timeoutMs ?? 300_000),
+  });
 }
 
 /**
@@ -219,9 +237,11 @@ export async function textCompletion(
   };
   applyThinking(payload, false);
 
-  const response = await postWithRetry(endpoint, headers, payload, { signal: options.signal });
-  const data = await response.json();
-  return (data.choices?.[0]?.message?.content || '').trim();
+  const response = await postWithRetry(endpoint, headers, payload, {
+    signal: options.signal ?? AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS),
+  });
+  const data = await response.json().catch(() => null);
+  return String(data?.choices?.[0]?.message?.content || '').trim();
 }
 
 /**
@@ -341,9 +361,11 @@ export async function jsonCompletion<T = unknown>(
     };
     applyThinking(payload, false);
 
-    const response = await postWithRetry(endpoint, headers, payload, { signal: options.signal });
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content || '{}';
+    const response = await postWithRetry(endpoint, headers, payload, {
+      signal: options.signal ?? AbortSignal.timeout(options.timeoutMs ?? DEFAULT_JSON_TIMEOUT_MS),
+    });
+    const data = await response.json().catch(() => null);
+    const rawContent = String(data?.choices?.[0]?.message?.content || '{}');
     return repairAndParseJson<T>(rawContent);
   };
 

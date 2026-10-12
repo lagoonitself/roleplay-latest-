@@ -25,6 +25,8 @@ export default function LorebooksPage() {
   const [entryKeys, setEntryKeys] = useState('');
   const [entryContent, setEntryContent] = useState('');
   const [entryConstant, setEntryConstant] = useState(false);
+  // Guards create buttons against double-submit while a write is in flight.
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     async function loadBooks() {
@@ -92,98 +94,120 @@ export default function LorebooksPage() {
   }, [selectedBook, supabase]);
 
   const handleCreateBook = async () => {
-    if (!bookName.trim()) return;
+    if (!bookName.trim() || saving) return;
 
-    const { data: authData } = await supabase.auth.getUser();
-    const userId = authData.user?.id;
+    setSaving(true);
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
 
-    const newBook: Lorebook = {
-      id: 'lb-' + Date.now(),
-      user_id: userId || 'local',
-      name: bookName.trim(),
-      description: bookDesc.trim(),
-      scan_depth: 4,
-      token_budget: 1200,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+      const newBook: Lorebook = {
+        id: 'lb-' + Date.now(),
+        user_id: userId || 'local',
+        name: bookName.trim(),
+        description: bookDesc.trim(),
+        scan_depth: 4,
+        token_budget: 1200,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-    if (userId) {
-      const { data } = await supabase
-        .from('lorebooks')
-        .insert({
-          user_id: userId,
-          name: newBook.name,
-          description: newBook.description,
-        })
-        .select()
-        .single();
-      if (data) {
+      if (userId) {
+        const { data, error } = await supabase
+          .from('lorebooks')
+          .insert({
+            user_id: userId,
+            name: newBook.name,
+            description: newBook.description,
+          })
+          .select()
+          .single();
+        // Never claim success (or wipe the form) when the row wasn't saved.
+        if (error || !data) {
+          toast.error('Could not create the lorebook — please try again');
+          return;
+        }
         setLorebooks([data as Lorebook, ...lorebooks]);
         setSelectedBook(data as Lorebook);
+      } else {
+        setLorebooks([newBook, ...lorebooks]);
+        setSelectedBook(newBook);
       }
-    } else {
-      setLorebooks([newBook, ...lorebooks]);
-      setSelectedBook(newBook);
-    }
 
-    setBookName('');
-    setBookDesc('');
-    setBookModalOpen(false);
-    toast.success(`Lorebook "${newBook.name}" created!`);
+      setBookName('');
+      setBookDesc('');
+      setBookModalOpen(false);
+      toast.success(`Lorebook "${newBook.name}" created!`);
+    } catch {
+      toast.error('Could not create the lorebook — please try again');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCreateEntry = async () => {
-    if (!selectedBook || !entryTitle.trim() || !entryContent.trim()) return;
+    if (!selectedBook || !entryTitle.trim() || !entryContent.trim() || saving) return;
 
     const parsedKeys = entryKeys
       .split(',')
       .map((k) => k.trim())
       .filter(Boolean);
 
-    const { data: authData } = await supabase.auth.getUser();
-    const userId = authData.user?.id;
+    setSaving(true);
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
 
-    const newEntry: LorebookEntry = {
-      id: 'entry-' + Date.now(),
-      lorebook_id: selectedBook.id,
-      user_id: userId || 'local',
-      title: entryTitle.trim(),
-      keys: parsedKeys,
-      secondary_keys: [],
-      content: entryContent.trim(),
-      constant: entryConstant,
-      enabled: true,
-      priority: 100,
-      case_sensitive: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+      const newEntry: LorebookEntry = {
+        id: 'entry-' + Date.now(),
+        lorebook_id: selectedBook.id,
+        user_id: userId || 'local',
+        title: entryTitle.trim(),
+        keys: parsedKeys,
+        secondary_keys: [],
+        content: entryContent.trim(),
+        constant: entryConstant,
+        enabled: true,
+        priority: 100,
+        case_sensitive: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-    if (userId) {
-      const { data } = await supabase
-        .from('lorebook_entries')
-        .insert({
-          lorebook_id: selectedBook.id,
-          user_id: userId,
-          title: newEntry.title,
-          keys: newEntry.keys,
-          content: newEntry.content,
-          constant: newEntry.constant,
-        })
-        .select()
-        .single();
-      if (data) setEntries([data as LorebookEntry, ...entries]);
-    } else {
-      setEntries([newEntry, ...entries]);
+      if (userId) {
+        const { data, error } = await supabase
+          .from('lorebook_entries')
+          .insert({
+            lorebook_id: selectedBook.id,
+            user_id: userId,
+            title: newEntry.title,
+            keys: newEntry.keys,
+            content: newEntry.content,
+            constant: newEntry.constant,
+          })
+          .select()
+          .single();
+        // Never claim success (or wipe the form) when the row wasn't saved.
+        if (error || !data) {
+          toast.error('Could not add the entry — please try again');
+          return;
+        }
+        setEntries([data as LorebookEntry, ...entries]);
+      } else {
+        setEntries([newEntry, ...entries]);
+      }
+
+      setEntryTitle('');
+      setEntryKeys('');
+      setEntryContent('');
+      setEntryConstant(false);
+      setEntryModalOpen(false);
+      toast.success(`Entry "${newEntry.title}" added to world info!`);
+    } catch {
+      toast.error('Could not add the entry — please try again');
+    } finally {
+      setSaving(false);
     }
-
-    setEntryTitle('');
-    setEntryKeys('');
-    setEntryContent('');
-    setEntryConstant(false);
-    setEntryModalOpen(false);
-    toast.success(`Entry "${newEntry.title}" added to world info!`);
   };
 
   return (
@@ -351,7 +375,8 @@ export default function LorebooksPage() {
               <button
                 type="button"
                 onClick={handleCreateBook}
-                className="btn btn-primary"
+                disabled={saving}
+                className="btn btn-primary disabled:opacity-50"
               >
                 Create lorebook
               </button>
@@ -427,7 +452,8 @@ export default function LorebooksPage() {
               <button
                 type="button"
                 onClick={handleCreateEntry}
-                className="btn btn-primary"
+                disabled={saving}
+                className="btn btn-primary disabled:opacity-50"
               >
                 Add entry
               </button>

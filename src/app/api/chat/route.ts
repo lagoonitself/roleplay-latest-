@@ -21,6 +21,9 @@ function cleanReply(text: string, charName: string): string {
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const runtime = 'nodejs';
+
+// Set LLM_LOG_FULL_PROMPTS=off to keep llm_logs rows without the full prompt payload.
+const STORE_FULL_PROMPTS = process.env.LLM_LOG_FULL_PROMPTS !== 'off';
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
@@ -928,7 +931,7 @@ export async function POST(req: NextRequest) {
                   kind: logKind,
                   model: effectiveModel,
                   params: llmLogPayload.params,
-                  request_messages: assembledMessages,
+                  request_messages: STORE_FULL_PROMPTS ? assembledMessages : [],
                   user_message: userMessage,
                   output: fullAssistantContent,
                   reasoning: fullReasoningContent || null,

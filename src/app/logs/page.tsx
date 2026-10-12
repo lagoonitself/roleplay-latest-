@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Copy, RefreshCw, Search, Trash2, ChevronDown, FlaskConical } from 'lucide-react';
 import {
@@ -20,7 +20,10 @@ interface ServerRow {
   kind: string;
   model: string;
   params: LlmLogEntry['params'] | null;
-  request_messages: LoggedChatMessage[] | null;
+  /** Only present for ?includePrompts=1 / ?id= fetches — the entire prompt. */
+  request_messages?: LoggedChatMessage[] | null;
+  /** Prompt size without the payload: message count when the prompt is omitted. */
+  request_message_count?: number | null;
   user_message: string;
   output: string;
   reasoning: string | null;
@@ -30,7 +33,26 @@ interface ServerRow {
   latency_ms: number;
 }
 
-function serverRowToEntry(r: ServerRow): LlmLogEntry {
+/**
+ * Server rows arrive WITHOUT `request_messages` (the full prompt is tens of KB
+ * per row). The prompt is fetched when a log entry is expanded, or in bulk when
+ * a search needs to match prompt text.
+ */
+type LogEntry = LlmLogEntry & {
+  requestMessageCount: number | null;
+  promptsLoaded: boolean;
+};
+
+function localToEntry(l: LlmLogEntry): LogEntry {
+  return {
+    ...l,
+    requestMessageCount: l.requestMessages.length,
+    promptsLoaded: true,
+  };
+}
+
+function serverRowToEntry(r: ServerRow): LogEntry {
+  const prompts = Array.isArray(r.request_messages) ? r.request_messages : [];
   return {
     id: `srv-${r.id}`,
     createdAt: r.created_at,
@@ -40,7 +62,10 @@ function serverRowToEntry(r: ServerRow): LlmLogEntry {
     kind: r.kind === 'swipe' ? 'swipe' : 'chat',
     model: r.model || '',
     params: r.params || ({} as LlmLogEntry['params']),
-    requestMessages: Array.isArray(r.request_messages) ? r.request_messages : [],
+    requestMessages: prompts,
+    requestMessageCount:
+      typeof r.request_message_count === 'number' ? r.request_message_count : prompts.length,
+    promptsLoaded: Array.isArray(r.request_messages),
     userMessage: r.user_message || '',
     output: r.output || '',
     reasoning: r.reasoning ?? null,
@@ -72,13 +97,14 @@ function copyText(text: string, label: string) {
 
 export default function ModelLogsPage() {
   const [localLogs, setLocalLogs] = useState<LlmLogEntry[]>([]);
-  const [serverLogs, setServerLogs] = useState<LlmLogEntry[]>([]);
+  const [serverLogs, setServerLogs] = useState<LogEntry[]>([]);
   const [serverAvailable, setServerAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [chatFilter, setChatFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedMsgIdx, setExpandedMsgIdx] = useState<number | null>(null);
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLocalLogs(getLocalLogs());
@@ -106,6 +132,43 @@ export default function ModelLogsPage() {
     };
   }, [load]);
 
+  // The full prompt (request_messages) is fetched per entry, only when opened.
+  const loadServerPrompt = useCallback(async (log: LogEntry) => {
+    if (log.serverId == null || log.promptsLoaded) return;
+    setDetailLoadingId(log.id);
+    try {
+      const res = await fetch(`/api/logs?includePrompts=1&id=${encodeURIComponent(log.serverId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const rows: ServerRow[] = Array.isArray(data?.logs) ? data.logs : [];
+        const full = rows.find((r) => r.id === log.serverId) || rows[0];
+        if (full) {
+          setServerLogs((prev) => prev.map((e) => (e.serverId === full.id ? serverRowToEntry(full) : e)));
+        }
+      }
+    } catch {}
+    setDetailLoadingId(null);
+  }, []);
+
+  // Search matches prompt text too — fetch prompts in bulk only when a query
+  // actually needs them (rows are served without them by default).
+  const searchSeqRef = useRef(0);
+  useEffect(() => {
+    if (!query.trim()) return;
+    if (!serverLogs.some((l) => !l.promptsLoaded)) return;
+    const t = setTimeout(async () => {
+      const seq = ++searchSeqRef.current;
+      try {
+        const res = await fetch('/api/logs?limit=200&includePrompts=1');
+        if (!res.ok || seq !== searchSeqRef.current) return;
+        const data = await res.json();
+        const rows: ServerRow[] = Array.isArray(data?.logs) ? data.logs : [];
+        setServerLogs(rows.map((r) => serverRowToEntry(r)));
+      } catch {}
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query, serverLogs]);
+
   // Dedupe: a turn saved locally AND on the server appears once (prefer local — same prompt).
   const merged = useMemo(() => {
     const serverIds = new Set<string | number>(
@@ -116,7 +179,7 @@ export default function ModelLogsPage() {
     const prunedServer = serverLogs.filter(
       (s) => s.serverId == null || !serverIds.has(s.serverId)
     );
-    return [...localLogs, ...prunedServer].sort(
+    return [...localLogs.map(localToEntry), ...prunedServer].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [localLogs, serverLogs]);
@@ -245,6 +308,9 @@ export default function ModelLogsPage() {
         )}
         {filtered.map((log) => {
           const open = expandedId === log.id;
+          const promptCount = log.promptsLoaded
+            ? log.requestMessages.length
+            : (log.requestMessageCount ?? 0);
           return (
             <article
               key={log.id}
@@ -255,6 +321,7 @@ export default function ModelLogsPage() {
                 onClick={() => {
                   setExpandedId(open ? null : log.id);
                   setExpandedMsgIdx(null);
+                  if (!open) void loadServerPrompt(log);
                 }}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left"
                 aria-expanded={open}
@@ -317,20 +384,29 @@ export default function ModelLogsPage() {
                   <section>
                     <div className="mb-1.5 flex items-center justify-between">
                       <h4 className="type-sec">
-                        Complete prompt ({log.requestMessages.length} messages)
+                        Complete prompt ({promptCount} messages)
                       </h4>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyText(JSON.stringify(log.requestMessages, null, 2), 'Prompt')
-                        }
-                        className="btn btn-quiet inline-flex items-center gap-1 !text-[11px]"
-                      >
-                        <Copy className="h-3 w-3" aria-hidden /> Copy all
-                      </button>
+                      {log.promptsLoaded && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            copyText(JSON.stringify(log.requestMessages, null, 2), 'Prompt')
+                          }
+                          className="btn btn-quiet inline-flex items-center gap-1 !text-[11px]"
+                        >
+                          <Copy className="h-3 w-3" aria-hidden /> Copy all
+                        </button>
+                      )}
                     </div>
                     <div className="space-y-1.5">
-                      {log.requestMessages.map((m, i) => {
+                      {!log.promptsLoaded ? (
+                        <p className="type-meta px-1">
+                          {detailLoadingId === log.id
+                            ? 'Loading full prompt…'
+                            : 'Full prompt not loaded — collapse and expand to retry.'}
+                        </p>
+                      ) : (
+                      log.requestMessages.map((m, i) => {
                         const msgOpen = expandedMsgIdx === i;
                         return (
                           <div
@@ -371,7 +447,8 @@ export default function ModelLogsPage() {
                             )}
                           </div>
                         );
-                      })}
+                      })
+                      )}
                     </div>
                   </section>
 

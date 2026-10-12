@@ -118,6 +118,17 @@ export function PersonaModal({
     return () => clearTimeout(timer);
   }, [open, loadPersonas]);
 
+  // Escape closes regardless of where focus is — a dialog's own onKeyDown only
+  // fires while focus is inside it.
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
   // AI Persona Generation
   const handleGenerateAI = async () => {
     setAiLoading(true);
@@ -173,7 +184,11 @@ export function PersonaModal({
       setAvatarUrl(event.target?.result as string);
       toast.success('Avatar loaded!');
     };
+    reader.onerror = () => {
+      toast.error('Could not read that image — please try another file');
+    };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Save Persona
@@ -217,12 +232,13 @@ export function PersonaModal({
       } catch {}
     }
 
-    // Persist to local storage
+    // Persist to local storage. The state update must not be lost when the
+    // write throws (e.g. quota exceeded on a big avatar) — keep the two apart.
+    const updated = [newPersona, ...personas.filter((p) => p.id !== newPersona.id)];
     try {
-      const updated = [newPersona, ...personas.filter((p) => p.id !== newPersona.id)];
       localStorage.setItem('cadenza_local_personas', JSON.stringify(updated));
-      setPersonas(updated);
     } catch {}
+    setPersonas(updated);
 
     setSelectedPersonaId(newPersona.id);
     updateSettings({ activePersonaId: newPersona.id });
@@ -250,8 +266,12 @@ export function PersonaModal({
     onClose();
   };
 
-  const handleDeletePersona = (id: string, e: React.MouseEvent) => {
+  const handleDeletePersona = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (personas.length <= 1) {
+      toast.error('Keep at least one persona.');
+      return;
+    }
     const updated = personas.filter((p) => p.id !== id);
     setPersonas(updated);
     try {
@@ -260,7 +280,17 @@ export function PersonaModal({
     if (selectedPersonaId === id && updated[0]) {
       setSelectedPersonaId(updated[0].id);
     }
-    toast.info('Persona deleted');
+    // Also drop the cloud row — otherwise the persona resurrects on reload.
+    try {
+      const { error } = await supabase.from('personas').delete().eq('id', id);
+      if (error) {
+        toast.warning('Persona removed locally, but the cloud copy could not be deleted');
+      } else {
+        toast.info('Persona deleted');
+      }
+    } catch {
+      toast.warning('Persona removed locally, but the cloud copy could not be deleted');
+    }
   };
 
   if (!open) return null;
@@ -271,9 +301,6 @@ export function PersonaModal({
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
     >
       {/* Mobile Bottom Sheet / Desktop Modal Dialog */}
       <div
@@ -281,7 +308,7 @@ export function PersonaModal({
         aria-modal="true"
         aria-label={mode === 'list' ? 'Choose your persona' : 'Create a persona'}
         onClick={(e) => e.stopPropagation()}
-        className="panel w-full sm:max-w-xl max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl overflow-hidden animate-in slide-in-from-bottom duration-200"
+        className="panel w-full sm:max-w-xl max-h-[92dvh] sm:max-h-[85dvh] flex flex-col rounded-t-3xl sm:rounded-2xl overflow-hidden animate-in slide-in-from-bottom duration-200"
       >
         {/* Mobile Grab Bar */}
         <div className="sm:hidden flex justify-center pt-3 pb-1" aria-hidden>

@@ -71,16 +71,60 @@ export function repairMojibake(text: string): string {
     .replace(/\uFFFD/g, '');
 }
 
+// ─────────────────── untrusted-content delimiting ───────────────────
+//
+// Character cards (Janitor AI / Chub imports), persona text, lorebook entries,
+// memory records and LLM-generated summaries are attacker-controllable. When
+// such text is spliced into a delimited block, a literal "</creator_directives>"
+// inside it would close the block early and let the text impersonate the system
+// prompt. Replacing the structural characters with fullwidth look-alikes keeps
+// the text readable while making breakout impossible.
+
+/** Fullwidth look-alikes: visually near-identical, structurally inert. */
+const FULLWIDTH_LT = '\uFF1C'; // ＜
+const FULLWIDTH_LB = '\uFF3B'; // ［
+const FULLWIDTH_RB = '\uFF3D'; // ］
+
+/** Neutralizes angle-bracket markup for text placed inside XML-style blocks. */
+export function escapeBlockContent(text: string): string {
+  if (!text) return '';
+  return text.replace(/<(?=[a-zA-Z!/?])/g, FULLWIDTH_LT);
+}
+
 /**
- * Evaluates dice roll expressions like 1d20, 2d6, 3d8+2
+ * Neutralizes angle-bracket *and* square-bracket markup, for text spliced into
+ * bracket-delimited formats like "[Summary: …]" or "[title: content]" where a
+ * "]" would close the label early and impersonate another note format.
+ */
+export function escapeLabelContent(text: string): string {
+  if (!text) return '';
+  return escapeBlockContent(text).replace(/[[\]]/g, (c) => (c === '[' ? FULLWIDTH_LB : FULLWIDTH_RB));
+}
+
+/** Makes untrusted text safe as an identity (names): one line, no markup. */
+export function escapeInlineText(text: string): string {
+  if (!text) return '';
+  return escapeBlockContent(
+    text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+  );
+}
+
+/**
+ * Evaluates dice roll expressions like 1d20, 2d6, 3d8+2. A bare number is its
+ * own result ({{roll 5}} is 5, not 0). Counts and sides are clamped: the macro
+ * text arrives from cards and chat messages, so "{{roll 999999999d20}}" must
+ * never be able to spin the event loop.
  */
 function evaluateDiceRoll(rollStr: string): number {
-  const match = rollStr.trim().match(/^(\d+)d(\d+)(?:([+-])(\d+))?$/i);
+  const trimmed = rollStr.trim();
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+
+  const match = trimmed.match(/^(\d+)d(\d+)(?:([+-])(\d+))?$/i);
   if (!match) return 0;
-  const count = parseInt(match[1], 10);
-  const sides = parseInt(match[2], 10);
+  const count = Math.min(Math.max(parseInt(match[1], 10), 0), 100);
+  const sides = Math.min(Math.max(parseInt(match[2], 10), 1), 1000);
   const modifierSign = match[3];
-  const modifierVal = match[4] ? parseInt(match[4], 10) : 0;
+  const modifierVal = match[4] ? Math.min(parseInt(match[4], 10), 10_000) : 0;
 
   let total = 0;
   for (let i = 0; i < count; i++) {
@@ -192,7 +236,9 @@ export function substituteMacros(
       .replace(/\{\{\s*time\s*\}\}/gi, now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
       .replace(/\{\{\s*date\s*\}\}/gi, now.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' }))
       .replace(/\{\{\s*weekday\s*\}\}/gi, now.toLocaleDateString([], { weekday: 'long' }))
-      .replace(/\{\{\s*isodate\s*\}\}/gi, now.toISOString().split('T')[0]);
+      .replace(/\{\{\s*isodate\s*\}\}/gi, now.toISOString().split('T')[0])
+      .replace(/\{\{\s*isotime\s*\}\}/gi, now.toTimeString().slice(0, 5))
+      .replace(/\{\{\s*datetimeformat\s+([^}]+)\}\}/gi, (_match, fmt: string) => formatDateTime(now, fmt.trim()));
 
     // 7. Dynamic Random and Dice Roll macros
     // {{random::a::b::c}} or {{random:a,b,c}} — SillyTavern accepts both separators,
@@ -204,7 +250,7 @@ export function substituteMacros(
     });
 
     // {{roll 1d20}}, {{roll::1d20}}, {{roll 2d6+3}}
-    result = result.replace(/\{\{\s*roll(?:::|\s+)([0-9dD+-]+)\}\}/gi, (_match, rollExpression: string) => {
+    result = result.replace(/\{\{\s*roll(?:::|\s+)([0-9dD+-]+)\s*\}\}/gi, (_match, rollExpression: string) => {
       return String(evaluateDiceRoll(rollExpression));
     });
   }
@@ -219,13 +265,12 @@ export function substituteMacros(
     return choices[seed % choices.length];
   });
 
-  // 9. {{datetimeformat YYYY}} / {{isotime}} / {{newline}} / {{noop}} / {{//comments}}
+  // 9. {{newline}} / {{noop}} / {{trim}} / {{//comments}} — deterministic,
+  // safe to run even on stored history (time macros live in the volatile block).
   result = result
-    .replace(/\{\{\s*datetimeformat\s+([^}]+)\}\}/gi, (_match, fmt: string) => formatDateTime(now, fmt.trim()))
-    .replace(/\{\{\s*isotime\s*\}\}/gi, now.toTimeString().slice(0, 5))
-    .replace(/\{\{\s*newline\s*\}\}/gi, '\n')
     .replace(/\{\{\s*\/\/[^}]*\}\}/g, '')
     .replace(/\{\{\s*noop\s*\}\}/gi, '')
+    .replace(/\{\{\s*newline\s*\}\}/gi, '\n')
     .replace(/\{\{\s*trim\s*\}\}/gi, '');
 
   return result;

@@ -41,9 +41,10 @@ export const ThinkingProcess = React.memo(function ThinkingProcess({
   // Live timer while actively thinking (stops immediately when content starts)
   useEffect(() => {
     if (isActivelyThinking) {
-      if (!startTimestampRef.current) {
-        startTimestampRef.current = Date.now();
-      }
+      // Start fresh per thinking phase — a regenerated or continued reply must
+      // not inherit the previous run's start timestamp.
+      startTimestampRef.current = Date.now();
+      const reset = setTimeout(() => setElapsedSeconds(0), 0);
       const interval = setInterval(() => {
         if (startTimestampRef.current) {
           const seconds = Math.max(1, Math.round((Date.now() - startTimestampRef.current) / 1000));
@@ -51,7 +52,10 @@ export const ThinkingProcess = React.memo(function ThinkingProcess({
         }
       }, 500);
 
-      return () => clearInterval(interval);
+      return () => {
+        clearTimeout(reset);
+        clearInterval(interval);
+      };
     }
   }, [isActivelyThinking]);
 
@@ -75,10 +79,14 @@ export const ThinkingProcess = React.memo(function ThinkingProcess({
   const handleCopyThoughts = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!reasoning) return;
-    navigator.clipboard.writeText(reasoning);
-    setCopied(true);
-    toast.success('Reasoning copied to clipboard');
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard
+      ?.writeText(reasoning)
+      .then(() => {
+        setCopied(true);
+        toast.success('Reasoning copied to clipboard');
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => toast.error('Could not copy to clipboard'));
   };
 
   const effectiveDuration = durationSeconds || (isStreaming ? elapsedSeconds : elapsedSeconds || 0);
@@ -113,63 +121,58 @@ export const ThinkingProcess = React.memo(function ThinkingProcess({
   return (
     <div className="w-full my-1.5 select-none">
       {/* Disclosure Toggle Header */}
-      <button
-        type="button"
-        onClick={handleToggle}
-        aria-expanded={isOpen}
-        aria-label={isOpen ? 'Collapse thoughts' : characterName ? `View ${characterName}’s thoughts` : 'View thoughts'}
-        className="btn btn-quiet w-full justify-between px-2 py-1.5 text-xs"
-      >
-        <span className="flex items-center gap-2 min-w-0">
-          <Brain className="w-3.5 h-3.5 text-ink-3 shrink-0" aria-hidden />
-          <span className="type-meta truncate">
-            {isActivelyThinking
-              ? 'Thinking…'
-              : effectiveDuration > 0
-              ? `Thought for ${effectiveDuration}s`
-              : characterName
-              ? `${characterName}’s thoughts`
-              : 'Thoughts'}
-          </span>
-          {isActivelyThinking ? (
-            <span className="streaming-cursor" aria-hidden />
-          ) : (
-            effectiveDuration > 0 &&
-            isOpen && (
-              <span className="type-meta font-mono shrink-0">{effectiveDuration}s</span>
-            )
-          )}
-        </span>
-
-        <span className="flex items-center gap-1 shrink-0">
-          {isOpen && !isActivelyThinking && (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={handleCopyThoughts}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  handleCopyThoughts(e as unknown as React.MouseEvent);
-                }
-              }}
-              className="icon-btn w-6 h-6"
-              title="Copy thoughts"
-              aria-label="Copy thoughts"
-            >
-              {copied ? (
-                <Check className="w-3 h-3" aria-hidden />
-              ) : (
-                <Copy className="w-3 h-3" aria-hidden />
-              )}
+      <div className="flex w-full items-center gap-1">
+        <button
+          type="button"
+          onClick={handleToggle}
+          aria-expanded={isOpen}
+          aria-label={isOpen ? 'Collapse thoughts' : characterName ? `View ${characterName}’s thoughts` : 'View thoughts'}
+          className="btn btn-quiet flex-1 justify-between px-2 py-1.5 text-xs"
+        >
+          <span className="flex items-center gap-2 min-w-0">
+            <Brain className="w-3.5 h-3.5 text-ink-3 shrink-0" aria-hidden />
+            <span className="type-meta truncate">
+              {isActivelyThinking
+                ? 'Thinking…'
+                : effectiveDuration > 0
+                ? `Thought for ${effectiveDuration}s`
+                : characterName
+                ? `${characterName}’s thoughts`
+                : 'Thoughts'}
             </span>
-          )}
+            {isActivelyThinking ? (
+              <span className="streaming-cursor" aria-hidden />
+            ) : (
+              effectiveDuration > 0 &&
+              isOpen && (
+                <span className="type-meta font-mono shrink-0">{effectiveDuration}s</span>
+              )
+            )}
+          </span>
+
           <ChevronDown
-            className={`w-3.5 h-3.5 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
+            className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
             aria-hidden
           />
-        </span>
-      </button>
+        </button>
+
+        {/* Sibling of the toggle: interactive controls must not nest inside a button */}
+        {isOpen && !isActivelyThinking && (
+          <button
+            type="button"
+            onClick={handleCopyThoughts}
+            className="icon-btn w-8 h-8 shrink-0"
+            title="Copy thoughts"
+            aria-label="Copy thoughts"
+          >
+            {copied ? (
+              <Check className="w-3 h-3" aria-hidden />
+            ) : (
+              <Copy className="w-3 h-3" aria-hidden />
+            )}
+          </button>
+        )}
+      </div>
 
       {/* Expanded Thought Stream & Markdown Content */}
       {isOpen && (

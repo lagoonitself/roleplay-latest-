@@ -129,7 +129,7 @@ export function CharacterChatsDrawer({
         aria-modal="true"
         aria-label={`Chats with ${character.name}`}
         onClick={(e) => e.stopPropagation()}
-        className="panel relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[88vh] overflow-hidden animate-in slide-in-from-bottom duration-200 pb-[env(safe-area-inset-bottom)]"
+        className="panel relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[88dvh] overflow-hidden animate-in slide-in-from-bottom duration-200 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]"
       >
         {/* Handle bar on top */}
         <div className="w-full flex items-center justify-center pt-3 pb-2">

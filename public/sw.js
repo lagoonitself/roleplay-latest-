@@ -2,15 +2,21 @@
    Registration path is /sw.js (see src/components/pwa-register.tsx).
 
    Strategy:
-   - App shell (HTML navigations + same-origin JS/CSS): stale-while-revalidate.
-     Launches are instant, updates still arrive. HTML is NEVER cache-first.
+   - Navigations (HTML): NETWORK-FIRST. The network copy is fetched and cached
+     on success; on failure we serve the cached copy of THAT url, then the
+     cached '/' shell. HTML is never cache-first and never stale-while-
+     revalidate: stale HTML can reference chunk names deleted by a deploy,
+     which white-screens the iOS standalone app.
    - /_next/static/* (immutable hashed assets): cache-first, long-lived.
    - Icons / manifest / raster images: cache-first in a bounded cache.
-   - Everything else same-origin GET: stale-while-revalidate.
+   - Everything else same-origin GET: stale-while-revalidate in a bounded cache.
    - NEVER cached: non-GET, /api/*, or cross-origin traffic (incl. Supabase).
+   - Updates: this worker does NOT self.skipWaiting() on install. The page
+     decides when takeover happens via {type: 'SKIP_WAITING'} (see
+     pwa-register.tsx), so a fresh worker can never swap in mid-session.
 */
 
-const VERSION = 'cadenza-v2';
+const VERSION = 'cadenza-v3';
 const STATIC_CACHE = `cadenza-static-${VERSION}`;
 const RUNTIME_CACHE = `cadenza-runtime-${VERSION}`;
 const IMAGE_CACHE = `cadenza-images-${VERSION}`;
@@ -18,15 +24,23 @@ const ALLOWED_CACHES = [STATIC_CACHE, RUNTIME_CACHE, IMAGE_CACHE];
 
 const PRECACHE = ['/', '/manifest.json'];
 const MAX_IMAGE_ENTRIES = 40;
+const MAX_RUNTIME_ENTRIES = 60;
 
 self.addEventListener('install', (event) => {
+  // Intentionally no self.skipWaiting() here: takeover is page-controlled.
   event.waitUntil(
     caches
       .open(STATIC_CACHE)
       .then((cache) => cache.addAll(PRECACHE))
       .catch(() => undefined)
   );
-  self.skipWaiting();
+});
+
+// The page asks this worker to take over (after the user opts in).
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', (event) => {
@@ -51,28 +65,37 @@ function isCacheableResponse(response) {
   return !!response && response.ok && (response.type === 'basic' || response.type === 'default');
 }
 
-function trimCache(cacheName, maxEntries) {
-  caches.open(cacheName).then((cache) => {
-    cache.keys().then((keys) => {
-      if (keys.length > maxEntries) {
-        cache.delete(keys[0]).then(() => trimCache(cacheName, maxEntries));
-      }
-    });
-  });
+// FIFO trim: cache.keys() returns entries in insertion order, so deleting
+// from the front drops the oldest entries first.
+async function trimCache(cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  const excess = keys.length - maxEntries;
+  for (let i = 0; i < excess; i += 1) {
+    await cache.delete(keys[i]);
+  }
+}
+
+// Every cache write is wrapped in event.waitUntil so it survives past the
+// response being handed back to the page.
+function cachePut(event, cacheName, request, response, maxEntries) {
+  event.waitUntil(
+    caches
+      .open(cacheName)
+      .then((cache) => cache.put(request, response))
+      .then(() => (maxEntries ? trimCache(cacheName, maxEntries) : undefined))
+      .catch(() => undefined)
+  );
 }
 
 // Cache-first: good for immutable / versioned bytes.
-function cacheFirst(request, cacheName) {
+function cacheFirst(event, cacheName, maxEntries) {
+  const request = event.request;
   return caches.match(request).then((cached) => {
     if (cached) return cached;
     return fetch(request).then((networkResponse) => {
       if (isCacheableResponse(networkResponse)) {
-        const copy = networkResponse.clone();
-        caches.open(cacheName).then((cache) => {
-          cache.put(request, copy).then(() => {
-            if (cacheName === IMAGE_CACHE) trimCache(cacheName, MAX_IMAGE_ENTRIES);
-          });
-        });
+        cachePut(event, cacheName, request, networkResponse.clone(), maxEntries);
       }
       return networkResponse;
     });
@@ -80,13 +103,13 @@ function cacheFirst(request, cacheName) {
 }
 
 // Stale-while-revalidate: serve instantly, refresh in the background.
-function staleWhileRevalidate(request, cacheName) {
+function staleWhileRevalidate(event, cacheName, maxEntries) {
+  const request = event.request;
   return caches.match(request).then((cached) => {
     const networkFetch = fetch(request)
       .then((networkResponse) => {
         if (isCacheableResponse(networkResponse)) {
-          const copy = networkResponse.clone();
-          caches.open(cacheName).then((cache) => cache.put(request, copy));
+          cachePut(event, cacheName, request, networkResponse.clone(), maxEntries);
         }
         return networkResponse;
       })
@@ -99,6 +122,25 @@ function staleWhileRevalidate(request, cacheName) {
       });
     return cached || networkFetch;
   });
+}
+
+// Network-first for navigations: fresh HTML on every launch when online.
+function networkFirstNavigation(event) {
+  const request = event.request;
+  return fetch(request)
+    .then((networkResponse) => {
+      if (isCacheableResponse(networkResponse)) {
+        cachePut(event, RUNTIME_CACHE, request, networkResponse.clone(), MAX_RUNTIME_ENTRIES);
+      }
+      return networkResponse;
+    })
+    .catch(async () => {
+      // Offline: the cached copy of THIS url first, then the '/' shell.
+      const cached = await caches.match(request);
+      if (cached) return cached;
+      const shell = await caches.match('/');
+      return shell || Response.error();
+    });
 }
 
 self.addEventListener('fetch', (event) => {
@@ -114,9 +156,15 @@ self.addEventListener('fetch', (event) => {
   // Never serve API responses from cache.
   if (url.pathname.startsWith('/api/')) return;
 
+  // Navigations are network-first — never cache-first HTML.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(networkFirstNavigation(event));
+    return;
+  }
+
   // Immutable hashed build output: safe to cache forever.
   if (url.pathname.startsWith('/_next/static/')) {
-    event.respondWith(cacheFirst(event.request, STATIC_CACHE));
+    event.respondWith(cacheFirst(event, STATIC_CACHE));
     return;
   }
 
@@ -126,20 +174,10 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/icon') ||
     /\.(png|svg|ico|webp|avif)$/.test(url.pathname)
   ) {
-    event.respondWith(cacheFirst(event.request, IMAGE_CACHE));
+    event.respondWith(cacheFirst(event, IMAGE_CACHE, MAX_IMAGE_ENTRIES));
     return;
   }
 
-  // App shell + everything else same-origin: stale-while-revalidate.
-  // Navigations fall back to the cached shell entry when offline.
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      staleWhileRevalidate(event.request, RUNTIME_CACHE).catch(
-        () => caches.match('/').then((shell) => shell || Response.error()) || Response.error()
-      )
-    );
-    return;
-  }
-
-  event.respondWith(staleWhileRevalidate(event.request, RUNTIME_CACHE));
+  // Everything else same-origin: stale-while-revalidate in a bounded cache.
+  event.respondWith(staleWhileRevalidate(event, RUNTIME_CACHE, MAX_RUNTIME_ENTRIES));
 });

@@ -44,7 +44,10 @@ function HomePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [settings] = useSettings();
-  const supabase = createClient();
+  // One stable client for the component's lifetime — a fresh client per render
+  // would re-create the realtime subscription (and re-fetch the roster) on
+  // every render.
+  const supabase = React.useMemo(() => createClient(), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // App Tabs: 'explore' | 'chats' | 'create' | 'profile'
@@ -87,14 +90,22 @@ function HomePageContent() {
     return () => clearTimeout(timer);
   }, [settings.activePersonaId, personaDrawerOpen]);
 
+  // Monotonic counter — only the most recent load may write state, so slow
+  // responses can never clobber fresher ones (realtime + local events race).
+  const loadSeqRef = useRef(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshPendingRef = useRef(false);
+
   // Load all characters and unified chats
   const loadData = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     try {
       // 1. Fetch custom characters from Supabase
       const { data: dbChars } = await supabase
         .from('characters')
         .select('*')
         .order('created_at', { ascending: false });
+      if (seq !== loadSeqRef.current) return; // superseded by a newer load
 
       // 2. Fetch locally stored characters
       let localChars: Character[] = [];
@@ -117,16 +128,39 @@ function HomePageContent() {
 
       // 5. Load Unified Chats (Supabase + LocalStorage), solo chats only — duo lives on /duo
       const unifiedChats = await getUnifiedChats(activeChars);
+      if (seq !== loadSeqRef.current) return; // superseded by a newer load
       setChats(unifiedChats.filter((c) => (c as Chat).mode !== 'duo' && !(c.settings as Record<string, unknown>)?.duo));
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [supabase]);
 
+  // Debounced refresh (~600ms trailing): one send can fire several change
+  // events (the app's own chats.update, the realtime channel, cross-tab events)
+  // — collapse them into a single roster refetch instead of racing full loads.
+  const scheduleRefresh = useCallback(() => {
+    if (typeof document !== 'undefined' && document.hidden) {
+      // Never fetch blind for a hidden tab — refresh when it is visible again.
+      refreshPendingRef.current = true;
+      return;
+    }
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      if (typeof document !== 'undefined' && document.hidden) {
+        refreshPendingRef.current = true;
+        return;
+      }
+      void loadData();
+    }, 600);
+  }, [loadData]);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
+    // Immediate on mount (deferred one tick, as before); realtime + cross-tab
+    // events are debounced below.
+    const mountTimer = setTimeout(() => {
       void loadData();
     }, 0);
 
@@ -137,25 +171,34 @@ function HomePageContent() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chats' },
         () => {
-          loadData();
+          scheduleRefresh();
         }
       )
       .subscribe();
 
     // Listen to cross-tab/cross-component chat & character updates
-    const handleChanged = () => {
-      loadData();
-    };
+    window.addEventListener(CHATS_CHANGED_EVENT, scheduleRefresh);
+    window.addEventListener('cadenza-characters-changed', scheduleRefresh);
 
-    window.addEventListener(CHATS_CHANGED_EVENT, handleChanged);
-    window.addEventListener('cadenza-characters-changed', handleChanged);
-    return () => {
-      clearTimeout(timer);
-      supabase.removeChannel(channel);
-      window.removeEventListener(CHATS_CHANGED_EVENT, handleChanged);
-      window.removeEventListener('cadenza-characters-changed', handleChanged);
+    // Refresh skipped while the tab was hidden, now that it is visible again.
+    const handleVisibility = () => {
+      if (!document.hidden && refreshPendingRef.current) {
+        refreshPendingRef.current = false;
+        void loadData();
+      }
     };
-  }, [loadData, supabase]);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearTimeout(mountTimer);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshPendingRef.current = false;
+      supabase.removeChannel(channel);
+      window.removeEventListener(CHATS_CHANGED_EVENT, scheduleRefresh);
+      window.removeEventListener('cadenza-characters-changed', scheduleRefresh);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [loadData, scheduleRefresh, supabase]);
 
   // Sync tab with URL query parameter if present
   useEffect(() => {
@@ -420,8 +463,16 @@ function HomePageContent() {
   const handleDeleteRecentChat = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
     e.preventDefault();
-    await deleteChat(chatId);
-    toast.success('Chat removed from history');
+    try {
+      const ok = await deleteChat(chatId);
+      if (ok) {
+        toast.success('Chat removed from history');
+      } else {
+        toast.error('Could not remove the chat — please try again');
+      }
+    } catch {
+      toast.error('Could not remove the chat — please try again');
+    }
     await loadData();
   };
 
@@ -674,8 +725,16 @@ function HomePageContent() {
                           onClick={async (e) => {
                             e.stopPropagation();
                             if (window.confirm(`Permanently delete "${character.name}" from your roster?`)) {
-                              await deleteCharacter(character.id);
-                              toast.success(`Deleted "${character.name}"`);
+                              try {
+                                const ok = await deleteCharacter(character.id);
+                                if (ok) {
+                                  toast.success(`Deleted "${character.name}"`);
+                                } else {
+                                  toast.error(`Could not delete "${character.name}" — please try again`);
+                                }
+                              } catch {
+                                toast.error(`Could not delete "${character.name}" — please try again`);
+                              }
                               await loadData();
                             }
                           }}

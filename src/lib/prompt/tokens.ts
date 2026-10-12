@@ -134,7 +134,10 @@ export function computeContextBudget(input: BudgetInput): ContextBudget {
 
   // History gets first claim on what's left after prefix + a modest recall allowance,
   // but is capped: past a point extra history stops helping and just costs tokens.
-  const afterPrefix = promptBudget - prefixBudget;
+  // The remainder is measured against the prefix AS SENT: when a huge card alone
+  // blows past the 55% design target, budgeting off the capped figure would
+  // over-allocate history + recall and push the prompt past the context window.
+  const afterPrefix = Math.max(0, promptBudget - input.prefixTokens);
   const historyBudget = Math.min(
     MAX_HISTORY_TOKENS,
     Math.max(minHistory, Math.min(afterPrefix - Math.min(input.requestedRecallTokens, 2500), Math.floor(afterPrefix * 0.8)))

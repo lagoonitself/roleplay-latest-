@@ -282,9 +282,9 @@ async function persistSummary(
   content: string,
   delta: Message[],
   previous: Summary | null
-): Promise<Summary | null> {
+): Promise<{ summary: Summary | null; ok: boolean }> {
   const summaryRow: Summary = {
-    id: `sum-${Date.now()}`,
+    id: `sum-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     chat_id: target.chatId,
     user_id: target.userId,
     level: 'chunk',
@@ -298,12 +298,12 @@ async function persistSummary(
     updated_at: new Date().toISOString(),
   };
 
-  if (!target.isDbBacked) return summaryRow;
+  if (!target.isDbBacked) return { summary: summaryRow, ok: true };
 
   try {
-    if (previous?.id) {
-      await target.supabase.from('summaries').update({ superseded: true }).eq('id', previous.id);
-    }
+    // Insert the replacement BEFORE superseding the old row: if the insert
+    // fails, the previous summary must stay active — never leave the chat with
+    // zero active summaries because of a transient error.
     const { data, error } = await target.supabase
       .from('summaries')
       .insert({
@@ -319,11 +319,17 @@ async function persistSummary(
       })
       .select()
       .single();
-    if (!error && data) return data as Summary;
+    if (!error && data) {
+      if (previous?.id) {
+        await target.supabase.from('summaries').update({ superseded: true }).eq('id', previous.id);
+      }
+      return { summary: data as Summary, ok: true };
+    }
+    console.warn('Memory pass: summary insert failed:', error?.message);
   } catch (err) {
     console.warn('Memory pass: summary persistence failed:', err);
   }
-  return summaryRow;
+  return { summary: summaryRow, ok: false };
 }
 
 async function persistFacts(
@@ -331,7 +337,7 @@ async function persistFacts(
   facts: ParsedFact[],
   existing: Memory[],
   sourceMessageIds: string[]
-): Promise<Memory[]> {
+): Promise<{ memories: Memory[]; ok: boolean }> {
   const seen = new Set(existing.map((m) => normalize(m.content)));
   const rows = facts
     .filter((f) => {
@@ -351,30 +357,33 @@ async function persistFacts(
       source_message_ids: sourceMessageIds.slice(-8),
     }));
 
-  if (!rows.length) return [];
+  if (!rows.length) return { memories: [], ok: true };
   if (!target.isDbBacked) {
-    return rows.map((r, i) => ({
-      ...r,
-      id: `mem-${Date.now()}-${i}`,
-      embedding: null,
-      superseded_by: null,
-      access_count: 0,
-      last_accessed_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })) as Memory[];
+    return {
+      memories: rows.map((r, i) => ({
+        ...r,
+        id: `mem-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+        embedding: null,
+        superseded_by: null,
+        access_count: 0,
+        last_accessed_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })) as Memory[],
+      ok: true,
+    };
   }
 
   try {
     const { data, error } = await target.supabase.from('memories').insert(rows).select('*');
     if (error) {
       console.warn('Memory pass: fact insert failed:', error.message);
-      return [];
+      return { memories: [], ok: false };
     }
-    return (data || []) as Memory[];
+    return { memories: (data || []) as Memory[], ok: true };
   } catch (err) {
     console.warn('Memory pass: fact persistence failed:', err);
-    return [];
+    return { memories: [], ok: false };
   }
 }
 
@@ -391,16 +400,24 @@ async function persistRevisions(
     const content = cleanStr(rev.content);
     // Pinned (user-authored) memories are never auto-rewritten.
     if (!current || current.pinned || !content || normalize(content) === normalize(current.content)) continue;
-    applied.push({ id: rev.id, content });
     if (target.isDbBacked) {
       try {
-        await target.supabase.from('memories').update({ content, updated_at: new Date().toISOString() }).eq('id', rev.id);
+        const { error } = await target.supabase
+          .from('memories')
+          .update({ content, updated_at: new Date().toISOString() })
+          .eq('id', rev.id);
+        if (error) {
+          console.warn('Memory pass: revision failed:', error.message);
+          continue;
+        }
       } catch (err) {
         console.warn('Memory pass: revision failed:', err);
+        continue;
       }
     } else {
       current.content = content;
     }
+    applied.push({ id: rev.id, content });
   }
   return applied;
 }
@@ -422,27 +439,36 @@ async function persistContradictions(
   if (!contradicted.length) return [];
   if (target.isDbBacked) {
     try {
-      if (supersedingId) {
-        await target.supabase.from('memories').update({ superseded_by: supersedingId }).in('id', contradicted);
-      } else {
-        // Nothing new was written to supersede them — they are simply false now.
-        await target.supabase.from('memories').delete().in('id', contradicted);
+      const { error } = supersedingId
+        ? await target.supabase.from('memories').update({ superseded_by: supersedingId }).in('id', contradicted)
+        : // Nothing new was written to supersede them — they are simply false now.
+          await target.supabase.from('memories').delete().in('id', contradicted);
+      if (error) {
+        console.warn('Memory pass: supersede failed:', error.message);
+        return [];
       }
     } catch (err) {
       console.warn('Memory pass: supersede failed:', err);
+      return [];
     }
   }
   return contradicted;
 }
 
-async function persistState(target: PersistTarget, state: ChatState['state']) {
-  if (!target.isDbBacked) return;
+async function persistState(target: PersistTarget, state: ChatState['state']): Promise<boolean> {
+  if (!target.isDbBacked) return true;
   try {
-    await target.supabase
+    const { error } = await target.supabase
       .from('chat_state')
       .upsert({ chat_id: target.chatId, user_id: target.userId, state, updated_at: new Date().toISOString() });
+    if (error) {
+      console.warn('Memory pass: state persistence failed:', error.message);
+      return false;
+    }
+    return true;
   } catch (err) {
     console.warn('Memory pass: state persistence failed:', err);
+    return false;
   }
 }
 
@@ -541,19 +567,27 @@ export async function runMemoryPass(
 
   // 1. Summary — regenerated wholesale, unless the writer locked it.
   let summaryOut: Summary | null = input.summary ?? null;
+  // Tracks whether every write that should have landed actually did — the
+  // memory cursor may only advance when it did, or a failed write silently
+  // skips those messages forever and the records drift apart.
+  let persistenceOk = true;
   const summaryText = cleanSummaryOutput(String(payload.summary || ''));
   if (!input.frozen && summaryText.length >= 40) {
-    summaryOut = await persistSummary(
+    const summaryRes = await persistSummary(
       target,
       truncateToTokensMiddle(summaryText, SUMMARY_TOKEN_CAP),
       delta,
       input.summary ?? null
     );
+    summaryOut = summaryRes.summary;
+    if (!summaryRes.ok) persistenceOk = false;
   }
 
   // 2. New facts.
   const sourceIds = delta.map((m) => m.id).filter(Boolean);
-  const newMemories = await persistFacts(target, parseFacts(payload.facts), memories, sourceIds);
+  const factsRes = await persistFacts(target, parseFacts(payload.facts), memories, sourceIds);
+  const newMemories = factsRes.memories;
+  if (!factsRes.ok) persistenceOk = false;
 
   // 3. Revisions + contradictions (both keep the bank self-healing).
   const revisions = Array.isArray(payload.revisions)
@@ -578,11 +612,12 @@ export async function runMemoryPass(
   // 4. Scene state patch.
   let state: ChatState['state'] | null = null;
   const patch = (payload.state_patch || {}) as Record<string, unknown>;
+  const strList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
   const deltaScore = clamp(Math.round(Number(patch.relationship_score_delta) || 0), -5, 5);
   const current = input.currentState || {};
-  const removed = new Set(((patch.inventory_removed as string[]) || []).map((s) => String(s).toLowerCase()));
+  const removed = new Set(strList(patch.inventory_removed).map((s) => s.toLowerCase()));
   const inventory = [
-    ...new Set([...(current.inventory || []), ...((patch.inventory_added as string[]) || []).map(String)]),
+    ...new Set([...strList(current.inventory), ...strList(patch.inventory_added)]),
   ].filter((item) => !removed.has(item.toLowerCase()));
 
   const affection = cleanStr(patch.affection_level)?.toLowerCase();
@@ -593,8 +628,8 @@ export async function runMemoryPass(
     cleanStr(patch.current_clothing) ||
     affection ||
     deltaScore !== 0 ||
-    ((patch.inventory_added as string[]) || []).length > 0 ||
-    ((patch.inventory_removed as string[]) || []).length > 0;
+    strList(patch.inventory_added).length > 0 ||
+    strList(patch.inventory_removed).length > 0;
 
   if (hasChange) {
     state = {
@@ -607,14 +642,16 @@ export async function runMemoryPass(
       inventory,
       current_clothing: cleanStr(patch.current_clothing) || current.current_clothing,
     };
-    await persistState(target, state);
+    if (!(await persistState(target, state))) persistenceOk = false;
   }
 
-  // 5. Cursor: everything in `delta` is now folded into memory.
+  // 5. Cursor: everything in `delta` is now folded into memory — but only when
+  // the writes actually landed. Advancing past a failed write would skip those
+  // messages on every future pass (summary ahead of facts = permanent drift).
   if (target.isDbBacked) {
     const lastId = delta[delta.length - 1]?.id;
     try {
-      if (lastId) {
+      if (lastId && persistenceOk) {
         await target.supabase.from('chats').update({ memory_cursor_id: lastId }).eq('id', input.chatId);
       }
       await pruneMemoryBank(target, memories);

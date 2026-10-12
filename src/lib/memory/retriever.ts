@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { scanWorldInfo, type ActivatedLore, type WorldInfoScanEntry } from '@/lib/lorebook/matcher';
 import { retrieveVectorMemories, type VectorRetrievalResult } from '@/lib/memory/vectors';
+import { MEMORY_COLUMNS } from '@/lib/memory/queries';
 import type { Memory, Summary, ChatState, LorebookEntry, Message, Character, Persona } from '@/lib/supabase/types';
 
 export interface RetrievedContext {
@@ -37,6 +38,12 @@ export interface RetrieveContextParams {
     summary?: Summary | null;
     chatState?: ChatState | null;
   };
+  /**
+   * The caller has just read memories/summary/state (e.g. the memory API's
+   * `list`): reuse `clientContext` for them instead of re-fetching the exact
+   * same rows. Default false — other callers get the fresh database read.
+   */
+  reuseClientContext?: boolean;
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,6 +64,7 @@ export async function retrieveContextForChat(
   let character: Character | null = null;
   let persona: Persona | null = null;
   let clientContext: RetrieveContextParams['clientContext'];
+  let reuseContext = false;
   let providedClient: SupabaseClient | undefined;
 
   if (typeof chatIdOrParams === 'object') {
@@ -67,6 +75,7 @@ export async function retrieveContextForChat(
     history = chatIdOrParams.history || [];
     userQuery = chatIdOrParams.latestUserMessage;
     clientContext = chatIdOrParams.clientContext;
+    reuseContext = !!chatIdOrParams.reuseClientContext && !!clientContext;
     providedClient = chatIdOrParams.supabase;
   } else {
     chatId = chatIdOrParams;
@@ -89,18 +98,19 @@ export async function retrieveContextForChat(
   const supabase = needsDb ? providedClient ?? (await createClient()) : null;
 
   // Memories, summary, scene state and lorebooks are independent — fetch them in
-  // one round trip instead of five sequential ones.
+  // one round trip instead of five sequential ones. When the caller just read
+  // memories/summary/state (`reuseClientContext`), only lore is fetched.
   const [memoryRes, summaryRes, stateRes, loreRes] = await Promise.all([
-    isDbBacked && supabase
+    isDbBacked && supabase && !reuseContext
       ? supabase
           .from('memories')
-          .select('*')
+          .select(MEMORY_COLUMNS)
           .eq('chat_id', chatId)
           .is('superseded_by', null)
           .order('created_at', { ascending: false })
           .limit(300)
       : null,
-    isDbBacked && supabase
+    isDbBacked && supabase && !reuseContext
       ? supabase
           .from('summaries')
           .select('*')
@@ -110,7 +120,7 @@ export async function retrieveContextForChat(
           .limit(1)
           .maybeSingle()
       : null,
-    isDbBacked && supabase ? supabase.from('chat_state').select('*').eq('chat_id', chatId).maybeSingle() : null,
+    isDbBacked && supabase && !reuseContext ? supabase.from('chat_state').select('*').eq('chat_id', chatId).maybeSingle() : null,
     characterId && supabase ? loadLorebookEntries(supabase, characterId) : Promise.resolve([] as LorebookEntry[]),
   ]).catch((err) => {
     console.warn('Context fetch warning:', err);
