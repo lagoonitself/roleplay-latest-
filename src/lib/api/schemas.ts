@@ -50,9 +50,12 @@ export const intBetween = (min: number, max: number) =>
     z.number().int().optional()
   );
 
-/** BYOK API keys: bounded and stripped of header-injectable characters. */
+/**
+ * BYOK API keys: bounded and stripped of header-injectable characters.
+ * ChatGPT sessions travel as `chatgpt:<base64url JSON>` wrapping a JWT, so a few KB is normal.
+ */
 export const apiKeyString = z
-  .union([z.string().max(500), z.null()])
+  .union([z.string().max(16_000), z.null()])
   .optional()
   .transform((s) => (typeof s === 'string' ? s.replace(/[\r\n\0]/g, '').trim() : undefined));
 

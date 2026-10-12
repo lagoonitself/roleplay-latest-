@@ -20,6 +20,7 @@
 
 import { jsonCompletion } from '@/lib/llm/client';
 import { estimateTokens, truncateToTokensMiddle } from '@/lib/prompt/tokens';
+import { escapeBlockContent, escapeInlineText, escapeLabelContent } from '@/lib/prompt/macros';
 import type { Memory, Summary, ChatState, Message } from '@/lib/supabase/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -218,20 +219,21 @@ function buildMemoryPassUserMessage(input: {
     ? input.memories
         .map(
           (m) =>
-            `[ID: ${m.id}] (${m.kind}${m.pinned ? ', pinned' : ''}) ${m.content}`
+            // Content is escaped so a memory can't forge another "[ID: …]" line or close the block.
+            `[ID: ${m.id}] (${m.kind}${m.pinned ? ', pinned' : ''}) ${escapeLabelContent(m.content).replace(/\s*\n\s*/g, ' ')}`
         )
         .join('\n')
     : 'None yet.';
 
   const exchangeLines = input.delta
     .map((m) => {
-      const speaker = m.role === 'assistant' ? input.charName : input.userName;
-      return `${speaker}: ${(m.content || '').trim()}`;
+      const speaker = escapeInlineText(m.role === 'assistant' ? input.charName : input.userName);
+      return `${speaker}: ${escapeBlockContent((m.content || '').trim())}`;
     })
     .join('\n\n');
 
   return `<existing_summary>
-${input.summary?.trim() || 'None yet.'}
+${escapeBlockContent(input.summary?.trim() || '') || 'None yet.'}
 </existing_summary>
 
 <existing_memories>
@@ -239,7 +241,7 @@ ${memoryLines}
 </existing_memories>
 
 <current_scene_state>
-${JSON.stringify(input.currentState || {})}
+${escapeBlockContent(JSON.stringify(input.currentState || {}))}
 </current_scene_state>
 
 <new_exchanges>

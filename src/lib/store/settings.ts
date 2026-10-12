@@ -43,6 +43,20 @@ export const DEFAULT_SETTINGS: UserAppSettings = {
 
 const STORAGE_KEY = 'cadenza_user_settings';
 
+function normalizeChatgptAuth(raw: unknown): ChatgptAuth | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const a = raw as Record<string, unknown>;
+  if (typeof a.accessToken !== 'string' || !a.accessToken) return null;
+  return {
+    accessToken: a.accessToken,
+    refreshToken: typeof a.refreshToken === 'string' ? a.refreshToken : '',
+    expiresAt: typeof a.expiresAt === 'number' && Number.isFinite(a.expiresAt) ? a.expiresAt : 0,
+    accountId: typeof a.accountId === 'string' ? a.accountId : '',
+    email: typeof a.email === 'string' ? a.email : '',
+    plan: typeof a.plan === 'string' ? a.plan : '',
+  };
+}
+
 /**
  * Validates one persisted settings blob field-by-field. Anything with the wrong
  * type (old schema versions, hand-edited storage, corrupted JSON fragments) is
@@ -52,6 +66,9 @@ function normalizeSettings(raw: unknown): UserAppSettings {
   const out: UserAppSettings = { ...DEFAULT_SETTINGS };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   const s = raw as Record<string, unknown>;
+  if (s.llmProvider === 'opencode' || s.llmProvider === 'chatgpt') out.llmProvider = s.llmProvider;
+  out.chatgptAuth = normalizeChatgptAuth(s.chatgptAuth);
+  if (typeof s.chatgptModel === 'string' && s.chatgptModel.trim()) out.chatgptModel = s.chatgptModel;
   if (typeof s.opencodeApiKey === 'string') out.opencodeApiKey = s.opencodeApiKey;
   if (typeof s.opencodeEndpoint === 'string' && s.opencodeEndpoint.trim()) out.opencodeEndpoint = s.opencodeEndpoint;
   if (typeof s.opencodeModel === 'string' && s.opencodeModel.trim()) out.opencodeModel = s.opencodeModel;

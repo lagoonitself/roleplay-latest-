@@ -38,38 +38,41 @@ export function repairMojibake(text: string): string {
   if (!text) return '';
 
   return text
-    // Em dash (—)
-    .replace(/â\u0080\u0094/g, '—')
-    .replace(/\u00e2\u0080\u0094/g, '—')
-    .replace(/â€"/g, '—')
-    .replace(/â\x00\x00/g, '—')
-    // En dash (–)
-    .replace(/â\u0080\u0093/g, '–')
-    .replace(/\u00e2\u0080\u0093/g, '–')
-    // Left & right double curly quotes (“ ”)
-    .replace(/â\u0080\u009c/g, '“')
-    .replace(/â\u0080\u009d/g, '”')
-    .replace(/\u00e2\u0080\u009c/g, '“')
-    .replace(/\u00e2\u0080\u009d/g, '”')
-    .replace(/â€œ/g, '“')
-    .replace(/â€/g, '”')
-    // Left & right single curly quotes / apostrophes (‘ ’)
-    .replace(/â\u0080\u0098/g, '‘')
-    .replace(/â\u0080\u0099/g, '’')
-    .replace(/\u00e2\u0080\u0098/g, '‘')
-    .replace(/\u00e2\u0080\u0099/g, '’')
-    .replace(/â€™/g, '’')
-    .replace(/â€˜/g, '‘')
-    // Ellipsis (…)
-    .replace(/â\u0080\u00a6/g, '…')
-    .replace(/\u00e2\u0080\u00a6/g, '…')
-    .replace(/â€¦/g, '…')
-    // Broken non-breaking spaces
-    .replace(/â\u00a0/g, ' ')
-    // Replace remaining isolated â followed by corrupted symbols or brackets
-    .replace(/â[\u0000-\u001f\u007f-\u009f]+/g, '—')
+    // UTF-8 bytes E2 80 xx read as Latin-1 ("â" + C1 control)
+    .replace(/\u00e2\u0080([\u0093\u0094\u0098\u0099\u009c\u009d\u00a6])/g, (_m, b: string) => LATIN1_PUNCT[b])
+    // …and read as Windows-1252 ("â€" + the cp1252 glyph for xx). The specific
+    // sequences must run before the bare "â€" fallback, which would otherwise
+    // eat their first two characters ("â€™" → "”™").
+    .replace(/\u00e2\u20ac([\u201d\u201c\u2122\u02dc\u0153\u00a6"])/g, (_m, c: string) => CP1252_PUNCT[c])
+    .replace(/\u00e2\u20ac\u009d?/g, '\u201d') // 9D is undefined in cp1252, usually dropped
+    .replace(/\u00e2\x00\x00/g, '\u2014')
+    // Broken non-breaking spaces (C2 A0)
+    .replace(/[\u00c2\u00e2]\u00a0/g, ' ')
+    // Any other "â" + C1 control is a mangled punctuation mark. Plain control
+    // characters (newlines, tabs) are left alone so real "â" (pt, vi, fr) survives.
+    .replace(/\u00e2[\u0080-\u009f]+/g, '\u2014')
     .replace(/\uFFFD/g, '');
 }
+
+const LATIN1_PUNCT: Record<string, string> = {
+  '\u0093': '\u2013', // –
+  '\u0094': '\u2014', // —
+  '\u0098': '\u2018', // ‘
+  '\u0099': '\u2019', // ’
+  '\u009c': '\u201c', // “
+  '\u009d': '\u201d', // ”
+  '\u00a6': '\u2026', // …
+};
+
+const CP1252_PUNCT: Record<string, string> = {
+  '\u201c': '\u2013', // â€“ → –
+  '\u201d': '\u2014', // â€” → —
+  '"': '\u2014',
+  '\u02dc': '\u2018', // â€˜ → ‘
+  '\u2122': '\u2019', // â€™ → ’
+  '\u0153': '\u201c', // â€œ → “
+  '\u00a6': '\u2026', // â€¦ → …
+};
 
 // ─────────────────── untrusted-content delimiting ───────────────────
 //

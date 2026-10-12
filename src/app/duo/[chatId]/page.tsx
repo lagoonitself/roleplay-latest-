@@ -174,7 +174,8 @@ export default function DuoWatchPage() {
           // Stalled — ask the server for the next line to revive the chain.
           try {
             const headers = await getAuthHeaders(supabase);
-            if (settingsRef.current.opencodeApiKey) headers['x-llm-key'] = settingsRef.current.opencodeApiKey;
+            const llmKey = await resolveLlmKey(settingsRef.current);
+            if (llmKey) headers['x-llm-key'] = llmKey;
             const res = await fetch('/api/duo', {
               method: 'POST',
               headers,
