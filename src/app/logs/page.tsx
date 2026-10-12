@@ -227,20 +227,20 @@ export default function ModelLogsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 pb-28 pt-4 sm:px-6 sm:pt-6">
+    <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 pt-4 sm:pt-6 pb-[calc(env(safe-area-inset-bottom,0px)+7rem)]">
       <div className="flex items-center gap-2">
         <Link
           href="/profile"
-          className="icon-btn"
+          className="icon-btn min-h-11 min-w-11"
           aria-label="Back to profile"
         >
-          <ArrowLeft className="h-5 w-5" aria-hidden />
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </Link>
         <div className="min-w-0">
-          <h1 className="type-page flex items-center gap-2">
-            <FlaskConical className="h-4 w-4 text-ink-3" aria-hidden />
-            Model logs
-            <span className="chip chip-warn">
+          <h1 className="type-page flex items-center gap-2 truncate">
+            <FlaskConical className="h-4 w-4 text-ink-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">Model logs</span>
+            <span className="chip chip-warn shrink-0">
               Dev
             </span>
           </h1>
@@ -253,34 +253,38 @@ export default function ModelLogsPage() {
           <button
             type="button"
             onClick={load}
-            className="icon-btn border border-line"
+            className="icon-btn min-h-11 min-w-11 border border-line"
             title="Refresh logs"
             aria-label="Refresh logs"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={handleClearDevice}
-            className="icon-btn border border-line"
+            className="icon-btn min-h-11 min-w-11 border border-line"
             title="Clear device logs"
             aria-label="Clear device logs"
           >
-            <Trash2 className="h-4 w-4" aria-hidden />
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <label className="flex flex-1 items-center gap-2 field !py-2">
-          <Search className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+      <div className="mt-4 flex flex-wrap gap-2">
+        <label className="flex flex-1 min-w-[240px] items-center gap-2 field !py-2 min-h-11">
+          <Search className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
           <span className="sr-only">Search logs</span>
           <input
+            type="search"
+            enterKeyHint="search"
+            autoCapitalize="none"
+            autoCorrect="off"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search prompts, outputs, characters…"
-            className="w-full bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none"
+            className="w-full bg-transparent text-ink placeholder:text-ink-3 focus:outline-none"
           />
         </label>
         <label className="sr-only" htmlFor="logs-chat-filter">
@@ -290,7 +294,7 @@ export default function ModelLogsPage() {
           id="logs-chat-filter"
           value={chatFilter}
           onChange={(e) => setChatFilter(e.target.value)}
-          className="field bg-sunken text-ink sm:w-auto"
+          className="field bg-sunken text-ink w-full sm:w-auto min-h-11"
           aria-label="Filter by chat"
         >
           <option value="">All chats ({merged.length})</option>
@@ -322,7 +326,7 @@ export default function ModelLogsPage() {
           return (
             <article
               key={log.id}
-              className="surface rounded-lg overflow-hidden"
+              className="surface rounded-lg overflow-hidden min-w-0"
             >
               <button
                 type="button"
@@ -331,34 +335,36 @@ export default function ModelLogsPage() {
                   setExpandedMsgIdx(null);
                   if (!open) void loadServerPrompt(log);
                 }}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                className="flex w-full min-h-[44px] items-center gap-3 px-4 py-3 text-left row-press"
                 aria-expanded={open}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-[13px] font-semibold text-ink">
-                      {log.characterName || 'Unknown character'}
-                    </span>
-                    <span className="chip type-code">
-                      {log.kind}
-                    </span>
-                    {log.serverId != null && (
-                      <span className="chip chip-ok">
-                        saved
-                      </span>
-                    )}
+                <div className="min-w-0 flex-1 space-y-1">
+                  {/* Timestamp and model on one line (type-meta), with status chip */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 min-w-0">
+                    <div className="flex items-center gap-1.5 type-meta min-w-0 truncate">
+                      <span className="truncate">{formatTime(log.createdAt)}</span>
+                      <span className="text-ink-3">/</span>
+                      <span className="truncate font-mono text-[11px]">{log.model}</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="chip type-code">{log.kind}</span>
+                      {log.serverId != null && (
+                        <span className="chip chip-ok">saved</span>
+                      )}
+                    </div>
                   </div>
-                  <p className="mt-0.5 line-clamp-1 text-xs text-ink-2">
+
+                  <p className="truncate text-xs sm:text-sm font-semibold text-ink">
+                    {log.characterName || 'Unknown character'}
+                  </p>
+                  <p className="line-clamp-1 text-xs text-ink-2">
                     {log.userMessage || '(empty user message)'}
                   </p>
-                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] tabular-nums text-ink-3">
-                    <span>{formatTime(log.createdAt)}</span>
+                  <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] tabular-nums text-ink-3">
                     <span>
-                      {log.usage.input.toLocaleString()} in / {log.usage.output.toLocaleString()}{' '}
-                      out
+                      {log.usage.input.toLocaleString()} in / {log.usage.output.toLocaleString()} out
                     </span>
                     <span>{log.latencyMs} ms</span>
-                    <span className="truncate">{log.model}</span>
                   </p>
                 </div>
                 <ChevronDown
@@ -368,30 +374,29 @@ export default function ModelLogsPage() {
               </button>
 
               {open && (
-                <div className="space-y-3 border-t border-line px-4 py-4">
+                <div className="space-y-4 border-t border-line px-4 py-4 min-w-0">
                   {/* Params */}
-                  <section>
-                    <div className="mb-1.5 flex items-center justify-between">
-                      <h4 className="type-sec">
-                        Request params
-                      </h4>
+                  <section className="min-w-0">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <h4 className="type-sec truncate">Request params</h4>
                       <button
                         type="button"
                         onClick={() => copyText(JSON.stringify(log.params, null, 2), 'Params')}
-                        className="btn btn-quiet inline-flex items-center gap-1 !text-[11px]"
+                        className="btn btn-quiet inline-flex items-center gap-1 !text-[11px] min-h-11 shrink-0"
                       >
-                        <Copy className="h-3 w-3" aria-hidden /> Copy
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>Copy</span>
                       </button>
                     </div>
-                    <pre className="well type-code overflow-x-auto p-3 leading-relaxed text-ink-2">
+                    <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre p-3 leading-relaxed text-ink-2">
                       {JSON.stringify(log.params, null, 2)}
                     </pre>
                   </section>
 
                   {/* Request messages — the complete prompt */}
-                  <section>
-                    <div className="mb-1.5 flex items-center justify-between">
-                      <h4 className="type-sec">
+                  <section className="min-w-0">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <h4 className="type-sec truncate min-w-0">
                         Complete prompt ({promptCount != null ? `${promptCount} messages` : 'not stored'})
                       </h4>
                       {log.promptsLoaded && log.requestMessages.length > 0 && (
@@ -400,13 +405,14 @@ export default function ModelLogsPage() {
                           onClick={() =>
                             copyText(JSON.stringify(log.requestMessages, null, 2), 'Prompt')
                           }
-                          className="btn btn-quiet inline-flex items-center gap-1 !text-[11px]"
+                          className="btn btn-quiet inline-flex items-center gap-1 !text-[11px] min-h-11 shrink-0"
                         >
-                          <Copy className="h-3 w-3" aria-hidden /> Copy all
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span>Copy all</span>
                         </button>
                       )}
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       {!log.promptsLoaded ? (
                         <p className="type-meta px-1">
                           {detailLoadingId === log.id
@@ -423,20 +429,20 @@ export default function ModelLogsPage() {
                           return (
                             <div
                               key={i}
-                              className="surface rounded-lg overflow-hidden"
+                              className="surface rounded-lg overflow-hidden min-w-0"
                             >
                               <button
                                 type="button"
                                 onClick={() => setExpandedMsgIdx(msgOpen ? null : i)}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                                className="flex w-full min-h-[44px] items-center gap-2 px-3 py-2 text-left row-press"
                                 aria-expanded={msgOpen}
                               >
                                 <span
-                                  className={m.role === 'system' ? 'chip chip-accent type-code' : 'chip type-code'}
+                                  className={m.role === 'system' ? 'chip chip-accent type-code shrink-0' : 'chip type-code shrink-0'}
                                 >
                                   {m.role}
                                 </span>
-                                <span className="truncate text-[11px] text-ink-2">
+                                <span className="truncate text-[11px] text-ink-2 min-w-0 flex-1">
                                   {m.content.slice(0, 120).replace(/\n/g, ' ')}
                                 </span>
                                 <span className="ml-auto shrink-0 text-[10px] tabular-nums text-ink-3">
@@ -444,16 +450,17 @@ export default function ModelLogsPage() {
                                 </span>
                               </button>
                               {msgOpen && (
-                                <div className="border-t border-line p-3">
-                                  <pre className="well type-code max-h-96 overflow-y-auto whitespace-pre-wrap break-words !text-[11px] !leading-relaxed text-ink-2 p-3">
+                                <div className="border-t border-line p-3 space-y-2 min-w-0">
+                                  <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre-wrap break-words p-3 !text-[11px] !leading-relaxed text-ink-2">
                                     {m.content}
                                   </pre>
                                   <button
                                     type="button"
                                     onClick={() => copyText(m.content, `${m.role} message`)}
-                                    className="btn btn-quiet mt-2 inline-flex items-center gap-1 !text-[11px]"
+                                    className="btn btn-quiet inline-flex items-center gap-1 !text-[11px] min-h-11"
                                   >
-                                    <Copy className="h-3 w-3" aria-hidden /> Copy message
+                                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                                    <span>Copy message</span>
                                   </button>
                                 </div>
                               )}
@@ -465,30 +472,27 @@ export default function ModelLogsPage() {
                   </section>
 
                   {/* Output */}
-                  <section>
-                    <div className="mb-1.5 flex items-center justify-between">
-                      <h4 className="type-sec">
-                        Model output
-                      </h4>
+                  <section className="min-w-0">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <h4 className="type-sec truncate">Model output</h4>
                       <button
                         type="button"
                         onClick={() => copyText(log.output, 'Output')}
-                        className="btn btn-quiet inline-flex items-center gap-1 !text-[11px]"
+                        className="btn btn-quiet inline-flex items-center gap-1 !text-[11px] min-h-11 shrink-0"
                       >
-                        <Copy className="h-3 w-3" aria-hidden /> Copy
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>Copy</span>
                       </button>
                     </div>
-                    <pre className="well type-code max-h-96 overflow-y-auto whitespace-pre-wrap break-words !text-[11px] !leading-relaxed text-ink-2 p-3">
+                    <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre-wrap break-words p-3 !text-[11px] !leading-relaxed text-ink-2">
                       {log.output || '(empty)'}
                     </pre>
                   </section>
 
                   {log.reasoning && (
-                    <section>
-                      <h4 className="type-sec mb-1.5">
-                        Reasoning
-                      </h4>
-                      <pre className="well type-code max-h-64 overflow-y-auto whitespace-pre-wrap break-words !text-[11px] !leading-relaxed text-ink-2 p-3">
+                    <section className="min-w-0">
+                      <h4 className="type-sec mb-1.5 truncate">Reasoning</h4>
+                      <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre-wrap break-words p-3 !text-[11px] !leading-relaxed text-ink-2">
                         {log.reasoning}
                       </pre>
                     </section>

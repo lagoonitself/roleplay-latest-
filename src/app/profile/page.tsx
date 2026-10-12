@@ -26,18 +26,18 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="flex min-h-dvh flex-1 flex-col">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 pt-4 sm:px-6">
+    <div className="flex flex-1 flex-col pb-dock">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 pt-3 sm:px-6 sm:pt-6">
         <Link
           href="/"
-          className="icon-btn"
+          className="icon-btn min-h-11 min-w-11 shrink-0"
           aria-label="Back to home"
         >
-          <ArrowLeft className="h-5 w-5" aria-hidden />
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </Link>
-        <div>
+        <div className="min-w-0">
           <h1 className="type-page">Profile</h1>
-          <p className="type-meta">Your account, personas, and usage</p>
+          <p className="type-meta truncate">Your account, personas, and usage</p>
         </div>
       </div>
 

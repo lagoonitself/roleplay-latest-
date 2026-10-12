@@ -206,70 +206,76 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-5 px-4 pb-28 pt-4 sm:px-6 sm:pt-6">
-      {/* Account header */}
-      <section className="surface rounded-xl p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3.5">
-            <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-sunken font-serif text-lg text-ink" style={{ width: 56, height: 56 }}>
-              {user?.avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.avatar} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <span>{(user?.name || 'G').slice(0, 1).toUpperCase()}</span>
-              )}
+    <div className="mx-auto w-full max-w-3xl space-y-5 px-4 pt-3 pb-6 sm:px-6 sm:pt-4 sm:pb-8">
+      {/* Account section — iOS Settings style */}
+      <section className="space-y-2" aria-label="Account">
+        <h3 className="type-sec px-1">Account</h3>
+        <div className="surface rounded-xl divide-y divide-line overflow-hidden">
+          <div className="flex items-center justify-between gap-3 p-4 sm:p-5">
+            <div className="flex min-w-0 items-center gap-3.5">
+              <div
+                className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-sunken font-serif text-lg text-ink"
+                style={{ width: 52, height: 52 }}
+              >
+                {user?.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={user.avatar} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span>{(user?.name || 'G').slice(0, 1).toUpperCase()}</span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <h2 className="type-page truncate font-serif text-lg sm:text-xl">
+                  {user?.name || 'Guest explorer'}
+                </h2>
+                <p className="type-meta truncate">
+                  {user?.email || 'Chats and usage saved on this device'}
+                </p>
+                <p className="type-meta mt-0.5 truncate">
+                  {personas.length} {personas.length === 1 ? 'persona' : 'personas'} in your roster
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <h2 className="type-page truncate font-serif">
-                {user?.name || 'Guest explorer'}
-              </h2>
-              <p className="type-meta truncate">
-                {user?.email || 'Chats and usage saved on this device'}
-              </p>
-              <p className="type-meta mt-1">
-                {personas.length} {personas.length === 1 ? 'persona' : 'personas'} in your roster
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="icon-btn min-h-11 min-w-11 shrink-0 border border-line disabled:opacity-50"
+              title="Refresh profile and usage"
+              aria-label="Refresh profile and usage"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="icon-btn border border-line disabled:opacity-50"
-            title="Refresh profile and usage"
-            aria-label="Refresh profile and usage"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
-          </button>
-        </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {user ? (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 sm:p-4">
+            {user ? (
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="btn btn-danger min-h-11 w-full sm:w-auto inline-flex items-center justify-center gap-1.5"
+              >
+                <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                Sign out
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSignIn}
+                className="btn btn-ghost min-h-11 w-full sm:w-auto inline-flex items-center justify-center"
+              >
+                Sign in with Google
+              </button>
+            )}
             <button
               type="button"
-              onClick={handleSignOut}
-              className="btn btn-danger inline-flex items-center gap-1.5"
+              onClick={onOpenSettingsDialog}
+              className="btn btn-ghost min-h-11 w-full sm:w-auto inline-flex items-center justify-center gap-1.5"
             >
-              <LogOut className="h-3.5 w-3.5" aria-hidden />
-              Sign out
+              <Settings className="h-3.5 w-3.5 text-ink-3" aria-hidden="true" />
+              AI engine and keys
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSignIn}
-              className="btn btn-ghost"
-            >
-              Sign in with Google
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onOpenSettingsDialog}
-            className="btn btn-ghost inline-flex items-center gap-1.5"
-          >
-            <Settings className="h-3.5 w-3.5 text-ink-3" aria-hidden />
-            AI engine and keys
-          </button>
+          </div>
         </div>
       </section>
 
@@ -284,34 +290,35 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
 
       {/* Active persona spotlight */}
       {activePersona && (
-        <section className="rounded-xl border border-accent-line bg-accent-wash p-4">
-          <div className="flex items-center justify-between gap-2">
-            <span className="type-label">
-              Roleplaying as
-            </span>
-            <span className="chip chip-accent inline-flex items-center gap-1">
-              <Check className="h-3 w-3" aria-hidden />
-              Active
-            </span>
-          </div>
-          <div className="flex items-center gap-3 pt-2.5">
-            <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
-              <CharacterAvatar
-                name={activePersona.name}
-                avatarUrl={activePersona.avatar_url}
-                className="h-full w-full object-cover"
-              />
+        <section className="space-y-2" aria-label="Active persona">
+          <h3 className="type-sec px-1">Active persona</h3>
+          <div className="rounded-xl border border-accent-line bg-accent-wash p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="type-label">Roleplaying as</span>
+              <span className="chip chip-accent inline-flex items-center gap-1">
+                <Check className="h-3 w-3" aria-hidden="true" />
+                Active
+              </span>
             </div>
-            <div className="min-w-0">
-              <h3 className="truncate font-serif text-base font-medium text-ink">{activePersona.name}</h3>
-              <p className="type-meta line-clamp-1">{activePersona.description}</p>
+            <div className="flex items-center gap-3 pt-2.5">
+              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
+                <CharacterAvatar
+                  name={activePersona.name}
+                  avatarUrl={activePersona.avatar_url}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="min-w-0">
+                <h4 className="truncate font-serif text-base font-medium text-ink">{activePersona.name}</h4>
+                <p className="type-meta line-clamp-1 truncate">{activePersona.description}</p>
+              </div>
             </div>
           </div>
         </section>
       )}
 
       {/* Persona roster */}
-      <section className="space-y-2.5">
+      <section className="space-y-2" aria-label="Persona roster">
         <div className="flex items-center justify-between px-1">
           <h3 className="type-sec">
             Persona roster ({personas.length})
@@ -319,9 +326,9 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
           <button
             type="button"
             onClick={() => setCreateModalOpen(true)}
-            className="btn btn-quiet inline-flex items-center gap-1"
+            className="btn btn-quiet min-h-11 inline-flex items-center gap-1 px-2.5 text-xs text-ink"
           >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             Add persona
           </button>
         </div>
@@ -332,12 +339,14 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
             return (
               <div
                 key={persona.id}
-                className={`flex items-center gap-2 p-3 ${isActive ? 'border-l-2 border-accent-line' : ''}`}
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 min-h-[52px] ${
+                  isActive ? 'border-l-2 border-accent-line bg-accent-wash/30' : ''
+                }`}
               >
                 <button
                   type="button"
                   onClick={() => handleSetActive(persona)}
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  className="row-press flex min-w-0 flex-1 items-center gap-3 py-1 text-left rounded-lg transition-colors"
                   aria-pressed={isActive}
                 >
                   <span className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-line">
@@ -347,7 +356,7 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
                       className="h-full w-full object-cover"
                     />
                   </span>
-                  <span className="truncate min-w-0">
+                  <span className="truncate min-w-0 flex-1">
                     <span className="flex items-center gap-1.5 truncate font-serif text-sm font-medium text-ink">
                       <span className="truncate">{persona.name}</span>
                       {isActive && (
@@ -361,11 +370,11 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
                   <button
                     type="button"
                     onClick={(e) => handleDelete(e, persona.id, persona.name)}
-                    className="icon-btn shrink-0"
+                    className="icon-btn min-h-11 min-w-11 shrink-0 text-ink-3 hover:text-danger"
                     title={`Delete ${persona.name}`}
                     aria-label={`Delete ${persona.name}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -375,57 +384,59 @@ export function ProfileView({ onOpenSettingsDialog }: ProfileViewProps) {
       </section>
 
       {/* Preferences */}
-      <section className="space-y-2">
+      <section className="space-y-2" aria-label="Preferences">
         <h3 className="type-sec px-1">Preferences</h3>
         <div className="surface rounded-xl divide-y divide-line overflow-hidden">
           <button
             type="button"
             onClick={onOpenSettingsDialog}
-            className="flex w-full items-center justify-between p-3 text-left"
+            className="row-press flex min-h-[52px] w-full items-center justify-between px-4 py-3 text-left"
           >
-            <span className="flex items-center gap-2.5">
-              <User className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
-              <span className="type-sec">AI engine and API keys</span>
+            <span className="flex items-center gap-3 min-w-0 truncate">
+              <User className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
+              <span className="type-sec truncate">AI engine and API keys</span>
             </span>
-            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
+            <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className="flex w-full items-center justify-between p-3 text-left"
+            className="row-press flex min-h-[52px] w-full items-center justify-between px-4 py-3 text-left"
           >
-            <span className="flex items-center gap-2.5">
+            <span className="flex items-center gap-3 min-w-0 truncate">
               {resolvedTheme === 'dark' ? (
-                <Sun className="h-4 w-4 shrink-0 text-ink-2" aria-hidden />
+                <Sun className="h-4 w-4 shrink-0 text-ink-2" aria-hidden="true" />
               ) : (
-                <Moon className="h-4 w-4 shrink-0 text-ink-2" aria-hidden />
+                <Moon className="h-4 w-4 shrink-0 text-ink-2" aria-hidden="true" />
               )}
-              <span className="type-sec">{resolvedTheme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+              <span className="type-sec truncate">
+                {resolvedTheme === 'dark' ? 'Light theme' : 'Dark theme'}
+              </span>
             </span>
-            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
+            <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
           </button>
           <Link
             href="/lorebooks"
-            className="flex w-full items-center justify-between p-3"
+            className="row-press flex min-h-[52px] w-full items-center justify-between px-4 py-3 text-left"
           >
-            <span className="flex items-center gap-2.5">
-              <BookOpen className="h-4 w-4 text-ink-3" aria-hidden />
-              <span className="type-sec">World lorebooks and knowledge</span>
+            <span className="flex items-center gap-3 min-w-0 truncate">
+              <BookOpen className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
+              <span className="type-sec truncate">World lorebooks and knowledge</span>
             </span>
-            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
+            <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
           </Link>
           <Link
             href="/logs"
-            className="flex w-full items-center justify-between p-3"
+            className="row-press flex min-h-[52px] w-full items-center justify-between px-4 py-3 text-left"
           >
-            <span className="flex items-center gap-2.5">
-              <FlaskConical className="h-4 w-4 text-ink-3" aria-hidden />
-              <span className="type-sec">Model logs</span>
-              <span className="chip chip-warn">
+            <span className="flex items-center gap-3 min-w-0 truncate">
+              <FlaskConical className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
+              <span className="type-sec truncate">Model logs</span>
+              <span className="chip chip-warn shrink-0">
                 Dev
               </span>
             </span>
-            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
+            <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
           </Link>
         </div>
       </section>

@@ -54,54 +54,79 @@ export function TokenHud({ input, output, total, loading, syncedWithAccount }: T
   ] as const;
 
   return (
-    <section aria-label="Token usage" className="surface rounded-xl p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="type-sec">Token usage</h3>
-          <p className="type-meta mt-0.5">
+    <section aria-label="Token usage" className="space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <div className="min-w-0">
+          <h3 className="type-sec truncate">Token usage</h3>
+          <p className="type-meta mt-0.5 truncate">
             {loading ? 'Syncing…' : syncedWithAccount ? 'Synced across sessions' : 'Kept on this device'}
           </p>
         </div>
         <span
-          className={syncedWithAccount ? 'chip chip-ok' : 'chip'}
+          className={`shrink-0 ${syncedWithAccount ? 'chip chip-ok' : 'chip'}`}
           aria-live="polite"
         >
           {loading ? 'Syncing' : syncedWithAccount ? 'Account' : 'Local'}
         </span>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-lg border border-line">
-        {tiles.map((t) => {
-          const Icon = t.icon;
-          return (
-            <div key={t.key} className="px-3 py-3 sm:px-4 min-w-0">
-              <Icon className="h-4 w-4 text-ink-3" aria-hidden />
-              <div
-                className="mt-2 font-serif text-2xl tabular-nums text-ink truncate"
-                title={loading ? undefined : formatTokenCount(t.value)}
-              >
-                {loading ? '…' : formatCompactTokenCount(t.value)}
-              </div>
-              <div className="type-label mt-1">{t.label}</div>
-              <div className="type-meta" title={loading ? undefined : formatTokenCount(t.value)}>
-                {t.hint}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <div className="surface rounded-xl divide-y divide-line overflow-hidden">
+        {/* Stats grid: max 2 columns on mobile, 3 columns on desktop */}
+        <div className="grid grid-cols-2 sm:grid-cols-3">
+          {tiles.map((t) => {
+            const Icon = t.icon;
+            const isInput = t.key === 'input';
+            const isOutput = t.key === 'output';
 
-      <div className="mt-4">
-        <div
-          className="h-[3px] w-full overflow-hidden rounded-full bg-sunken"
-          role="img"
-          aria-label={`Input ${inShare} percent, output ${100 - inShare} percent`}
-        >
-          <div className="h-full rounded-full bg-accent" style={{ width: `${inShare}%` }} />
+            return (
+              <div
+                key={t.key}
+                className={`min-w-0 p-3.5 sm:p-4 ${
+                  isInput
+                    ? 'border-r border-b border-line sm:border-b-0'
+                    : isOutput
+                      ? 'border-b border-line sm:border-b-0 sm:border-r'
+                      : 'col-span-2 sm:col-span-1'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-ink-3">
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="type-label truncate">{t.label}</span>
+                </div>
+                <div
+                  className="mt-1.5 font-serif text-2xl tabular-nums text-ink truncate"
+                  title={loading ? undefined : formatTokenCount(t.value)}
+                >
+                  {loading ? '…' : formatCompactTokenCount(t.value)}
+                </div>
+                <div
+                  className="type-meta truncate mt-0.5"
+                  title={loading ? undefined : formatTokenCount(t.value)}
+                >
+                  {t.hint}
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <p className="type-code text-ink-3 mt-1.5">
-          {inShare}% input
-        </p>
+
+        {/* Input / output ratio bar */}
+        <div className="p-3.5 sm:p-4">
+          <div className="flex items-center justify-between text-xs text-ink-3 mb-1.5">
+            <span className="type-meta">Input share</span>
+            <span className="type-code text-ink-3 tabular-nums">{inShare}% input</span>
+          </div>
+          <div
+            className="h-1.5 w-full overflow-hidden rounded-full bg-sunken"
+            role="img"
+            aria-label={`Input ${inShare} percent, output ${100 - inShare} percent`}
+          >
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-300"
+              style={{ width: `${inShare}%` }}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );

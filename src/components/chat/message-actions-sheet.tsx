@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Copy, Edit2, RotateCcw, Trash2, X } from 'lucide-react';
 import type { Message } from '@/lib/supabase/types';
+import { Sheet } from '@/components/ui/sheet';
 
 export interface MessageActionsSheetProps {
   /**
@@ -19,23 +20,20 @@ export interface MessageActionsSheetProps {
   /** Open the "delete from here" confirm on this row (`MessageRow.onDeleteRequest`). */
   onDelete: () => void;
   onClose: () => void;
+  /** Optional explicit open state for callers controlling visibility directly. */
+  open?: boolean;
 }
 
-const ROW_CLASS =
-  'flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-ink-2 transition-[color,background-color] duration-150 hover:bg-sunken hover:text-ink touch-manipulation';
+const ACTION_ROW_CLASS =
+  'flex min-h-[52px] w-full items-center gap-3 px-4 text-left row-press touch-manipulation transition-colors duration-150';
 
 /**
  * MessageActionsSheet — the mobile bottom sheet behind a transcript row's `⋯`.
  *
- * The whole point of the sheet is de-cluttering the transcript: instead of
- * stacking edit / delete / regenerate chrome on a 390px row, every action lives
- * behind one button and one modal list. Each row is ≥44px tall. The sheet
- * closes on backdrop tap, Escape, the Cancel row, or after firing an action.
- *
- * House sheet conventions (same as `create-drawer.tsx`): backdrop
- * `fixed inset-0 z-50 … bg-background/70 backdrop-blur-sm`, panel `panel` with
- * `rounded-t-3xl sm:rounded-2xl`, and the bottom safe-area padding so the last
- * row clears the home indicator (and the iOS keyboard, if one is up).
+ * Uses `<Sheet>` (vaul) portaled to <body> so transformed parent containers
+ * cannot interfere with positioning. Actions follow the iOS grouped action-sheet
+ * pattern with 52px minimum height, row-press touch feedback, and destructive
+ * actions in an isolated group.
  */
 export function MessageActionsSheet({
   message,
@@ -44,108 +42,96 @@ export function MessageActionsSheet({
   onRegenerate,
   onDelete,
   onClose,
+  open,
 }: MessageActionsSheetProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
+  // Keep showing the last message while the sheet animates closed (the
+  // parent clears `message` the moment it closes).
+  const [lastMessage, setLastMessage] = React.useState(message);
+  if (message && message !== lastMessage) setLastMessage(message);
+  const displayMessage = message ?? lastMessage;
 
-  // Escape dismisses; focus lands on the panel so keyboard users are inside
-  // the dialog immediately. Both are inert while the sheet is closed.
-  useEffect(() => {
-    if (!message) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    panelRef.current?.focus();
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [message, onClose]);
+  const isOpen = open !== undefined ? open && Boolean(displayMessage) : Boolean(message);
+  const isAssistant = displayMessage?.role === 'assistant';
+  const hasContent = (displayMessage?.content?.trim().length ?? 0) > 0;
 
-  if (!message) return null;
-
-  const isAssistant = message.role === 'assistant';
-  const hasContent = message.content.trim().length > 0;
   const act = (fn: () => void) => () => {
     fn();
     onClose();
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
-      // Anchor to the *visual* viewport height when the shell publishes `--app-height`.
-      // The outer page container already applies `translateY(var(--app-offset-top, 0px))`,
-      // so we use top: 0 to prevent double-counting the offsetTop.
-      style={{ top: 0, height: 'var(--app-height, 100dvh)' }}
+    <Sheet
+      open={isOpen}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={displayMessage ? (isAssistant ? 'Character response' : 'Your message') : 'Message'}
+      description={
+        hasContent ? (
+          <span className="line-clamp-2 break-words block">{displayMessage?.content}</span>
+        ) : undefined
+      }
+      hideClose
+      size="auto"
+      bodyClassName="space-y-2.5 px-4 pb-4"
     >
-      {/* The backdrop is a real button — tap anywhere outside the sheet to dismiss. */}
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Dismiss message actions"
-        className="absolute inset-0 cursor-default touch-manipulation"
-      />
+      {!displayMessage ? null : (
+        <>
+          <div className="surface divide-y divide-line overflow-hidden">
+            <button
+              type="button"
+              onClick={act(() => {
+                if (displayMessage.content) onCopy(displayMessage.content);
+              })}
+              disabled={!hasContent}
+              className={`${ACTION_ROW_CLASS} text-ink disabled:opacity-40 disabled:pointer-events-none`}
+            >
+              <Copy className="h-5 w-5 text-ink-2 shrink-0" aria-hidden="true" />
+              <span className="text-[15px] font-medium">Copy message</span>
+            </button>
 
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Message actions"
-        tabIndex={-1}
-        className="panel relative z-10 w-full max-w-md rounded-t-3xl border-t border-line p-3 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] sm:rounded-2xl sm:p-4 animate-in slide-in-from-bottom duration-200"
-      >
-        {/* Which message this is acting on */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="type-label">{isAssistant ? 'Character response' : 'Your message'}</p>
-            {hasContent && (
-              <p className="type-meta mt-0.5 line-clamp-2 break-words">{message.content}</p>
+            <button type="button" onClick={act(onEdit)} className={`${ACTION_ROW_CLASS} text-ink`}>
+              <Edit2 className="h-5 w-5 text-ink-2 shrink-0" aria-hidden="true" />
+              <span className="text-[15px] font-medium">
+                {isAssistant ? 'Edit' : 'Edit and regenerate from here'}
+              </span>
+            </button>
+
+            {isAssistant && (
+              <button
+                type="button"
+                onClick={act(onRegenerate)}
+                className={`${ACTION_ROW_CLASS} text-ink`}
+              >
+                <RotateCcw className="h-5 w-5 text-ink-2 shrink-0" aria-hidden="true" />
+                <span className="text-[15px] font-medium">Regenerate response</span>
+              </button>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="icon-btn shrink-0"
-            aria-label="Close message actions"
-          >
-            <X className="w-4 h-4" aria-hidden />
-          </button>
-        </div>
 
-        <div className="mt-2 space-y-0.5 border-t border-line pt-2">
-          <button
-            type="button"
-            onClick={act(() => onCopy(message.content))}
-            disabled={!hasContent}
-            className={`${ROW_CLASS} disabled:opacity-40`}
-          >
-            <Copy className="w-4 h-4 text-ink-3" aria-hidden />
-            Copy message
-          </button>
-
-          <button type="button" onClick={act(onEdit)} className={ROW_CLASS}>
-            <Edit2 className="w-4 h-4 text-ink-3" aria-hidden />
-            {isAssistant ? 'Edit' : 'Edit and regenerate from here'}
-          </button>
-
-          {isAssistant && (
-            <button type="button" onClick={act(onRegenerate)} className={ROW_CLASS}>
-              <RotateCcw className="w-4 h-4 text-ink-3" aria-hidden />
-              Regenerate response
+          <div className="surface divide-y divide-line overflow-hidden">
+            <button
+              type="button"
+              onClick={act(onDelete)}
+              className={`${ACTION_ROW_CLASS} text-danger`}
+            >
+              <Trash2 className="h-5 w-5 text-danger shrink-0" aria-hidden="true" />
+              <span className="text-[15px] font-medium">Delete from here…</span>
             </button>
-          )}
+          </div>
 
-          <button type="button" onClick={act(onDelete)} className={`${ROW_CLASS} text-danger hover:bg-danger-wash`}>
-            <Trash2 className="w-4 h-4" aria-hidden />
-            Delete from here…
-          </button>
-        </div>
-
-        <div className="mt-2 border-t border-line pt-2">
-          <button type="button" onClick={onClose} className={ROW_CLASS}>
-            <X className="w-4 h-4 text-ink-3" aria-hidden />
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+          <div className="surface overflow-hidden">
+            <button
+              type="button"
+              onClick={onClose}
+              className={`${ACTION_ROW_CLASS} text-ink-2`}
+            >
+              <X className="h-5 w-5 text-ink-2 shrink-0" aria-hidden="true" />
+              <span className="text-[15px] font-medium">Cancel</span>
+            </button>
+          </div>
+        </>
+      )}
+    </Sheet>
   );
 }

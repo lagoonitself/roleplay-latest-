@@ -52,6 +52,32 @@ export default function DuoWatchPage() {
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const loadSeqRef = useRef(0);
 
+  // iOS touch guard: True while a finger is on the transcript (or momentum
+  // from a fling is still running). Auto-scroll must never fight the user's thumb.
+  // Replicated exactly from the main chat pattern.
+  const userTouchingRef = useRef(false);
+  const momentumTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTranscriptTouchStart = () => {
+    userTouchingRef.current = true;
+    if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+  };
+
+  const handleTranscriptTouchEnd = () => {
+    // iOS keeps scrolling after the finger lifts; give momentum time to settle.
+    if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+    momentumTimerRef.current = setTimeout(() => {
+      userTouchingRef.current = false;
+    }, 600);
+  };
+
+  useEffect(
+    () => () => {
+      if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+    },
+    [],
+  );
+
   // Keep the shell sized to the *visible* viewport so the director fields stay
   // above the iOS keyboard instead of behind it.
   useVisualViewportVars();
@@ -65,7 +91,7 @@ export default function DuoWatchPage() {
   }, [settings]);
 
   const scrollToBottom = useCallback((smooth = true) => {
-    if (!isAtBottom) return;
+    if (!isAtBottom || userTouchingRef.current) return;
     // Smooth scrolling is motion too — honour prefers-reduced-motion.
     const reduce =
       typeof window !== 'undefined' &&
@@ -74,9 +100,17 @@ export default function DuoWatchPage() {
     endRef.current?.scrollIntoView({ behavior: smooth && !reduce ? 'smooth' : 'auto', block: 'end' });
   }, [isAtBottom]);
 
+  // TODO(ios): touch guard prevents auto-scrolling when user is touching or flinging
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+    if (!containerRef.current) return;
+    if (!isAtBottom || userTouchingRef.current) return;
+    const isStreaming = messages.some((m) => m.status === 'streaming');
+    if (isStreaming) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    } else {
+      scrollToBottom();
+    }
+  }, [messages, isAtBottom, scrollToBottom]);
 
   // Coalesced: concurrent callers share one in-flight fetch, so background
   // ticks can never stack full chat + transcript refetches before one lands.
@@ -298,76 +332,83 @@ export default function DuoWatchPage() {
       {/* Header */}
       {/* Sticky under the navbar, which is safe-top + 3.5rem tall on notched phones. */}
       <div className="sticky top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-30 bg-background border-b border-line">
-        <div className="px-4 sm:px-6 py-3 flex items-center gap-3">
-          <Link href="/duo" className="icon-btn shrink-0" aria-label="All scenes">
-            <ArrowLeft className="w-5 h-5" aria-hidden />
-          </Link>
-          {duo && (
-            <div className="flex -space-x-2 shrink-0" aria-hidden>
-              {(['a', 'b'] as const).map((s) => (
-                <div key={s} className="w-9 h-9 rounded-md overflow-hidden border border-line bg-background ring-2 ring-background">
-                  <CharacterAvatar name={face(s)?.name || '?'} avatarUrl={face(s)?.avatar_url || null} />
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="font-serif text-[0.95rem] font-medium text-ink truncate">
-              {chat?.title || 'Scene'}
-            </div>
-            <div className="type-meta truncate">
-              {duo ? (
-                <>
-                  {duo.faces.a.name} and {duo.faces.b.name}, turn{' '}
-                  {Math.min(duo.turn + (status === 'running' ? 1 : 0), duo.maxTurns)}/{duo.maxTurns}
-                  {tokens > 0 && <>, {formatTokenCount(tokens)} tokens</>}
-                </>
-              ) : (
-                'Loading…'
-              )}
+        <div className="px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 min-h-14">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <Link href="/duo" className="icon-btn min-h-11 min-w-11 shrink-0" aria-label="All scenes">
+              <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+            </Link>
+            {duo && (
+              <div className="flex -space-x-2 shrink-0" aria-hidden="true">
+                {(['a', 'b'] as const).map((s) => (
+                  <div key={s} className="w-9 h-9 rounded-md overflow-hidden border border-line bg-background ring-2 ring-background">
+                    <CharacterAvatar name={face(s)?.name || '?'} avatarUrl={face(s)?.avatar_url || null} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="font-serif text-[0.95rem] font-medium text-ink truncate">
+                {chat?.title || 'Scene'}
+              </div>
+              <div className="type-meta truncate">
+                {duo ? (
+                  <>
+                    {duo.faces.a.name} and {duo.faces.b.name}, turn{' '}
+                    {Math.min(duo.turn + (status === 'running' ? 1 : 0), duo.maxTurns)}/{duo.maxTurns}
+                    {tokens > 0 && <>, {formatTokenCount(tokens)} tokens</>}
+                  </>
+                ) : (
+                  'Loading…'
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {status === 'running' ? (
               <button
+                type="button"
                 onClick={() => control('pause')}
                 disabled={busy}
-                className="icon-btn text-warn disabled:opacity-50"
-                title="Pause"
+                className="icon-btn min-h-11 min-w-11 text-warn disabled:opacity-50"
+                title="Pause scene"
                 aria-label="Pause scene"
               >
-                <Pause className="w-4 h-4" aria-hidden />
+                <Pause className="w-5 h-5" aria-hidden="true" />
               </button>
             ) : status === 'paused' || status === 'error' ? (
               <button
+                type="button"
                 onClick={() => control('resume')}
                 disabled={busy}
-                className="icon-btn text-ok disabled:opacity-50"
-                title="Resume"
+                className="icon-btn min-h-11 min-w-11 text-ok disabled:opacity-50"
+                title="Resume scene"
                 aria-label="Resume scene"
               >
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <Play className="w-4 h-4" aria-hidden />}
+                {busy ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> : <Play className="w-5 h-5" aria-hidden="true" />}
               </button>
             ) : null}
             {(status === 'paused' || status === 'running') && (
               <button
+                type="button"
                 onClick={() => control('stop')}
                 disabled={busy}
-                className="icon-btn text-danger disabled:opacity-50"
-                title="Stop"
+                className="icon-btn min-h-11 min-w-11 text-danger disabled:opacity-50"
+                title="Stop scene"
                 aria-label="Stop scene"
               >
-                <Square className="w-4 h-4" aria-hidden />
+                <Square className="w-4 h-4" aria-hidden="true" />
               </button>
             )}
             {status === 'done' && duo && duo.turn < DUO_MAX_TURNS_CAP && (
               <button
+                type="button"
                 onClick={() => control('continue')}
                 disabled={busy}
-                className="btn btn-ghost disabled:opacity-50"
+                className="btn btn-ghost min-h-11 px-3 disabled:opacity-50"
                 title={`Add ${DUO_CONTINUE_TURNS} more lines`}
+                aria-label={`Add ${DUO_CONTINUE_TURNS} more lines`}
               >
-                <Plus className="w-3.5 h-3.5 text-accent-text" aria-hidden />
+                <Plus className="w-4 h-4 text-accent-text" aria-hidden="true" />
                 More
               </button>
             )}
@@ -375,7 +416,7 @@ export default function DuoWatchPage() {
         </div>
         {duo?.status === 'error' && duo.lastError && (
           <div className="mx-4 sm:mx-6 mb-3 px-3 py-2 rounded-lg border border-danger-line bg-danger-wash flex items-center gap-2 text-xs text-danger">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             <span className="truncate">{duo.lastError}</span>
           </div>
         )}
@@ -386,11 +427,12 @@ export default function DuoWatchPage() {
         <div className="px-4 sm:px-6 pt-3">
           <div className="surface rounded-xl overflow-hidden">
             <button
+              type="button"
               onClick={() => (directorOpen ? setDirectorOpen(false) : openDirector())}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left"
+              className="w-full flex items-center gap-2.5 px-4 py-3 min-h-11 text-left"
               aria-expanded={directorOpen}
             >
-              <Megaphone className="w-4 h-4 text-ink-3 shrink-0" aria-hidden />
+              <Megaphone className="w-4 h-4 text-ink-3 shrink-0" aria-hidden="true" />
               <span className="type-sec flex-1">Direct this scene</span>
               <span className="flex items-center gap-1">
                 {duo.seed.trim() && <span className="chip">Both hear this</span>}
@@ -423,7 +465,7 @@ export default function DuoWatchPage() {
                     rows={2}
                     maxLength={2000}
                     placeholder="A storm knocks out the lights. They have to trust each other…"
-                    className="field mt-1 resize-none text-xs"
+                    className="field w-full mt-1 resize-y"
                   />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -439,7 +481,7 @@ export default function DuoWatchPage() {
                       rows={2}
                       maxLength={2000}
                       placeholder="You are hiding something. Deflect gently…"
-                      className="field mt-1 resize-none text-xs border-accent-line"
+                      className="field w-full mt-1 resize-y border-accent-line"
                     />
                   </div>
                   <div className="block">
@@ -454,20 +496,21 @@ export default function DuoWatchPage() {
                       rows={2}
                       maxLength={2000}
                       placeholder="You suspect them. Probe without accusing…"
-                      className="field mt-1 resize-none text-xs border-accent-line"
+                      className="field w-full mt-1 resize-y border-accent-line"
                     />
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={saveDirection}
                     disabled={directSaving}
-                    className="btn btn-primary flex-1 disabled:opacity-50"
+                    className="btn btn-primary min-h-11 flex-1 justify-center disabled:opacity-50"
                   >
-                    {directSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />}
+                    {directSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
                     {directSaving ? 'Setting direction…' : 'Set direction'}
                   </button>
-                  <button onClick={() => setDirectorOpen(false)} className="btn btn-quiet">
+                  <button type="button" onClick={() => setDirectorOpen(false)} className="btn btn-quiet min-h-11 px-4">
                     Done
                   </button>
                 </div>
@@ -487,7 +530,12 @@ export default function DuoWatchPage() {
           const el = e.currentTarget;
           setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 120);
         }}
-        className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-6 max-w-3xl w-full mx-auto"
+        onTouchStart={handleTranscriptTouchStart}
+        onTouchEnd={handleTranscriptTouchEnd}
+        onTouchCancel={handleTranscriptTouchEnd}
+        role="log"
+        aria-label="Scene transcript"
+        className="scroll-y min-h-0 flex-1 px-4 sm:px-6 py-5 space-y-6 max-w-3xl w-full mx-auto"
       >
         {duo?.seed && (
           <div className="surface rounded-xl mx-auto max-w-xl px-4 py-3 text-center">
@@ -506,8 +554,8 @@ export default function DuoWatchPage() {
                 <div className="w-8 h-8 rounded-md overflow-hidden shrink-0 mt-0.5 border border-line">
                   <CharacterAvatar name={name} avatarUrl={avatar} />
                 </div>
-                <div className="min-w-0 max-w-[82%] sm:max-w-[75%]">
-                  <div className="type-meta mb-1">
+                <div className="min-w-0 w-full max-w-[92%] sm:max-w-[80%]">
+                  <div className="type-meta mb-1 truncate">
                     {name}
                     {streaming && (
                       <span
@@ -516,7 +564,7 @@ export default function DuoWatchPage() {
                       />
                     )}
                   </div>
-                  <div className="prose-rp">
+                  <div className="prose-rp break-words">
                     {m.content ? (
                       <RoleplayMessageContent content={m.content} role="assistant" characterName={name} scripts={regexScripts} />
                     ) : (
@@ -534,8 +582,8 @@ export default function DuoWatchPage() {
               <div className="w-8 h-8 rounded-md overflow-hidden shrink-0 mt-0.5 border border-line">
                 <CharacterAvatar name={name} avatarUrl={avatar} />
               </div>
-              <div className="min-w-0 max-w-[82%] sm:max-w-[75%] flex flex-col items-end">
-                <div className="type-meta mb-1">
+              <div className="min-w-0 w-full max-w-[92%] sm:max-w-[80%] flex flex-col items-end">
+                <div className="type-meta mb-1 truncate self-end">
                   {name}
                   {streaming && (
                     <span
@@ -545,7 +593,7 @@ export default function DuoWatchPage() {
                   )}
                 </div>
                 <div className="rp-user-bubble rounded-xl rounded-tr-md px-3.5 py-2.5 w-full">
-                  <div className="prose-rp text-[0.95rem]">
+                  <div className="prose-rp break-words text-[0.95rem]">
                     {m.content ? (
                       <RoleplayMessageContent content={m.content} role="assistant" characterName={name} scripts={regexScripts} />
                     ) : (

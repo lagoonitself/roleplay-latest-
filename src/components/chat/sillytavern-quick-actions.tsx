@@ -90,10 +90,17 @@ export function SillyTavernQuickActions({
     <div
       role="toolbar"
       aria-label="Story tools"
-      className="scrollbar-none -mx-1 flex items-center gap-0.5 overflow-x-auto px-1"
+      className="scrollbar-none -mx-1 flex items-center gap-1 overflow-x-auto px-1 py-0.5"
     >
-      <button type="button" onClick={onContinue} disabled={isGenerating} className="tool min-h-8" title="Extend the last reply">
-        <Play aria-hidden className="h-3 w-3" />
+      <button
+        type="button"
+        onClick={onContinue}
+        disabled={isGenerating}
+        className="tool min-h-11 px-2.5"
+        title="Extend the last reply"
+        aria-label="Extend the last reply"
+      >
+        <Play aria-hidden="true" className="h-3.5 w-3.5" />
         Continue
       </button>
 
@@ -101,10 +108,11 @@ export function SillyTavernQuickActions({
         type="button"
         onClick={onImpersonate}
         disabled={isGenerating}
-        className="tool min-h-8"
+        className="tool min-h-11 px-2.5"
         title="Draft your next turn into the composer"
+        aria-label="Draft your next turn into the composer"
       >
-        <UserPen aria-hidden className="h-3.5 w-3.5" />
+        <UserPen aria-hidden="true" className="h-3.5 w-3.5" />
         Write for me
       </button>
 
@@ -112,30 +120,37 @@ export function SillyTavernQuickActions({
         type="button"
         onClick={onToggleAuthorsNote}
         aria-pressed={authorsNoteActive || authorsNoteOpen}
-        className="tool min-h-8"
+        className="tool min-h-11 px-2.5"
         title={authorsNoteActive ? "Author's note is steering the scene" : "Add an author's note to steer the scene"}
+        aria-label={authorsNoteActive ? "Author's note active" : "Add author's note"}
       >
-        <Bookmark aria-hidden className="h-3.5 w-3.5" />
+        <Bookmark aria-hidden="true" className="h-3.5 w-3.5" />
         Note
-        {authorsNoteActive && <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />}
+        {authorsNoteActive && <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />}
       </button>
 
       <button
         type="button"
         onClick={onToggleThinking}
         aria-pressed={thinkingOn}
-        className="tool min-h-8"
+        className="tool min-h-11 px-2.5"
         title={thinkingOn ? 'Thinking is on: slower, more deliberate replies' : 'Let the model think before it writes'}
+        aria-label={thinkingOn ? 'Thinking enabled' : 'Enable thinking'}
       >
-        <Brain aria-hidden className="h-3.5 w-3.5" />
+        <Brain aria-hidden="true" className="h-3.5 w-3.5" />
         Think
       </button>
 
       <Popover.Root open={presetOpen} onOpenChange={setPresetOpen}>
         <Popover.Trigger asChild>
-          <button type="button" className="tool min-h-8" title="House style layered on the character">
+          <button
+            type="button"
+            className="tool min-h-11 px-2.5"
+            title="House style layered on the character"
+            aria-label={`Prompt style: ${activePreset.name}`}
+          >
             <span className="max-w-[9rem] truncate">Style: {activePreset.name}</span>
-            <ChevronDown aria-hidden className="h-3 w-3 opacity-60" />
+            <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 opacity-60 shrink-0" />
           </button>
         </Popover.Trigger>
         <Popover.Portal>
@@ -143,13 +158,13 @@ export function SillyTavernQuickActions({
             side="top"
             align="start"
             sideOffset={8}
-            collisionPadding={12}
-            className="panel z-50 w-72 rounded-xl p-1.5 animate-in fade-in duration-150"
+            collisionPadding={8}
+            className="panel z-50 w-[min(20rem,calc(100vw-1rem))] max-h-[min(60dvh,var(--radix-popper-available-height,60dvh))] scroll-y rounded-xl p-1.5 animate-in fade-in duration-150"
           >
             <p className="type-meta px-2 pb-1 pt-0.5">
               Layered under the character. The chat’s content rating still applies.
             </p>
-            <div role="menu" className="max-h-64 space-y-0.5 overflow-y-auto">
+            <div role="menu" className="space-y-0.5">
               {presets.map((preset) => {
                 const active = preset.id === activePreset.id;
                 return (
@@ -162,7 +177,7 @@ export function SillyTavernQuickActions({
                       onSelectPreset(preset);
                       setPresetOpen(false);
                     }}
-                    className={`flex min-h-8 w-full items-start justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 hover:bg-sunken ${
+                    className={`flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left row-press transition-colors duration-150 hover:bg-sunken ${
                       active ? 'text-accent-text' : 'text-ink-2 hover:text-ink'
                     }`}
                   >
@@ -170,7 +185,7 @@ export function SillyTavernQuickActions({
                       <span className="block text-xs font-medium">{preset.name}</span>
                       <span className="block truncate text-[11px] text-ink-3">{preset.description}</span>
                     </span>
-                    {active && <Check aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                    {active && <Check aria-hidden="true" className="h-4 w-4 shrink-0" />}
                   </button>
                 );
               })}
@@ -179,53 +194,59 @@ export function SillyTavernQuickActions({
         </Popover.Portal>
       </Popover.Root>
 
-      <span className="tool-sep mx-1" aria-hidden />
+      <span className="tool-sep mx-1" aria-hidden="true" />
 
       <button
         type="button"
         disabled={isGenerating}
         onClick={() => onFormat('“', '”')}
-        className="tool min-h-8 min-w-8 px-2 justify-center"
+        className="tool min-h-11 min-w-11 justify-center px-0"
         title="Dialogue: wrap in quotes"
         aria-label="Wrap in quotes"
       >
-        <Quote aria-hidden className="h-3.5 w-3.5" />
+        <Quote aria-hidden="true" className="h-3.5 w-3.5" />
       </button>
       <button
         type="button"
         disabled={isGenerating}
         onClick={() => onFormat('*', '*')}
-        className="tool min-h-8 min-w-8 px-2 justify-center"
+        className="tool min-h-11 min-w-11 justify-center px-0"
         title="Action: wrap in asterisks"
         aria-label="Wrap in asterisks"
       >
-        <Asterisk aria-hidden className="h-3.5 w-3.5" />
+        <Asterisk aria-hidden="true" className="h-3.5 w-3.5" />
       </button>
       <button
         type="button"
         disabled={isGenerating}
         onClick={() => onFormat('(( ', ' ))')}
-        className="tool min-h-8 min-w-8 px-2 justify-center"
+        className="tool min-h-11 min-w-11 justify-center px-0"
         title="Out of character: a note to the AI"
         aria-label="Out-of-character note"
       >
-        <MessageSquareCode aria-hidden className="h-3.5 w-3.5" />
+        <MessageSquareCode aria-hidden="true" className="h-3.5 w-3.5" />
       </button>
       <button
         type="button"
         disabled={isGenerating}
         onClick={() => onFormat('||', '||')}
-        className="tool min-h-8 min-w-8 px-2 justify-center"
+        className="tool min-h-11 min-w-11 justify-center px-0"
         title="Spoiler: hidden until tapped"
         aria-label="Wrap as spoiler"
       >
-        <EyeOff aria-hidden className="h-3.5 w-3.5" />
+        <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />
       </button>
 
       <Popover.Root open={diceOpen} onOpenChange={setDiceOpen}>
         <Popover.Trigger asChild>
-          <button type="button" disabled={isGenerating} className="tool min-h-8 min-w-8 px-2 justify-center" aria-label="Insert a dice roll" title="Insert a dice roll">
-            <Dices aria-hidden className="h-3.5 w-3.5" />
+          <button
+            type="button"
+            disabled={isGenerating}
+            className="tool min-h-11 min-w-11 justify-center px-0"
+            aria-label="Insert a dice roll"
+            title="Insert a dice roll"
+          >
+            <Dices aria-hidden="true" className="h-3.5 w-3.5" />
           </button>
         </Popover.Trigger>
         <Popover.Portal>
@@ -233,11 +254,11 @@ export function SillyTavernQuickActions({
             side="top"
             align="end"
             sideOffset={8}
-            collisionPadding={12}
-            className="panel z-50 w-48 rounded-xl p-1.5 animate-in fade-in duration-150"
+            collisionPadding={8}
+            className="panel z-50 w-[min(20rem,calc(100vw-1rem))] max-h-[min(60dvh,var(--radix-popper-available-height,60dvh))] scroll-y rounded-xl p-1.5 animate-in fade-in duration-150"
           >
             <p className="type-meta px-2 pb-1 pt-0.5">Rolled when you send</p>
-            <div role="menu">
+            <div role="menu" className="space-y-0.5">
               {COMMON_DICE.map((d) => (
                 <button
                   key={d.formula}
@@ -248,7 +269,7 @@ export function SillyTavernQuickActions({
                     onFormat(`{{roll::${d.formula}}}`, '', '');
                     setDiceOpen(false);
                   }}
-                  className="flex min-h-8 w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-ink-2 transition-colors duration-150 hover:bg-sunken hover:text-ink"
+                  className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-ink-2 row-press transition-colors duration-150 hover:bg-sunken hover:text-ink"
                 >
                   <span className="font-mono font-semibold text-accent-text">{d.formula}</span>
                   <span className="text-[11px] text-ink-3">{d.desc}</span>
@@ -263,11 +284,11 @@ export function SillyTavernQuickActions({
         <button
           type="button"
           onClick={onToggleSound}
-          className="tool min-h-8 min-w-8 ml-auto px-2 justify-center"
+          className="tool min-h-11 min-w-11 ml-auto justify-center px-0"
           aria-label={soundOn ? 'Mute sound effects' : 'Turn on sound effects'}
           title={soundOn ? 'Mute sound effects' : 'Turn on sound effects'}
         >
-          {soundOn ? <Volume2 aria-hidden className="h-3.5 w-3.5" /> : <VolumeX aria-hidden className="h-3.5 w-3.5" />}
+          {soundOn ? <Volume2 aria-hidden="true" className="h-3.5 w-3.5" /> : <VolumeX aria-hidden="true" className="h-3.5 w-3.5" />}
         </button>
       )}
     </div>

@@ -11,62 +11,50 @@ interface MobileDockProps {
   totalChatsCount?: number;
 }
 
-export function MobileDock({ activeTab, onTabChange, totalChatsCount = 0 }: MobileDockProps) {
-  const tabClass = (active: boolean) =>
-    `flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
-      active ? 'text-accent-text bg-accent-wash' : 'text-ink-3 hover:text-ink'
-    }`;
+const TABS: { id: AppTab; label: string; Icon: typeof Compass }[] = [
+  { id: 'explore', label: 'Explore', Icon: Compass },
+  { id: 'chats', label: 'Chats', Icon: MessagesSquare },
+  { id: 'create', label: 'Create', Icon: Plus },
+  { id: 'profile', label: 'Profile', Icon: User },
+];
 
+/**
+ * iOS-style tab bar: full width, pinned to the bottom edge, icon over label,
+ * home-indicator safe area included. Screens that render it add `.pb-dock`
+ * to their scrolling content so nothing sits underneath it.
+ */
+export function MobileDock({ activeTab, onTabChange, totalChatsCount = 0 }: MobileDockProps) {
   return (
     <nav
-      aria-label="App Navigation"
-      className="pointer-events-none fixed right-0 bottom-0 left-0 z-40 flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] md:hidden"
+      aria-label="App navigation"
+      className="tabbar fixed inset-x-0 bottom-0 z-40 pb-safe pl-safe pr-safe md:hidden"
     >
-      <div className="panel bg-raised pointer-events-auto flex items-center gap-1 rounded-full border-line px-2 py-1.5 shadow-float">
-        {/* Tab 1: Explore / Home */}
-        <button
-          onClick={() => onTabChange('explore')}
-          className={tabClass(activeTab === 'explore')}
-          title="Explore Characters"
-          aria-label="Explore"
-        >
-          <Compass className="h-5 w-5" aria-hidden="true" />
-        </button>
-
-        {/* Tab 2: My Chats */}
-        <button
-          onClick={() => onTabChange('chats')}
-          className={`relative ${tabClass(activeTab === 'chats')}`}
-          title="My Chats"
-          aria-label="My Chats"
-        >
-          <MessagesSquare className="h-5 w-5" aria-hidden="true" />
-          {totalChatsCount > 0 && (
-            <span className="chip chip-accent absolute -top-1 -right-1 min-w-[18px] justify-center px-1 tabular-nums">
-              {totalChatsCount > 99 ? '99+' : totalChatsCount}
-            </span>
-          )}
-        </button>
-
-        {/* Tab 3: Create Character / Import Card */}
-        <button
-          onClick={() => onTabChange('create')}
-          className={tabClass(activeTab === 'create')}
-          title="Create Character or Import Card"
-          aria-label="Create or Import"
-        >
-          <Plus className="h-5 w-5" aria-hidden="true" />
-        </button>
-
-        {/* Tab 4: Dedicated Profile section (account, personas, token usage) */}
-        <button
-          onClick={() => onTabChange('profile')}
-          className={tabClass(activeTab === 'profile')}
-          title="Profile"
-          aria-label="Profile"
-        >
-          <User className="h-5 w-5" aria-hidden="true" />
-        </button>
+      <div className="mx-auto flex h-[3.25rem] max-w-md items-stretch">
+        {TABS.map(({ id, label, Icon }) => {
+          const active = activeTab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onTabChange(id)}
+              aria-label={label}
+              aria-current={active ? 'page' : undefined}
+              className={`relative flex flex-1 flex-col items-center justify-center gap-0.5 pt-1 transition-colors active:opacity-60 ${
+                active ? 'text-accent-text' : 'text-ink-3'
+              }`}
+            >
+              <span className="relative">
+                <Icon className="h-[22px] w-[22px]" strokeWidth={active ? 2.1 : 1.7} aria-hidden="true" />
+                {id === 'chats' && totalChatsCount > 0 && (
+                  <span className="bg-accent text-accent-ink absolute -top-1.5 -right-2.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold tabular-nums">
+                    {totalChatsCount > 99 ? '99+' : totalChatsCount}
+                  </span>
+                )}
+              </span>
+              <span className="text-[10px] leading-none font-medium">{label}</span>
+            </button>
+          );
+        })}
       </div>
     </nav>
   );

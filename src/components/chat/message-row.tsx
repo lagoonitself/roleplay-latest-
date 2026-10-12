@@ -152,8 +152,13 @@ export const MessageRow = React.memo(function MessageRow({
         <span className="type-label">
           {isAssistant ? 'Editing response' : 'Editing your message'}
         </span>
-        <button type="button" onClick={onCancelEdit} className="icon-btn w-8 h-8" aria-label="Close editor">
-          <X className="w-3.5 h-3.5" aria-hidden />
+        <button
+          type="button"
+          onClick={onCancelEdit}
+          className="icon-btn min-h-11 min-w-11"
+          aria-label="Close editor"
+        >
+          <X className="w-4 h-4" aria-hidden />
         </button>
       </div>
 
@@ -173,24 +178,28 @@ export const MessageRow = React.memo(function MessageRow({
           if (e.key === 'Escape') onCancelEdit();
           else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) onSaveEdit();
         }}
-        rows={isAssistant ? 5 : 4}
-        className="field resize-y min-h-[7rem] text-sm leading-relaxed"
+        rows={Math.max(4, isAssistant ? 5 : 4)}
+        className="field w-full resize-y min-h-[7rem] leading-relaxed"
         placeholder={isAssistant ? 'Edit character response…' : 'Edit your message…'}
         aria-label={isAssistant ? 'Edit character response' : 'Edit your message'}
         autoFocus
       />
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="type-meta hidden sm:inline">Ctrl + Enter to save, Esc to cancel</span>
-        <div className="flex items-center gap-2 ml-auto">
-          <button type="button" onClick={onCancelEdit} className="btn btn-quiet">
+        <div className="flex items-center gap-2 justify-end ml-auto">
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="btn btn-quiet min-h-11 px-4"
+          >
             Cancel
           </button>
           <button
             type="button"
             onClick={onSaveEdit}
             disabled={isGenerating || !editingText.trim()}
-            className="btn btn-primary"
+            className="btn btn-primary min-h-11 px-4"
           >
             {isAssistant ? (
               <>
@@ -211,10 +220,10 @@ export const MessageRow = React.memo(function MessageRow({
   const deleteConfirm = (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-danger-line bg-danger-wash px-3 py-2 text-danger animate-in fade-in slide-in-from-top-1 duration-150">
       <span className="mr-auto text-sm font-medium text-danger">{deleteLabel}</span>
-      <button type="button" onClick={onCancelDelete} className="btn btn-quiet">
+      <button type="button" onClick={onCancelDelete} className="btn btn-quiet min-h-11 px-3">
         Keep
       </button>
-      <button type="button" onClick={() => onDeleteRequest(message.id)} className="btn btn-danger">
+      <button type="button" onClick={() => onDeleteRequest(message.id)} className="btn btn-danger min-h-11 px-3">
         <Trash2 className="w-3.5 h-3.5" aria-hidden />
         Delete {deleteCount} message{deleteCount === 1 ? '' : 's'}
       </button>
@@ -222,53 +231,51 @@ export const MessageRow = React.memo(function MessageRow({
   );
 
   const rowActions = (
-    // Hover/focus reveal at sm:+ on mouse/hover devices only. On touch screens
-    // (hover: none) or below sm, the strip is hidden and the ⋯ button takes over
-    // so touch users have full access to message actions without hover traps.
-    <div className="hidden items-center gap-0.5 opacity-0 pointer-events-none transition-[opacity] duration-150 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto [@media(hover:hover)]:sm:flex">
+    // Visible on mobile in a compact row; on md: hover-reveal on hover-capable devices
+    <div className={`flex flex-wrap items-center gap-1 text-ink-3 pt-1 transition-[opacity] duration-150 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 ${isAssistant ? 'w-full justify-start' : 'w-full justify-end'}`}>
       {message.content && (
-        <span className="type-meta mr-auto select-none pl-1">{countWords(message.content)} words</span>
+        <span className="type-meta mr-auto select-none pl-1 text-ink-3">{countWords(message.content)} words</span>
       )}
       <button
         type="button"
         onClick={() => onCopy(message.content)}
-        className="icon-btn"
+        className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-ink"
         title="Copy message"
         aria-label="Copy message"
       >
-        <Copy className="w-3.5 h-3.5" aria-hidden />
+        <Copy className="w-4 h-4" aria-hidden />
       </button>
       <button
         type="button"
         onClick={() => onStartEdit(message)}
         disabled={isGenerating}
-        className="icon-btn disabled:opacity-40"
+        className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-ink disabled:opacity-40"
         title={isAssistant ? 'Edit response' : 'Edit and regenerate from here'}
         aria-label={isAssistant ? 'Edit response' : 'Edit and regenerate from here'}
       >
-        <Edit2 className="w-3.5 h-3.5" aria-hidden />
+        <Edit2 className="w-4 h-4" aria-hidden />
       </button>
       {isAssistant && (
         <button
           type="button"
           onClick={() => onRegenerate(index)}
           disabled={isGenerating}
-          className="icon-btn disabled:opacity-40"
+          className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-ink disabled:opacity-40"
           title="Regenerate response"
           aria-label="Regenerate response"
         >
-          <RotateCcw className="w-3.5 h-3.5" aria-hidden />
+          <RotateCcw className="w-4 h-4" aria-hidden />
         </button>
       )}
       <button
         type="button"
         onClick={() => onDeleteRequest(message.id)}
         disabled={isGenerating}
-        className="icon-btn hover:text-danger disabled:opacity-40"
+        className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-danger disabled:opacity-40"
         title={`${deleteLabel} — delete from here`}
         aria-label={`${deleteLabel} — delete from here`}
       >
-        <Trash2 className="w-3.5 h-3.5" aria-hidden />
+        <Trash2 className="w-4 h-4" aria-hidden />
       </button>
     </div>
   );
@@ -277,7 +284,7 @@ export const MessageRow = React.memo(function MessageRow({
     <button
       type="button"
       onClick={() => onOpenActions(message)}
-      className="icon-btn [@media(hover:hover)]:sm:hidden"
+      className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-ink [@media(hover:hover)]:sm:hidden"
       title="Message actions"
       aria-label="Message actions"
     >
@@ -288,13 +295,13 @@ export const MessageRow = React.memo(function MessageRow({
   return (
     <div
       data-msg-id={message.id}
-      className={`msg-row group flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}
+      className={`msg-row group flex flex-col w-full ${isAssistant ? 'items-start' : 'items-end'}`}
     >
       {isAssistant ? (
         <div className="w-full space-y-1.5">
           {/* Author line, swipe versions, and the mobile action entry */}
           <div className="flex items-center gap-2 px-1">
-            <div className="w-6 h-6 rounded-md overflow-hidden shrink-0 border border-line">
+            <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-line">
               <CharacterAvatar
                 name={charName}
                 avatarUrl={character?.avatar_url}
@@ -320,22 +327,22 @@ export const MessageRow = React.memo(function MessageRow({
                     type="button"
                     onClick={() => onSwipe(index, 'prev')}
                     disabled={swipeIndex === 0}
-                    className="icon-btn w-8 h-8 disabled:opacity-30"
+                    className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-ink disabled:opacity-30"
                     aria-label="Previous version"
                   >
-                    <ChevronLeft className="w-3.5 h-3.5" aria-hidden />
+                    <ChevronLeft className="w-4 h-4" aria-hidden />
                   </button>
-                  <span className="type-meta tabular-nums">
+                  <span className="type-meta tabular-nums px-1 text-center select-none">
                     {swipeIndex + 1}/{swipes.length}
                   </span>
                   <button
                     type="button"
                     onClick={() => onSwipe(index, 'next')}
                     disabled={swipeIndex === swipes.length - 1}
-                    className="icon-btn w-8 h-8 disabled:opacity-30"
+                    className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-ink disabled:opacity-30"
                     aria-label="Next version"
                   >
-                    <ChevronRight className="w-3.5 h-3.5" aria-hidden />
+                    <ChevronRight className="w-4 h-4" aria-hidden />
                   </button>
                 </div>
               )}
@@ -374,7 +381,7 @@ export const MessageRow = React.memo(function MessageRow({
                       type="button"
                       onClick={() => onRegenerate(index)}
                       disabled={isGenerating || Boolean(editingMsgId) || actionsHidden}
-                      className="btn btn-ghost disabled:opacity-40 disabled:pointer-events-none"
+                      className="btn btn-ghost min-h-11 disabled:opacity-40 disabled:pointer-events-none"
                     >
                       <RotateCcw className="h-3.5 w-3.5" aria-hidden />
                       Try again
@@ -408,7 +415,7 @@ export const MessageRow = React.memo(function MessageRow({
                       type="button"
                       onClick={() => onRegenerate(index)}
                       disabled={isGenerating || Boolean(editingMsgId) || actionsHidden}
-                      className="btn btn-ghost self-start sm:self-auto disabled:opacity-40 disabled:pointer-events-none"
+                      className="btn btn-ghost self-start sm:self-auto min-h-11 disabled:opacity-40 disabled:pointer-events-none"
                     >
                       <RotateCcw className="w-3.5 h-3.5" aria-hidden />
                       <span>Regenerate</span>
@@ -422,7 +429,7 @@ export const MessageRow = React.memo(function MessageRow({
           {isConfirmingDelete ? deleteConfirm : showBar && rowActions}
         </div>
       ) : (
-        <div className="max-w-[85%] space-y-1 sm:max-w-[72%]">
+        <div className="ml-auto w-full max-w-[85%] space-y-1 sm:max-w-[72%]">
           {/* Persona line and the mobile action entry */}
           <div className="flex items-center justify-end gap-1.5 px-1">
             {showBar && moreButton}
@@ -433,7 +440,7 @@ export const MessageRow = React.memo(function MessageRow({
               </span>
             )}
             <span className="type-meta truncate">{userName}</span>
-            <div className="w-5 h-5 rounded-md overflow-hidden shrink-0 border border-line">
+            <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-line">
               <CharacterAvatar name={userName} avatarUrl={activePersona?.avatar_url} className="w-full h-full" />
             </div>
           </div>
@@ -441,7 +448,7 @@ export const MessageRow = React.memo(function MessageRow({
           {isEditing ? (
             editor
           ) : (
-            <div className="rp-user-bubble prose-rp rounded-xl rounded-tr-sm px-3.5 py-3 select-text sm:px-4 text-[0.95rem] leading-[1.7]">
+            <div className="ml-auto rounded-2xl bg-sunken border border-line px-4 py-2.5 prose-rp select-text text-[0.95rem] leading-[1.7]">
               <RoleplayMessageContent
                 content={message.content}
                 characterName={charName}

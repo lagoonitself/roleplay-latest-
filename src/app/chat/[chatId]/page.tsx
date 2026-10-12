@@ -523,12 +523,38 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on viewport changes
   }, [keyboardOpen, keyboardViewportHeight]);
 
+  // True while a finger is on the transcript (or momentum from a fling is
+  // still running). Streaming follow must never yank the list out from under
+  // the user's thumb — that fight is what made scrolling feel broken on iOS.
+  const userTouchingRef = useRef(false);
+  const momentumTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleChatScroll = () => {
     const el = chatContainerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     setIsAtBottom(distanceFromBottom < 120);
   };
+
+  const handleTranscriptTouchStart = () => {
+    userTouchingRef.current = true;
+    if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+  };
+
+  const handleTranscriptTouchEnd = () => {
+    // iOS keeps scrolling after the finger lifts; give momentum time to settle.
+    if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+    momentumTimerRef.current = setTimeout(() => {
+      userTouchingRef.current = false;
+    }, 600);
+  };
+
+  useEffect(
+    () => () => {
+      if (momentumTimerRef.current) clearTimeout(momentumTimerRef.current);
+    },
+    [],
+  );
 
   // 1. Load Persona, Character, Messages, State
   useEffect(() => {
@@ -1136,7 +1162,7 @@ export default function ChatPage() {
   // Intelligent auto-scroll: locks to bottom only when user is near bottom
   useEffect(() => {
     if (!chatContainerRef.current) return;
-    if (isAtBottom) {
+    if (isAtBottom && !userTouchingRef.current) {
       if (isGenerating) {
         // Fast hardware-accelerated follow during streaming (zero smooth-scroll lockouts)
         chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -2707,7 +2733,7 @@ export default function ChatPage() {
       style={{ height: 'var(--app-height, 100dvh)', transform: 'translateY(var(--app-offset-top, 0px))' }}
     >
       {/* Mobile-First Immersive Top Header */}
-      <header className="pt-safe px-1.5 sm:px-6 bg-background border-b border-line shrink-0 z-30">
+      <header className="pt-safe pl-safe pr-safe px-1.5 sm:px-6 bg-background border-b border-line shrink-0 z-30">
         <div className="h-12 sm:h-14 flex items-center justify-between">
           {/* Left: Back & Character Identity */}
         <div className="flex items-center gap-1 sm:gap-3 min-w-0">
@@ -2721,7 +2747,7 @@ export default function ChatPage() {
           </Link>
 
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md overflow-hidden shrink-0 border border-line relative">
+            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-line relative">
               <CharacterAvatar
                 name={character?.name || 'Character'}
                 avatarUrl={character?.avatar_url}
@@ -2732,7 +2758,7 @@ export default function ChatPage() {
 
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-semibold tracking-tight truncate">
+                <span className="text-[15px] font-semibold truncate">
                   {character?.name}
                 </span>
                 {character?.content_rating !== 'sfw' && (
@@ -2741,8 +2767,8 @@ export default function ChatPage() {
                   </span>
                 )}
               </div>
-              <p className="type-meta truncate hidden sm:block">
-                {character?.tagline}
+              <p className="type-meta truncate">
+                {activePersona?.name ? `as ${activePersona.name}` : (character?.tagline || '')}
               </p>
             </div>
           </div>
@@ -2853,9 +2879,12 @@ export default function ChatPage() {
         <div
           ref={chatContainerRef}
           onScroll={handleChatScroll}
+          onTouchStart={handleTranscriptTouchStart}
+          onTouchEnd={handleTranscriptTouchEnd}
+          onTouchCancel={handleTranscriptTouchEnd}
           role="log"
           aria-label="Conversation"
-          className="flex-1 overflow-y-auto overscroll-contain px-3 sm:px-6 py-4 sm:py-6 space-y-5 scroll-smooth"
+          className="scroll-y flex-1 px-3 sm:px-6 py-4 sm:py-6 space-y-5"
         >
           <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end space-y-5 pb-6">
             {messages.map((message, index) => (
@@ -2892,15 +2921,15 @@ export default function ChatPage() {
         {!isAtBottom && messages.length > 2 && (
           <button
             onClick={() => scrollToBottom(true)}
-            aria-label="Jump to latest message"
-            className="panel absolute bottom-4 right-4 sm:right-8 z-30 px-3.5 py-1.5 rounded-full bg-raised border-line shadow-raised flex items-center gap-2 text-xs font-semibold text-ink animate-in fade-in duration-150"
-            title="Jump to latest message"
+            aria-label="Scroll to latest message"
+            className="panel absolute bottom-3 left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-8 z-30 w-10 h-10 sm:w-auto sm:h-auto sm:px-3.5 sm:py-1.5 rounded-full bg-raised border border-line shadow-raised flex items-center justify-center gap-2 text-xs font-semibold text-ink animate-in fade-in duration-150"
+            title="Scroll to latest message"
           >
             {isGenerating && (
-              <span className="h-2 w-2 rounded-full bg-accent pulse-soft" aria-hidden />
+              <span className="h-2 w-2 rounded-full bg-accent pulse-soft shrink-0" aria-hidden />
             )}
-            <span>Jump to latest</span>
-            <ChevronDown className="w-3.5 h-3.5" aria-hidden />
+            <span className="hidden sm:inline">Jump to latest</span>
+            <ChevronDown className="w-4 h-4 shrink-0" aria-hidden />
           </button>
         )}
 
@@ -2968,7 +2997,7 @@ export default function ChatPage() {
         <div className="max-w-3xl mx-auto space-y-1.5 sm:space-y-2">
           {/* Author's Note Quick Drawer */}
           {showAuthorsNote && (
-            <div className="surface p-3 space-y-2">
+            <div className="surface p-2.5 sm:p-3 rounded-xl space-y-1.5 border border-line">
               <div className="flex items-center justify-between">
                 <span className="type-meta font-semibold text-ink-2 flex items-center gap-1.5">
                   <Bookmark className="w-3.5 h-3.5" aria-hidden />
@@ -2976,7 +3005,7 @@ export default function ChatPage() {
                 </span>
                 <button
                   onClick={() => setShowAuthorsNote(false)}
-                  className="icon-btn w-8 h-8"
+                  className="icon-btn"
                   aria-label="Close author’s note"
                 >
                   <X className="w-4 h-4" aria-hidden />
@@ -3018,7 +3047,7 @@ export default function ChatPage() {
           />
 
           {/* Input Box with Big Thumb Send Button */}
-          <div className="well relative flex items-end gap-2 p-1 sm:p-2 rounded-3xl">
+          <div className="well relative flex items-end gap-2 p-1.5 rounded-3xl">
             <textarea
               ref={textareaRef}
               rows={1}
@@ -3030,15 +3059,17 @@ export default function ChatPage() {
                   handleSendMessage();
                 }
               }}
+              enterKeyHint="send"
+              autoCorrect="on"
               placeholder={isImpersonating ? 'Drafting your turn…' : `Write your turn as ${activePersona?.name || 'you'}…`}
               aria-label="Write your turn"
-              className="flex-1 bg-transparent px-3 py-2 text-base sm:text-sm text-ink focus:outline-none resize-none max-h-32 sm:max-h-40 min-h-[40px] leading-snug sm:leading-relaxed"
+              className="flex-1 bg-transparent py-2.5 px-4 text-base sm:text-sm text-ink focus:outline-none resize-none max-h-40 scroll-y leading-6"
             />
 
             {isGenerating ? (
               <button
                 onClick={handleStop}
-                className="btn btn-danger w-10 h-10 p-0 shrink-0"
+                className="btn btn-danger w-9 h-9 p-0 rounded-full shrink-0 mb-0.5 mr-0.5"
                 title="Stop generating"
                 aria-label="Stop generating"
               >
@@ -3048,7 +3079,7 @@ export default function ChatPage() {
               <button
                 onClick={() => handleSendMessage()}
                 disabled={!inputText.trim()}
-                className="icon-btn w-10 h-10 bg-accent text-accent-ink hover:bg-accent-hover disabled:opacity-40 shrink-0"
+                className="icon-btn w-9 h-9 rounded-full bg-accent text-accent-ink hover:bg-accent-hover disabled:opacity-40 shrink-0 mb-0.5 mr-0.5"
                 title="Send message"
                 aria-label="Send message"
               >

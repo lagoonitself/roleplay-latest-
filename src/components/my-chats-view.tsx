@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search,
   SlidersHorizontal,
@@ -29,11 +29,31 @@ export function MyChatsView({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<'recent' | 'name' | 'chats'>('recent');
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close sort menu on Escape or outside click
+  useEffect(() => {
+    if (!showSortMenu) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowSortMenu(false);
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setShowSortMenu(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSortMenu]);
 
   // Filter and sort groups
   const filteredGroups = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
     const result = groups.filter((g) => {
-      const q = searchQuery.toLowerCase().trim();
       if (!q) return true;
       return (
         g.character.name.toLowerCase().includes(q) ||
@@ -42,15 +62,18 @@ export function MyChatsView({
       );
     });
 
-    if (sortOption === 'recent') {
-      result.sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
-    } else if (sortOption === 'name') {
-      result.sort((a, b) => a.character.name.localeCompare(b.character.name));
-    } else if (sortOption === 'chats') {
-      result.sort((a, b) => b.chats.length - a.chats.length);
-    }
-
-    return result;
+    return [...result].sort((a, b) => {
+      if (sortOption === 'recent') {
+        return new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime();
+      }
+      if (sortOption === 'name') {
+        return a.character.name.localeCompare(b.character.name);
+      }
+      if (sortOption === 'chats') {
+        return b.chats.length - a.chats.length;
+      }
+      return 0;
+    });
   }, [groups, searchQuery, sortOption]);
 
   const sortOptions = [
@@ -60,33 +83,43 @@ export function MyChatsView({
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col space-y-4 px-4 pt-3 pb-24 sm:px-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col space-y-4 px-4 pt-3 pb-6 sm:px-6">
       {/* Top Bar: Sort | "My chats" | Settings */}
       <div className="relative flex h-12 items-center justify-between">
         {/* Left: Filter / Sort button */}
         <div className="relative">
           <button
+            type="button"
             onClick={() => setShowSortMenu(!showSortMenu)}
             className={`icon-btn border ${
               showSortMenu ? 'text-accent-text bg-accent-wash border-accent-line' : 'text-ink-2 border-line'
             }`}
             aria-label="Sort conversations"
             aria-expanded={showSortMenu}
+            aria-haspopup="true"
           >
             <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
           </button>
 
           {showSortMenu && (
-            <div className="panel bg-raised absolute top-full left-0 z-30 mt-2 w-48 p-1.5 animate-in fade-in duration-150">
+            <div
+              ref={sortMenuRef}
+              role="menu"
+              aria-label="Sort options"
+              className="panel bg-raised shadow-float absolute top-full left-0 z-30 mt-2 w-48 p-1.5 animate-in fade-in duration-150"
+            >
               <div className="type-meta px-3 py-1.5">Sort conversations</div>
               {sortOptions.map((option) => (
                 <button
                   key={option.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sortOption === option.value}
                   onClick={() => {
                     setSortOption(option.value);
                     setShowSortMenu(false);
                   }}
-                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition-colors ${
+                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs transition-colors ${
                     sortOption === option.value
                       ? 'text-accent-text bg-accent-wash font-medium'
                       : 'text-ink-2 hover:text-ink'
@@ -107,6 +140,7 @@ export function MyChatsView({
 
         {/* Right: Settings button */}
         <button
+          type="button"
           onClick={onOpenSettings}
           className="icon-btn border border-line text-ink-2"
           aria-label="Settings"
@@ -122,7 +156,11 @@ export function MyChatsView({
           aria-hidden="true"
         />
         <input
-          type="text"
+          type="search"
+          enterKeyHint="search"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           placeholder="Search by name, e.g. Elara…"
           aria-label="Search your chats"
           value={searchQuery}
@@ -131,6 +169,7 @@ export function MyChatsView({
         />
         {searchQuery && (
           <button
+            type="button"
             onClick={() => setSearchQuery('')}
             aria-label="Clear search"
             className="icon-btn absolute top-1/2 right-2 h-7 w-7 -translate-y-1/2"
@@ -140,7 +179,7 @@ export function MyChatsView({
         )}
       </div>
 
-      {/* Character index */}
+      {/* Character index as iOS-style list */}
       <div className="divide-y divide-line">
         {filteredGroups.length === 0 ? (
           <div className="space-y-4 px-6 py-16 text-center">
@@ -155,7 +194,11 @@ export function MyChatsView({
               </p>
             </div>
             {!searchQuery && (
-              <button onClick={onExploreClick} className="btn btn-primary text-xs">
+              <button
+                type="button"
+                onClick={onExploreClick}
+                className="btn btn-primary text-xs"
+              >
                 <Compass className="h-4 w-4" aria-hidden="true" />
                 Explore characters
               </button>
@@ -166,14 +209,34 @@ export function MyChatsView({
             const timeStr = formatChatTimestamp(group.lastMessageAt);
             const chatCount = group.chats.length;
 
+            const latestChat =
+              group.chats.length > 0
+                ? [...group.chats].sort((a, b) => {
+                    const timeA = new Date(a.last_message_at || a.created_at || 0).getTime();
+                    const timeB = new Date(b.last_message_at || b.created_at || 0).getTime();
+                    return timeB - timeA;
+                  })[0]
+                : null;
+
+            const cleanTitle = latestChat?.title?.replace(/^Chat with\s+/i, '').trim();
+            const hasCustomTitle = Boolean(
+              cleanTitle && cleanTitle.toLowerCase() !== group.character.name.toLowerCase()
+            );
+            const preview =
+              (hasCustomTitle ? cleanTitle : null) ||
+              group.character.first_message ||
+              group.character.tagline ||
+              'Start the story…';
+
             return (
-              <div
+              <button
                 key={group.characterId}
+                type="button"
                 onClick={() => onSelectCharacter(group.character)}
-                className="group flex cursor-pointer items-center justify-between gap-3.5 py-3 transition-colors hover:bg-[color-mix(in_oklab,var(--ink)_4%,transparent)]"
+                className="row-press group flex min-h-16 w-full items-center gap-3.5 py-3 text-left transition-colors"
               >
-                {/* Left: portrait plate */}
-                <div className="bg-sunken h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-line">
+                {/* Left: portrait plate 48px */}
+                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-line bg-sunken">
                   <CharacterAvatar
                     name={group.character.name}
                     avatarUrl={group.character.avatar_url}
@@ -182,31 +245,38 @@ export function MyChatsView({
                   />
                 </div>
 
-                {/* Center: name and counts */}
+                {/* Center: name, last message preview, and timestamp */}
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-serif text-[17px] leading-snug text-ink">
-                    {group.character.name}
-                  </h3>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <h3 className="truncate font-serif text-[17px] font-medium leading-snug text-ink">
+                        {group.character.name}
+                      </h3>
+                      {group.character.content_rating !== 'sfw' && (
+                        <span className="chip chip-danger shrink-0 text-[10px] px-1.5 py-0">18+</span>
+                      )}
+                    </div>
+                    <span className="type-meta shrink-0 ml-2">{timeStr}</span>
+                  </div>
 
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="chip">
-                      {chatCount} {chatCount === 1 ? 'chat' : 'chats'}
-                    </span>
-                    {group.character.content_rating !== 'sfw' && (
-                      <span className="chip chip-danger">18+</span>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <p className="type-meta min-w-0 truncate text-xs text-ink-2">
+                      {preview}
+                    </p>
+                    {chatCount > 1 && (
+                      <span className="chip shrink-0 text-[10px] px-1.5 py-0">
+                        {chatCount}
+                      </span>
                     )}
                   </div>
                 </div>
 
-                {/* Right: timestamp and chevron */}
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className="type-meta">{timeStr}</span>
-                  <ChevronRight
-                    className="h-4 w-4 text-ink-3 transition-transform duration-150 group-hover:translate-x-0.5"
-                    aria-hidden="true"
-                  />
-                </div>
-              </div>
+                {/* Right: chevron indicator */}
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-ink-3 transition-transform duration-150 group-hover:translate-x-0.5"
+                  aria-hidden="true"
+                />
+              </button>
             );
           })
         )}

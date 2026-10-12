@@ -162,10 +162,11 @@ export default function DuoNewPage() {
 
   const slotCard = (side: DuoSide, pick: Pick | null) => (
     <button
+      type="button"
       onClick={() => setSlot(side)}
       aria-pressed={slot === side}
       aria-label={side === 'a' ? 'First voice slot' : 'Second voice slot'}
-      className={`surface flex-1 rounded-xl p-3 text-left ${
+      className={`surface flex-1 rounded-xl p-3.5 text-left press min-h-[64px] ${
         slot === side ? 'border-accent-line bg-accent-wash' : ''
       }`}
     >
@@ -179,7 +180,7 @@ export default function DuoNewPage() {
             <div className="font-serif text-[0.95rem] font-medium text-ink truncate">{pick.name}</div>
             <div className="type-meta truncate capitalize">{pick.kind}</div>
           </div>
-          <Check className="w-4 h-4 text-accent-text ml-auto shrink-0" aria-hidden />
+          <Check className="w-4 h-4 text-accent-text ml-auto shrink-0" aria-hidden="true" />
         </div>
       ) : (
         <div className="type-meta py-2">{slot === side ? 'Pick someone below…' : 'Not picked yet'}</div>
@@ -188,26 +189,26 @@ export default function DuoNewPage() {
   );
 
   return (
-    <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-5 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)]">
+    <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] md:pb-10">
       <div className="flex items-center gap-3">
-        <Link href="/duo" className="icon-btn shrink-0" aria-label="Back to scenes">
-          <ArrowLeft className="w-5 h-5" aria-hidden />
+        <Link href="/duo" className="icon-btn min-h-11 min-w-11 shrink-0" aria-label="Back to scenes">
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" />
         </Link>
-        <div>
-          <h1 className="type-page">New scene</h1>
-          <p className="type-meta">Two people. One situation. No script.</p>
+        <div className="min-w-0">
+          <h1 className="type-page truncate">New scene</h1>
+          <p className="type-meta truncate">Two people. One situation. No script.</p>
         </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 items-stretch">
         {slotCard('a', pickA)}
-        <div className="flex items-center justify-center type-meta px-1" aria-hidden>
+        <div className="flex items-center justify-center type-meta px-1 shrink-0" aria-hidden="true">
           and
         </div>
         {slotCard('b', pickB)}
       </div>
 
-      <div className="surface rounded-xl p-4 space-y-4">
+      <div className="surface rounded-xl p-4 sm:p-5 space-y-4">
         <div className="block">
           <label htmlFor="duo-seed" className="type-label">
             Situation <span className="text-ink-3 font-normal">(optional, sets the scene)</span>
@@ -219,11 +220,11 @@ export default function DuoNewPage() {
             rows={3}
             maxLength={2000}
             placeholder="A rooftop at midnight, rain just stopped. They have not seen each other in years…"
-            className="field mt-1.5 resize-none"
+            className="field w-full mt-1.5 resize-y min-h-[80px]"
           />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="block">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="block sm:col-span-2">
             <span id="duo-first-label" className="type-label">
               Who speaks first
             </span>
@@ -235,9 +236,10 @@ export default function DuoNewPage() {
               {(['a', 'b'] as const).map((s) => (
                 <button
                   key={s}
+                  type="button"
                   onClick={() => setFirstSpeaker(s)}
                   aria-pressed={firstSpeaker === s}
-                  className={`flex-1 min-h-8 px-3 py-1.5 rounded-full truncate ${
+                  className={`flex-1 min-h-11 px-3 py-2 rounded-full truncate flex items-center justify-center ${
                     firstSpeaker === s ? 'bg-accent-wash text-accent-text' : 'text-ink-3'
                   }`}
                 >
@@ -250,7 +252,7 @@ export default function DuoNewPage() {
             <label htmlFor="duo-length" className="type-label">
               Length
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mt-1.5">
               <input
                 id="duo-length"
                 type="range"
@@ -259,16 +261,16 @@ export default function DuoNewPage() {
                 value={maxTurns}
                 aria-label={`Length, ${maxTurns} lines`}
                 onChange={(e) => setMaxTurns(Number(e.target.value))}
-                className="mt-3 min-h-8 w-full accent-[var(--accent)]"
+                className="min-h-11 w-full accent-[var(--accent)]"
               />
-              <span className="type-code shrink-0">{maxTurns}</span>
+              <span className="type-code shrink-0 min-w-8 text-right">{maxTurns}</span>
             </div>
           </div>
           <div className="block">
             <label htmlFor="duo-pace" className="type-label">
               Pace
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mt-1.5">
               <input
                 id="duo-pace"
                 type="range"
@@ -278,31 +280,45 @@ export default function DuoNewPage() {
                 value={delayMs}
                 aria-label={`Pace, ${(delayMs / 1000).toFixed(1)} seconds between lines`}
                 onChange={(e) => setDelayMs(Number(e.target.value))}
-                className="mt-3 min-h-8 w-full accent-[var(--accent)]"
+                className="min-h-11 w-full accent-[var(--accent)]"
               />
-              <span className="type-code shrink-0">{(delayMs / 1000).toFixed(1)}s</span>
+              <span className="type-code shrink-0 min-w-8 text-right">{(delayMs / 1000).toFixed(1)}s</span>
             </div>
           </div>
         </div>
-        <button onClick={start} disabled={!canStart} className="btn btn-primary w-full py-2.5 disabled:opacity-40">
-          {starting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}
-          {starting ? 'Opening the scene…' : 'Start the scene'}
-        </button>
+
+        {/* Primary Start button in sticky mobile bottom bar / desktop static */}
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-raised px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] md:static md:border-0 md:bg-transparent md:p-0">
+          <button
+            type="button"
+            onClick={start}
+            disabled={!canStart}
+            className="btn btn-primary w-full min-h-11 justify-center disabled:opacity-40"
+          >
+            {starting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+            {starting ? 'Opening the scene…' : 'Start the scene'}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row gap-2.5">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" aria-hidden="true" />
             <label htmlFor="duo-search" className="sr-only">
               Search your roster
             </label>
             <input
               id="duo-search"
+              type="search"
+              enterKeyHint="search"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search your roster…"
-              className="field pl-9"
+              className="field w-full min-h-11 pl-9"
             />
           </div>
           <div
@@ -313,9 +329,10 @@ export default function DuoNewPage() {
             {(['all', 'characters', 'personas'] as const).map((t) => (
               <button
                 key={t}
+                type="button"
                 onClick={() => setTab(t)}
                 aria-pressed={tab === t}
-                className={`min-h-8 px-3.5 py-1.5 rounded-full capitalize ${
+                className={`flex-1 sm:flex-none min-h-9 px-3.5 py-1.5 rounded-full capitalize flex items-center justify-center ${
                   tab === t ? 'bg-accent-wash text-accent-text' : 'text-ink-3'
                 }`}
               >
@@ -325,7 +342,7 @@ export default function DuoNewPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
           {options.map((opt) => {
             const active =
               (slot === 'a' ? pickA : pickB)?.id === opt.id &&
@@ -336,23 +353,26 @@ export default function DuoNewPage() {
             return (
               <button
                 key={`${opt.kind}-${opt.id}`}
+                type="button"
                 onClick={() => choose(opt)}
                 disabled={taken}
                 aria-pressed={active}
-                className={`surface flex items-center gap-2.5 p-2.5 rounded-lg text-left ${
-                  active ? 'border-accent-line' : ''
+                className={`surface flex items-center gap-2 p-2 sm:p-2.5 rounded-xl text-left press min-h-11 ${
+                  active ? 'border-accent-line bg-accent-wash' : ''
                 } ${taken ? 'opacity-40' : ''}`}
               >
-                <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 border border-line">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-md overflow-hidden shrink-0 border border-line">
                   <CharacterAvatar name={opt.name} avatarUrl={opt.avatar_url} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-serif text-[0.9rem] font-medium text-ink truncate">{opt.name}</div>
-                  <div className="type-meta truncate capitalize">
+                  <div className="font-serif text-[0.875rem] sm:text-[0.9rem] font-medium text-ink truncate">
+                    {opt.name}
+                  </div>
+                  <div className="type-meta truncate capitalize text-[0.7rem] sm:text-xs">
                     {opt.kind}, {opt.sub}
                   </div>
                 </div>
-                {active && <Check className="w-4 h-4 text-accent-text shrink-0" aria-hidden />}
+                {active && <Check className="w-4 h-4 text-accent-text shrink-0" aria-hidden="true" />}
               </button>
             );
           })}

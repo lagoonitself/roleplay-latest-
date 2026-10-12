@@ -102,11 +102,11 @@ export function ChatgptSignIn() {
 
   if (auth) {
     return (
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-medium text-ink truncate">{auth.email || 'ChatGPT account'}</div>
           <div className="type-meta truncate">
-            Connected{auth.plan ? ` · ${auth.plan.charAt(0).toUpperCase()}${auth.plan.slice(1)} plan` : ''}
+            Connected{auth.plan ? `, ${auth.plan.charAt(0).toUpperCase()}${auth.plan.slice(1)} plan` : ''}
           </div>
         </div>
         <button
@@ -115,7 +115,7 @@ export function ChatgptSignIn() {
             updateSettings({ chatgptAuth: null });
             toast.info('Signed out of ChatGPT');
           }}
-          className="btn btn-danger shrink-0"
+          className="btn btn-danger w-full sm:w-auto shrink-0 min-h-11"
         >
           <LogOut className="w-3.5 h-3.5" aria-hidden />
           Sign out
@@ -131,12 +131,12 @@ export function ChatgptSignIn() {
           Open the ChatGPT sign-in page, sign in, and enter this code. It expires in 15 minutes.
         </p>
         <div className="flex items-center gap-2">
-          <code className="type-code flex-1 rounded-md border border-line bg-sunken px-3 py-2 text-center text-lg tracking-[0.2em] text-ink">
+          <code className="type-code flex-1 rounded-md border border-line bg-sunken px-3 py-2 text-center text-lg tracking-[0.2em] text-ink break-all select-text">
             {device.userCode}
           </code>
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn min-h-11 min-w-11 shrink-0"
             aria-label="Copy code"
             onClick={() => {
               navigator.clipboard?.writeText(device.userCode).then(() => toast.success('Code copied'), () => undefined);
@@ -145,16 +145,25 @@ export function ChatgptSignIn() {
             <Copy className="w-4 h-4" aria-hidden />
           </button>
         </div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span className="type-meta flex items-center gap-1.5">
             <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
             Waiting for approval…
           </span>
-          <div className="flex gap-2">
-            <button type="button" className="btn btn-quiet" onClick={() => setDevice(null)}>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              className="btn btn-quiet w-full sm:w-auto min-h-11"
+              onClick={() => setDevice(null)}
+            >
               Cancel
             </button>
-            <a href={device.verificationUrl} target="_blank" rel="noreferrer" className="btn btn-ghost">
+            <a
+              href={device.verificationUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-ghost w-full sm:w-auto min-h-11"
+            >
               <ExternalLink className="w-3.5 h-3.5" aria-hidden />
               Open page
             </a>
@@ -166,7 +175,12 @@ export function ChatgptSignIn() {
 
   return (
     <div className="space-y-2">
-      <button type="button" onClick={start} disabled={starting} className="btn btn-primary w-full justify-center">
+      <button
+        type="button"
+        onClick={start}
+        disabled={starting}
+        className="btn btn-primary w-full min-h-11 justify-center"
+      >
         {starting && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />}
         Sign in with ChatGPT
       </button>

@@ -100,7 +100,7 @@ export const ThinkingProcess = React.memo(function ThinkingProcess({
   if (isStreaming && !reasoning && !hasContent) {
     return (
       <div className="w-full my-1.5 animate-in fade-in duration-150 select-none">
-        <div className="flex items-center gap-2 px-1 py-1">
+        <div className="flex min-h-11 items-center gap-2 px-1 py-1">
           <Brain className="w-3.5 h-3.5 text-ink-3 shrink-0" aria-hidden />
           <span className="type-meta">Thinking…</span>
           {elapsedSeconds > 0 && (
@@ -127,7 +127,7 @@ export const ThinkingProcess = React.memo(function ThinkingProcess({
           onClick={handleToggle}
           aria-expanded={isOpen}
           aria-label={isOpen ? 'Collapse thoughts' : characterName ? `View ${characterName}’s thoughts` : 'View thoughts'}
-          className="btn btn-quiet flex-1 justify-between px-2 py-1.5 text-xs"
+          className="btn btn-quiet flex-1 min-h-11 justify-between px-3 py-2 text-xs"
         >
           <span className="flex items-center gap-2 min-w-0">
             <Brain className="w-3.5 h-3.5 text-ink-3 shrink-0" aria-hidden />
@@ -161,14 +161,14 @@ export const ThinkingProcess = React.memo(function ThinkingProcess({
           <button
             type="button"
             onClick={handleCopyThoughts}
-            className="icon-btn w-8 h-8 shrink-0"
+            className="icon-btn min-h-11 min-w-11 shrink-0"
             title="Copy thoughts"
             aria-label="Copy thoughts"
           >
             {copied ? (
-              <Check className="w-3 h-3" aria-hidden />
+              <Check className="w-3.5 h-3.5" aria-hidden />
             ) : (
-              <Copy className="w-3 h-3" aria-hidden />
+              <Copy className="w-3.5 h-3.5" aria-hidden />
             )}
           </button>
         )}
@@ -193,8 +193,20 @@ export const ThinkingProcess = React.memo(function ThinkingProcess({
           )}
 
           {/* Thought Text */}
-          <div className="type-code text-ink-2 max-h-80 overflow-y-auto pr-1 whitespace-pre-wrap select-text">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <div className="type-code text-ink-2 max-h-[50dvh] scroll-y overflow-y-auto pr-1 whitespace-pre-wrap select-text break-words [overflow-wrap:anywhere]">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                pre: ({ children }) => (
+                  <pre className="max-w-full overflow-x-auto rounded-md bg-sunken p-2 my-1 border border-line text-xs font-mono">
+                    {children}
+                  </pre>
+                ),
+                code: ({ children, className }) => (
+                  <code className={`max-w-full ${className || ''}`}>{children}</code>
+                ),
+              }}
+            >
               {reasoning}
             </ReactMarkdown>
 
