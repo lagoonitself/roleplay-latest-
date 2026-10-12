@@ -44,15 +44,24 @@ type LogEntry = LlmLogEntry & {
 };
 
 function localToEntry(l: LlmLogEntry): LogEntry {
+  const count = l.requestMessages && l.requestMessages.length > 0 ? l.requestMessages.length : null;
   return {
     ...l,
-    requestMessageCount: l.requestMessages.length,
+    requestMessageCount: count,
     promptsLoaded: true,
   };
 }
 
 function serverRowToEntry(r: ServerRow): LogEntry {
-  const prompts = Array.isArray(r.request_messages) ? r.request_messages : [];
+  const hasMessages = Array.isArray(r.request_messages);
+  const prompts = hasMessages ? r.request_messages! : [];
+  let requestMessageCount: number | null = null;
+  if (typeof r.request_message_count === 'number' && r.request_message_count > 0) {
+    requestMessageCount = r.request_message_count;
+  } else if (prompts.length > 0) {
+    requestMessageCount = prompts.length;
+  }
+
   return {
     id: `srv-${r.id}`,
     createdAt: r.created_at,
@@ -63,9 +72,8 @@ function serverRowToEntry(r: ServerRow): LogEntry {
     model: r.model || '',
     params: r.params || ({} as LlmLogEntry['params']),
     requestMessages: prompts,
-    requestMessageCount:
-      typeof r.request_message_count === 'number' ? r.request_message_count : prompts.length,
-    promptsLoaded: Array.isArray(r.request_messages),
+    requestMessageCount,
+    promptsLoaded: hasMessages,
     userMessage: r.user_message || '',
     output: r.output || '',
     reasoning: r.reasoning ?? null,
@@ -309,8 +317,8 @@ export default function ModelLogsPage() {
         {filtered.map((log) => {
           const open = expandedId === log.id;
           const promptCount = log.promptsLoaded
-            ? log.requestMessages.length
-            : (log.requestMessageCount ?? 0);
+            ? (log.requestMessages.length > 0 ? log.requestMessages.length : null)
+            : log.requestMessageCount;
           return (
             <article
               key={log.id}
@@ -384,9 +392,9 @@ export default function ModelLogsPage() {
                   <section>
                     <div className="mb-1.5 flex items-center justify-between">
                       <h4 className="type-sec">
-                        Complete prompt ({promptCount} messages)
+                        Complete prompt ({promptCount != null ? `${promptCount} messages` : 'not stored'})
                       </h4>
-                      {log.promptsLoaded && (
+                      {log.promptsLoaded && log.requestMessages.length > 0 && (
                         <button
                           type="button"
                           onClick={() =>
@@ -405,49 +413,53 @@ export default function ModelLogsPage() {
                             ? 'Loading full prompt…'
                             : 'Full prompt not loaded — collapse and expand to retry.'}
                         </p>
+                      ) : log.requestMessages.length === 0 ? (
+                        <p className="type-meta px-1">
+                          Prompt not stored (LLM_LOG_FULL_PROMPTS is off or prompt omitted).
+                        </p>
                       ) : (
-                      log.requestMessages.map((m, i) => {
-                        const msgOpen = expandedMsgIdx === i;
-                        return (
-                          <div
-                            key={i}
-                            className="surface rounded-lg overflow-hidden"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setExpandedMsgIdx(msgOpen ? null : i)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-left"
-                              aria-expanded={msgOpen}
+                        log.requestMessages.map((m, i) => {
+                          const msgOpen = expandedMsgIdx === i;
+                          return (
+                            <div
+                              key={i}
+                              className="surface rounded-lg overflow-hidden"
                             >
-                              <span
-                                className={m.role === 'system' ? 'chip chip-accent type-code' : 'chip type-code'}
+                              <button
+                                type="button"
+                                onClick={() => setExpandedMsgIdx(msgOpen ? null : i)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                                aria-expanded={msgOpen}
                               >
-                                {m.role}
-                              </span>
-                              <span className="truncate text-[11px] text-ink-2">
-                                {m.content.slice(0, 120).replace(/\n/g, ' ')}
-                              </span>
-                              <span className="ml-auto shrink-0 text-[10px] tabular-nums text-ink-3">
-                                {m.content.length.toLocaleString()} chars
-                              </span>
-                            </button>
-                            {msgOpen && (
-                              <div className="border-t border-line p-3">
-                                <pre className="well type-code max-h-96 overflow-y-auto whitespace-pre-wrap break-words !text-[11px] !leading-relaxed text-ink-2 p-3">
-                                  {m.content}
-                                </pre>
-                                <button
-                                  type="button"
-                                  onClick={() => copyText(m.content, `${m.role} message`)}
-                                  className="btn btn-quiet mt-2 inline-flex items-center gap-1 !text-[11px]"
+                                <span
+                                  className={m.role === 'system' ? 'chip chip-accent type-code' : 'chip type-code'}
                                 >
-                                  <Copy className="h-3 w-3" aria-hidden /> Copy message
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
+                                  {m.role}
+                                </span>
+                                <span className="truncate text-[11px] text-ink-2">
+                                  {m.content.slice(0, 120).replace(/\n/g, ' ')}
+                                </span>
+                                <span className="ml-auto shrink-0 text-[10px] tabular-nums text-ink-3">
+                                  {m.content.length.toLocaleString()} chars
+                                </span>
+                              </button>
+                              {msgOpen && (
+                                <div className="border-t border-line p-3">
+                                  <pre className="well type-code max-h-96 overflow-y-auto whitespace-pre-wrap break-words !text-[11px] !leading-relaxed text-ink-2 p-3">
+                                    {m.content}
+                                  </pre>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyText(m.content, `${m.role} message`)}
+                                    className="btn btn-quiet mt-2 inline-flex items-center gap-1 !text-[11px]"
+                                  >
+                                    <Copy className="h-3 w-3" aria-hidden /> Copy message
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </section>

@@ -3,10 +3,10 @@
 
    Strategy:
    - Navigations (HTML): NETWORK-FIRST. The network copy is fetched and cached
-     on success; on failure we serve the cached copy of THAT url, then the
-     cached '/' shell. HTML is never cache-first and never stale-while-
-     revalidate: stale HTML can reference chunk names deleted by a deploy,
-     which white-screens the iOS standalone app.
+     on success; on failure we serve the runtime-cached copy of THAT url, then the
+     runtime-cached '/' shell. HTML is never precached at install time, never
+     cache-first, and never stale-while-revalidate: stale HTML can reference
+     chunk names deleted by a deploy, which white-screens the iOS standalone app.
    - /_next/static/* (immutable hashed assets): cache-first, long-lived.
    - Icons / manifest / raster images: cache-first in a bounded cache.
    - Everything else same-origin GET: stale-while-revalidate in a bounded cache.
@@ -16,13 +16,13 @@
      pwa-register.tsx), so a fresh worker can never swap in mid-session.
 */
 
-const VERSION = 'cadenza-v3';
+const VERSION = 'cadenza-v4';
 const STATIC_CACHE = `cadenza-static-${VERSION}`;
 const RUNTIME_CACHE = `cadenza-runtime-${VERSION}`;
 const IMAGE_CACHE = `cadenza-images-${VERSION}`;
 const ALLOWED_CACHES = [STATIC_CACHE, RUNTIME_CACHE, IMAGE_CACHE];
 
-const PRECACHE = ['/', '/manifest.json'];
+const PRECACHE = ['/manifest.json'];
 const MAX_IMAGE_ENTRIES = 40;
 const MAX_RUNTIME_ENTRIES = 60;
 
@@ -39,6 +39,19 @@ self.addEventListener('install', (event) => {
 // The page asks this worker to take over (after the user opts in).
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
+    // Validate that the message comes from a same-origin client
+    if (event.origin && event.origin !== self.location.origin) return;
+    if (event.source) {
+      if ('url' in event.source && event.source.url) {
+        try {
+          if (new URL(event.source.url).origin !== self.location.origin) return;
+        } catch {
+          return;
+        }
+      }
+    } else if (!event.origin) {
+      return;
+    }
     self.skipWaiting();
   }
 });
@@ -113,12 +126,11 @@ function staleWhileRevalidate(event, cacheName, maxEntries) {
         }
         return networkResponse;
       })
-      .catch((err) => {
-        // Offline or network down: prefer the cached copy. Rethrow only when
-        // there is nothing to fall back to, so the caller can apply its own
-        // offline shell — swallowing here would make respondWith(undefined).
+      .catch(() => {
+        // Offline or network down: return cached copy if present; if uncached,
+        // degrade gracefully with an error response instead of an unhandled rejection.
         if (cached) return cached;
-        throw err;
+        return Response.error();
       });
     return cached || networkFetch;
   });
@@ -135,10 +147,12 @@ function networkFirstNavigation(event) {
       return networkResponse;
     })
     .catch(async () => {
-      // Offline: the cached copy of THIS url first, then the '/' shell.
-      const cached = await caches.match(request);
+      // Offline: prefer the most recent network-fetched HTML for THIS url from RUNTIME_CACHE,
+      // then fall back to the runtime-cached '/' shell if available.
+      const runtimeCache = await caches.open(RUNTIME_CACHE);
+      const cached = await runtimeCache.match(request);
       if (cached) return cached;
-      const shell = await caches.match('/');
+      const shell = await runtimeCache.match('/');
       return shell || Response.error();
     });
 }

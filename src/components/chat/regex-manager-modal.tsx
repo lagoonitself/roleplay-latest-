@@ -215,12 +215,15 @@ export function RegexManagerModal({
   };
 
   return (
-    <div className="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_oklab,var(--ink)_45%,transparent)] p-3 duration-200 sm:p-6">
+    <div
+      className="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_oklab,var(--ink)_45%,transparent)] p-3 duration-200 sm:p-6"
+      style={{ height: 'var(--app-height, 100dvh)' }}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Regex scripts and formatters"
-        className="panel animate-in fade-in relative flex h-[90dvh] max-h-[820px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border-line bg-raised shadow-float duration-200 pt-safe"
+        className="panel animate-in fade-in relative flex h-[min(820px,calc(var(--app-height,100dvh)-1.5rem))] max-h-[min(820px,calc(var(--app-height,100dvh)-1.5rem))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border-line bg-raised shadow-float duration-200 pt-safe"
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-4">

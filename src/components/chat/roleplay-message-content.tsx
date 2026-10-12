@@ -169,11 +169,11 @@ function RoleplayCard({
             onClick={handleCopy}
             aria-label="Copy card text"
             title="Copy card text"
-            /* Always visible on touch (below sm — no hover to reveal it there);
+            /* Always visible on touch (below sm and on touch devices ≥sm without hover);
                hover/focus reveal at sm:+. ≥32px hit area, and pointer-events
                are dropped along with the opacity so it can never be an
                invisible tap target. */
-            className="icon-btn w-8 h-8 opacity-100 sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto sm:focus-visible:opacity-100 sm:focus-visible:pointer-events-auto focus-visible:opacity-100"
+            className="icon-btn w-8 h-8 opacity-100 [@media(hover:hover)]:sm:opacity-0 [@media(hover:hover)]:sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto sm:focus-visible:opacity-100 sm:focus-visible:pointer-events-auto focus-visible:opacity-100"
           >
             {copied ? <Check aria-hidden className="h-3.5 w-3.5" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
           </button>

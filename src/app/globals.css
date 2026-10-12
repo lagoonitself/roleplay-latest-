@@ -786,6 +786,14 @@
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* Modals / sheets visual viewport clamp so keyboard never clips panels inside transformed shell */
+.max-h-\[92dvh\] {
+  max-height: min(92dvh, calc(var(--app-height, 100dvh) - 1.5rem)) !important;
+}
+.max-h-\[85dvh\] {
+  max-height: min(85dvh, calc(var(--app-height, 100dvh) - 2rem)) !important;
+}
+
 /* Prevent iOS Safari auto-zoom on focus */
 @media screen and (max-width: 768px) {
   input,

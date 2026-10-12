@@ -76,6 +76,7 @@ export function PwaRegister() {
     }
 
     return () => {
+      toast.dismiss(UPDATE_TOAST_ID);
       window.removeEventListener('load', register);
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
     };

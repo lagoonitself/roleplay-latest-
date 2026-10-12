@@ -47,7 +47,14 @@ import {
   escapeInlineText,
   type MacroContext,
 } from './macros';
-import { estimateTokens, truncateToTokens, computeContextBudget, MIN_HISTORY_TOKENS } from './tokens';
+import {
+  estimateTokens,
+  truncateToTokens,
+  computeContextBudget,
+  MIN_HISTORY_TOKENS,
+  MIN_CONTEXT_WINDOW,
+  getContextWindow,
+} from './tokens';
 import type { ActivatedLore, WorldInfoScanEntry } from '@/lib/lorebook/matcher';
 import type { VectorRetrievalResult } from '@/lib/memory/vectors';
 import type { Character, Persona, Memory, Summary, ChatState, LorebookEntry, Message } from '@/lib/supabase/types';
@@ -161,7 +168,7 @@ function openingOf(text: string): string {
   return words.length > 3 ? words : '';
 }
 
-function formatSceneState(state: NonNullable<ChatState['state']>, charName: string): string {
+function formatSceneState(state: NonNullable<ChatState['state']>, charName: string, maxTokens = 350): string {
   const lines: string[] = [];
   if (state.location) lines.push(`Location: ${state.location}`);
   if (state.time_of_day) lines.push(`Time of day: ${state.time_of_day}`);
@@ -173,7 +180,16 @@ function formatSceneState(state: NonNullable<ChatState['state']>, charName: stri
   if (state.current_clothing) lines.push(`Current clothing: ${state.current_clothing}`);
   if (state.inventory && state.inventory.length > 0) lines.push(`Notable items: ${state.inventory.join(', ')}`);
   if (state.active_events && state.active_events.length > 0) lines.push(`Ongoing events: ${state.active_events.join('; ')}`);
-  return lines.join('\n');
+
+  let formatted = lines.join('\n');
+  if (estimateTokens(formatted) > maxTokens) {
+    // Drop lowest-priority lines from the bottom (active events, inventory, clothing) until within budget
+    while (lines.length > 3 && estimateTokens(lines.join('\n')) > maxTokens) {
+      lines.pop();
+    }
+    formatted = truncateToTokens(lines.join('\n'), maxTokens);
+  }
+  return formatted;
 }
 
 /**
@@ -345,8 +361,28 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     .join('\n\n');
   const wiAfterBlock = wiAfterContent ? tag('world_info_after', fmt(wiAfterContent)) : '';
 
-  const pinnedBlock = pinnedMemories.length
-    ? tag('pinned_facts', pinnedMemories.map((m) => `- ${formatRoleplayText(m.content, macroCtx)}`).join('\n'))
+  // Enforce budget on pinned facts: sort by importance descending, drop lowest-priority, and truncate if needed
+  const contextWindow = Math.max(MIN_CONTEXT_WINDOW, getContextWindow(params.model));
+  const maxPinnedBudget = Math.floor(contextWindow * 0.1);
+  const sortedPinned = [...pinnedMemories].sort((a, b) => (b.importance ?? 5) - (a.importance ?? 5));
+  let pinnedUsed = 0;
+  const keptPinned: string[] = [];
+  for (const m of sortedPinned) {
+    const text = formatRoleplayText(m.content || '', macroCtx).trim();
+    if (!text) continue;
+    const cost = estimateTokens(text) + 4;
+    if (pinnedUsed + cost > maxPinnedBudget) {
+      if (keptPinned.length === 0 && maxPinnedBudget > 50) {
+        keptPinned.push(truncateToTokens(text, maxPinnedBudget));
+        pinnedUsed += maxPinnedBudget;
+      }
+      break;
+    }
+    keptPinned.push(text);
+    pinnedUsed += cost;
+  }
+  const pinnedBlock = keptPinned.length
+    ? tag('pinned_facts', keptPinned.map((t) => `- ${t}`).join('\n'))
     : '';
 
   const exampleBlock = character.example_dialogue?.trim()
@@ -383,6 +419,7 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     estimateTokens(summary?.content) +
     estimateTokens(vectorMemories?.formattedText) +
     estimateTokens(authorsNote) +
+    estimateTokens(chatState?.state ? formatSceneState(chatState.state, charName, 350) : '') +
     estimateTokens(retrievedMemories.map((m) => m.content).join('\n'));
 
   const budget = computeContextBudget({
@@ -394,9 +431,15 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     minHistoryTokens: MIN_HISTORY_TOKENS,
   });
 
+  // Enforce prefix budget: if staticPrefix exceeds prefixBudget, truncate to fit
+  let effectiveStaticPrefix = staticPrefix;
+  if (estimateTokens(effectiveStaticPrefix) > budget.prefixBudget) {
+    effectiveStaticPrefix = truncateToTokens(effectiveStaticPrefix, budget.prefixBudget);
+  }
+
   const historyTokenBudget = params.historyTokenBudget ?? budget.historyBudget;
 
-  const messages: ChatMessage[] = [{ role: 'system', content: staticPrefix }];
+  const messages: ChatMessage[] = [{ role: 'system', content: effectiveStaticPrefix }];
 
   // ── 3. History (newest kept, oldest dropped to fit) ────────────────────────
 
@@ -579,12 +622,13 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
       ].join('\n')
     );
   } else {
-    const sceneBlock =
+    const sceneFormatted =
       chatState?.state && Object.keys(chatState.state).length > 0
-        ? // State values are LLM-written: escapeLabelContent keeps them from
-          // impersonating "[Author's note: …]" / "[Summary: …]" note formats.
-          `${tag('scene_state', escapeLabelContent(formatSceneState(chatState.state, charName)))}\n\n`
+        ? formatSceneState(chatState.state, charName, 350)
         : '';
+    const sceneBlock = sceneFormatted
+      ? `${tag('scene_state', escapeLabelContent(sceneFormatted))}\n\n`
+      : '';
 
     const reminder = [
       postHistory,
@@ -593,8 +637,19 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     ]
       .filter(Boolean)
       .join('\n');
+    const reminderTag = reminder ? tag('character_reminder', reminder) : '';
 
-    finalContent = `${sceneBlock}${latestFormatted}\n\n${tag('character_reminder', reminder)}`;
+    // Enforce prompt budget on live user message:
+    // Ensure the user message + scene state + reminder + static prefix + history does not exceed the model's prompt budget
+    const usedSystemAndHistory = estimateTokens(effectiveStaticPrefix) + usedTokens + recallSpent;
+    const userOverhead = estimateTokens(sceneBlock) + estimateTokens(reminderTag) + 20;
+    const maxUserMessageTokens = Math.max(150, budget.promptBudget - usedSystemAndHistory - userOverhead);
+    const boundedUserMessage =
+      estimateTokens(latestFormatted) > maxUserMessageTokens
+        ? truncateToTokens(latestFormatted, maxUserMessageTokens)
+        : latestFormatted;
+
+    finalContent = `${sceneBlock}${boundedUserMessage}${reminderTag ? `\n\n${reminderTag}` : ''}`;
   }
 
   const tail = messages[messages.length - 1];
@@ -609,7 +664,7 @@ export function assemblePromptDetailed(params: AssemblePromptParams): AssembledP
     budget: {
       contextWindow: budget.contextWindow,
       responseReserve: budget.responseReserve,
-      prefixTokens: estimateTokens(staticPrefix),
+      prefixTokens: estimateTokens(effectiveStaticPrefix),
       historyTokens: usedTokens,
       historyBudget: historyTokenBudget,
       historyMessages: keptTurns.length,

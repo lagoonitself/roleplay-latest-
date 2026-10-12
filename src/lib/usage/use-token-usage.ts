@@ -65,8 +65,8 @@ export function useTokenUsage(): UseTokenUsageResult {
           output: server.output,
           total: server.input + server.output,
         };
-        reconcileLocalUsage(fixed);
-        setUsage(fixed);
+        // Merged max: the optimistic local count can briefly lead the server's.
+        setUsage(reconcileLocalUsage(fixed));
       }
       setSyncedWithAccount(true);
     } catch {

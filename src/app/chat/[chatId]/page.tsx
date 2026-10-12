@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { flushSync } from 'react-dom';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -9,30 +8,20 @@ import {
   Sparkles,
   Send,
   Square,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
-  RotateCcw,
-  Copy,
-  Edit2,
   Trash2,
   Brain,
   Bookmark,
-  GitBranch,
   X,
-  Check,
   User,
   MoreVertical,
   ExternalLink,
-  CircleAlert,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSettings } from '@/lib/store/settings';
 import { makeCharacter } from '@/lib/cards/card-parser';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
-import { ThinkingProcess } from '@/components/thinking-process';
-import { RoleplayMessageContent } from '@/components/chat/roleplay-message-content';
 import { RegexManagerModal } from '@/components/chat/regex-manager-modal';
 import { useRegexScripts } from '@/lib/store/regex-store';
 import { useKeyboardViewport } from '@/lib/hooks/use-keyboard-viewport';
@@ -67,7 +56,7 @@ import { resolveLlmKey, hasLlmCredentials, missingCredentialsMessage } from '@/l
 import { MessageRow } from '@/components/chat/message-row';
 import { MessageActionsSheet } from '@/components/chat/message-actions-sheet';
 import { useEvent, useVisualViewportVars } from '@/lib/hooks';
-import { MEMORY_COLUMNS } from '@/lib/memory/queries';
+import { MEMORY_COLUMNS, MEMORY_LIST_LIMIT } from '@/lib/memory/queries';
 
 // Local temp ids (usr-/ast-/msg-) are never valid Supabase UUIDs.
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -586,7 +575,8 @@ export default function ChatPage() {
               .select(MEMORY_COLUMNS)
               .eq('chat_id', chatId)
               .is('superseded_by', null)
-              .order('importance', { ascending: false }),
+              .order('importance', { ascending: false })
+              .limit(MEMORY_LIST_LIMIT),
             supabase
               .from('summaries')
               .select('*')
@@ -1539,7 +1529,8 @@ export default function ChatPage() {
           .from('memories')
           .select(MEMORY_COLUMNS)
           .eq('chat_id', chatId)
-          .is('superseded_by', null);
+          .is('superseded_by', null)
+          .limit(MEMORY_LIST_LIMIT);
         if (memData) setMemories(memData as Memory[]);
 
         const { data: stData } = await supabase
@@ -2250,12 +2241,12 @@ export default function ChatPage() {
       }
 
       // Stream via the module helper; live bubbles update through callbacks
-      // while the deterministic result below drives both persistent stores.
+      // batched via rAF while the deterministic result below drives both stores.
       const streamResult = await streamRegeneratedReply(response, {
         charName,
         userName,
         onReasoning: (full) =>
-          setMessages((prev) =>
+          queueStreamUpdate((prev) =>
             prev.map((m) =>
               m.id !== assistantMsgId
                 ? m
@@ -2267,7 +2258,7 @@ export default function ChatPage() {
             )
           ),
         onThinkingDone: (seconds) =>
-          setMessages((prev) =>
+          queueStreamUpdate((prev) =>
             prev.map((m) =>
               m.id !== assistantMsgId
                 ? m
@@ -2278,7 +2269,7 @@ export default function ChatPage() {
             )
           ),
         onText: (formattedLive) =>
-          setMessages((prev) =>
+          queueStreamUpdate((prev) =>
             prev.map((m) =>
               m.id !== assistantMsgId
                 ? m
@@ -2294,6 +2285,8 @@ export default function ChatPage() {
             )
           ),
       });
+
+      flushStreamUpdate();
 
       if (streamResult.failed) {
         // Stream died mid-way: keep the partial reply, mark it error, and
@@ -2654,6 +2647,19 @@ export default function ChatPage() {
   );
   const actionsHidden = Boolean(editingMsgId) || Boolean(deleteConfirmId) || Boolean(sheetMsgId);
 
+  // Reconcile interaction state if messages change (e.g. deletion, rewind, prune)
+  useEffect(() => {
+    if (sheetMsgId && !messages.some((m) => m.id === sheetMsgId)) {
+      setSheetMsgId(null);
+    }
+    if (deleteConfirmId && !messages.some((m) => m.id === deleteConfirmId)) {
+      setDeleteConfirmId(null);
+    }
+    if (editingMsgId && !messages.some((m) => m.id === editingMsgId)) {
+      setEditingMsgId(null);
+    }
+  }, [messages, sheetMsgId, deleteConfirmId, editingMsgId]);
+
   // Stable-identity handlers (see src/lib/hooks.ts): memoized rows then skip
   // re-rendering on composer keystrokes and streaming frames.
   const onSwipe = useEvent(handleSwipe);
@@ -2665,6 +2671,13 @@ export default function ChatPage() {
   const onCopy = useEvent(handleCopyMessage);
   const onRegenerate = useEvent(handleRegenerate);
   const onOpenActions = useEvent((msg: Message) => setSheetMsgId(msg.id));
+  const onCloseSheet = useEvent(() => setSheetMsgId(null));
+  const onEditFromSheet = useEvent((msg: Message) => onStartEdit(msg));
+  const onRegenerateFromSheet = useEvent((msg: Message) => {
+    const idx = messages.findIndex((m) => m.id === msg.id);
+    if (idx !== -1) onRegenerate(idx);
+  });
+  const onDeleteFromSheet = useEvent((msg: Message) => onDeleteRequest(msg.id));
 
   // Track the visual viewport so the composer never hides behind the iOS keyboard.
   useVisualViewportVars();
@@ -2682,7 +2695,7 @@ export default function ChatPage() {
     const raf = requestAnimationFrame(() => {
       document
         .querySelector(`[data-msg-id="${editingMsgId}"]`)
-        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        ?.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'instant' : 'smooth' });
     });
     return () => cancelAnimationFrame(raf);
   }, [editingMsgId]);
@@ -2963,10 +2976,10 @@ export default function ChatPage() {
                 </span>
                 <button
                   onClick={() => setShowAuthorsNote(false)}
-                  className="icon-btn w-6 h-6"
+                  className="icon-btn w-8 h-8"
                   aria-label="Close author’s note"
                 >
-                  <X className="w-3.5 h-3.5" aria-hidden />
+                  <X className="w-4 h-4" aria-hidden />
                 </button>
               </div>
               <textarea
@@ -3051,11 +3064,11 @@ export default function ChatPage() {
       {sheetMessage && (
         <MessageActionsSheet
           message={sheetMessage}
-          onClose={() => setSheetMsgId(null)}
+          onClose={onCloseSheet}
           onCopy={onCopy}
-          onEdit={() => onStartEdit(sheetMessage)}
-          onRegenerate={() => onRegenerate(messages.findIndex((m) => m.id === sheetMessage.id))}
-          onDelete={() => onDeleteRequest(sheetMessage.id)}
+          onEdit={() => onEditFromSheet(sheetMessage)}
+          onRegenerate={() => onRegenerateFromSheet(sheetMessage)}
+          onDelete={() => onDeleteFromSheet(sheetMessage)}
         />
       )}
 

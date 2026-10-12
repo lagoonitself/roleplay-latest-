@@ -23,6 +23,7 @@ import { estimateTokens, truncateToTokensMiddle } from '@/lib/prompt/tokens';
 import { escapeBlockContent, escapeInlineText, escapeLabelContent } from '@/lib/prompt/macros';
 import type { Memory, Summary, ChatState, Message } from '@/lib/supabase/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { MEMORY_COLUMNS } from './queries';
 
 export const MEMORY_PASS_INTERVAL_MESSAGES = 10;
 export const MEMORY_PASS_INTERVAL_TOKENS = 1500;
@@ -377,7 +378,7 @@ async function persistFacts(
   }
 
   try {
-    const { data, error } = await target.supabase.from('memories').insert(rows).select('*');
+    const { data, error } = await target.supabase.from('memories').insert(rows).select(MEMORY_COLUMNS);
     if (error) {
       console.warn('Memory pass: fact insert failed:', error.message);
       return { memories: [], ok: false };

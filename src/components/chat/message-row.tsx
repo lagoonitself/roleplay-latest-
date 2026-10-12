@@ -222,10 +222,10 @@ export const MessageRow = React.memo(function MessageRow({
   );
 
   const rowActions = (
-    // Hover/focus reveal at sm:+ only. Below sm this is display:none, and the
-    // ⋯ button takes over — nothing is ever invisible-but-tappable: while
-    // opacity is 0 the strip is also pointer-events-none.
-    <div className="hidden items-center gap-0.5 opacity-0 pointer-events-none transition-[opacity] duration-150 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto sm:flex">
+    // Hover/focus reveal at sm:+ on mouse/hover devices only. On touch screens
+    // (hover: none) or below sm, the strip is hidden and the ⋯ button takes over
+    // so touch users have full access to message actions without hover traps.
+    <div className="hidden items-center gap-0.5 opacity-0 pointer-events-none transition-[opacity] duration-150 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto [@media(hover:hover)]:sm:flex">
       {message.content && (
         <span className="type-meta mr-auto select-none pl-1">{countWords(message.content)} words</span>
       )}
@@ -277,7 +277,7 @@ export const MessageRow = React.memo(function MessageRow({
     <button
       type="button"
       onClick={() => onOpenActions(message)}
-      className="icon-btn sm:hidden"
+      className="icon-btn [@media(hover:hover)]:sm:hidden"
       title="Message actions"
       aria-label="Message actions"
     >
@@ -373,8 +373,8 @@ export const MessageRow = React.memo(function MessageRow({
                     <button
                       type="button"
                       onClick={() => onRegenerate(index)}
-                      disabled={isGenerating}
-                      className="btn btn-ghost"
+                      disabled={isGenerating || Boolean(editingMsgId) || actionsHidden}
+                      className="btn btn-ghost disabled:opacity-40 disabled:pointer-events-none"
                     >
                       <RotateCcw className="h-3.5 w-3.5" aria-hidden />
                       Try again
@@ -407,7 +407,8 @@ export const MessageRow = React.memo(function MessageRow({
                     <button
                       type="button"
                       onClick={() => onRegenerate(index)}
-                      className="btn btn-ghost self-start sm:self-auto"
+                      disabled={isGenerating || Boolean(editingMsgId) || actionsHidden}
+                      className="btn btn-ghost self-start sm:self-auto disabled:opacity-40 disabled:pointer-events-none"
                     >
                       <RotateCcw className="w-3.5 h-3.5" aria-hidden />
                       <span>Regenerate</span>

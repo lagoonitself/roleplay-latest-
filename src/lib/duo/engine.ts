@@ -9,6 +9,7 @@ import { sanitizeModelOutput } from '@/lib/formatter/regex-engine';
 import type { Character, Message } from '@/lib/supabase/types';
 import { agentAsCharacter, agentAsPersona, otherLabel, ratingFloor, type LoadedAgent } from './agents';
 import { otherSide, parseDuo, type DuoAgentRef, type DuoSession, type DuoSide } from './types';
+import { shouldLogFullPrompts } from '@/lib/logs/prompt-logging';
 
 const BUSY_MS = 70_000;
 const WRITE_EVERY_MS = 450;
@@ -553,7 +554,7 @@ export async function executeClaimedTurn(opts: {
       kind: 'chat',
       model,
       params: { temperature: speakingAs.behavior?.temperature ?? 1, max_tokens: maxTokens, thinking: false, duo: true },
-      request_messages: logMessages,
+      request_messages: shouldLogFullPrompts() ? logMessages : [],
       user_message: latest,
       output: redactSecret(cleaned),
       reasoning: reasoning ? redactSecret(reasoning) : null,

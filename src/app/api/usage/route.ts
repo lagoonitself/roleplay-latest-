@@ -16,10 +16,26 @@ interface UsageRow {
   completion_tokens: number | null;
 }
 
-interface UsageTotalsRow {
-  input?: unknown;
-  output?: unknown;
-  turns?: unknown;
+interface GetUsageTotalsRpcResult {
+  input: number | string;
+  output: number | string;
+  turns: number | string;
+}
+
+function isValidUsageTotalsRow(v: unknown): v is GetUsageTotalsRpcResult {
+  if (!v || typeof v !== 'object') return false;
+  const r = v as Record<string, unknown>;
+  return (
+    'input' in r &&
+    'output' in r &&
+    'turns' in r &&
+    r.input !== null &&
+    r.output !== null &&
+    r.turns !== null &&
+    !Number.isNaN(Number(r.input)) &&
+    !Number.isNaN(Number(r.output)) &&
+    !Number.isNaN(Number(r.turns))
+  );
 }
 
 function toCount(v: unknown): number {
@@ -50,17 +66,24 @@ export async function GET() {
     }
 
     // Preferred: lifetime totals in ONE aggregate query (SECURITY INVOKER,
-    // RLS-respecting — see supabase/migrations/20261012000001_usage_totals.sql).
-    const { data: rpcData, error: rpcError } = await supabase.rpc('get_usage_totals');
-    if (!rpcError) {
-      const row = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as UsageTotalsRow | null | undefined;
-      const input = toCount(row?.input);
-      const output = toCount(row?.output);
-      const turns = toCount(row?.turns);
-      return NextResponse.json({ input, output, total: input + output, turns });
+    // RLS-respecting — see supabase/migrations/20261012080956_usage_totals_and_log_count.sql).
+    const { data: rpcData, error: rpcError } = await supabase.rpc<string, GetUsageTotalsRpcResult[]>(
+      'get_usage_totals'
+    );
+    if (!rpcError && rpcData) {
+      const row = Array.isArray(rpcData) ? rpcData[0] : (rpcData as unknown);
+      if (isValidUsageTotalsRow(row)) {
+        const input = toCount(row.input);
+        const output = toCount(row.output);
+        const turns = toCount(row.turns);
+        return NextResponse.json({ input, output, total: input + output, turns });
+      }
+      console.warn('API /api/usage: get_usage_totals returned unexpected shape, falling back to paging query:', row);
+    } else if (rpcError) {
+      if (!isMissingFunction(rpcError)) {
+        console.warn('API /api/usage: get_usage_totals RPC failed for reason other than missing function, falling back to paging query:', rpcError);
+      }
     }
-    // Un-migrated database: keep the old behaviour below instead of failing.
-    if (!isMissingFunction(rpcError)) throw rpcError;
 
     // Fallback: paginate in chunks so lifetime totals stay exact past 1000 rows.
     let input = 0;

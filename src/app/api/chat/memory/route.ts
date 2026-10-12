@@ -84,12 +84,8 @@ export async function POST(req: NextRequest) {
     if (!parsedRequest.success) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
-    // Validated values win over the raw payload; `body.userId` is dropped on purpose.
-    const body = {
-      ...(parsedBody.body as Record<string, unknown>),
-      ...parsedRequest.data,
-      userId: undefined,
-    };
+    // Use only validated fields from the schema; unvalidated keys from raw payload are discarded.
+    const body = parsedRequest.data;
     const action = body.action || 'regenerate';
     const chatId: string = body.chatId || '';
     if (!chatId) {
@@ -449,7 +445,8 @@ export async function POST(req: NextRequest) {
           .eq('chat_id', chatId)
           .eq('user_id', effectiveUserId)
           .is('superseded_by', null)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(MEMORY_LIST_LIMIT);
         if (data) finalMemories = data as Memory[];
       } catch {
         // keep the locally merged bank as a fallback

@@ -12,6 +12,22 @@ import { estimateTokens } from '@/lib/prompt/tokens';
 import { ThinkingStreamParser } from '@/lib/llm/stream-parser';
 import { sanitizeModelOutput } from '@/lib/formatter/regex-engine';
 import type { Character, Persona, Message, Memory, Summary, ChatState } from '@/lib/supabase/types';
+import { z } from 'zod';
+import { readJsonBody } from '@/lib/api/request';
+import { shouldLogFullPrompts } from '@/lib/logs/prompt-logging';
+import { rateLimit, rateLimitKey } from '@/lib/api/rate-limit';
+import {
+  apiKeyString,
+  boundedNumber,
+  clientCharacterSchema,
+  clientPersonaSchema,
+  clientStateSchema,
+  clientSummarySchema,
+  historySchema,
+  intBetween,
+  lenientString,
+  memoriesSchema,
+} from '@/lib/api/schemas';
 
 /** Sanitizes model reply: strips speaker tags, lingering thinking tags, tokens, and canned preambles. */
 function cleanReply(text: string, charName: string): string {
@@ -20,15 +36,52 @@ function cleanReply(text: string, charName: string): string {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Ids end up in DB filters and response headers: bounded, no control characters. */
+const idString = z
+  .string()
+  .trim()
+  .min(1)
+  .max(300)
+  .regex(/^[^\u0000-\u001f\u007f]+$/, 'invalid id');
+
+const chatRequestSchema = z.looseObject({
+  chatId: idString,
+  characterId: idString,
+  personaId: lenientString(200).nullish(),
+  persona: clientPersonaSchema.nullish(),
+  userMessage: lenientString(100_000).optional(),
+  parentMessageId: lenientString(200).nullish(),
+  apiKey: apiKeyString,
+  temperature: boundedNumber(0, 2),
+  thinking: z.boolean().nullish(),
+  authorsNote: lenientString(10_000).nullish(),
+  authorsNoteDepth: intBetween(0, 100),
+  presetContent: lenientString(40_000).nullish(),
+  stylePreset: lenientString(40_000).nullish(),
+  mode: lenientString(20).optional(),
+  character: clientCharacterSchema.nullish(),
+  history: historySchema.optional(),
+  isSwipe: z.boolean().nullish(),
+  existingAssistantMessageId: lenientString(200).nullish(),
+  swipeIndex: intBetween(0, 1000),
+  clientMemories: memoriesSchema.optional(),
+  clientSummary: clientSummarySchema.nullish(),
+  clientState: clientStateSchema.nullish(),
+});
+
 export const runtime = 'nodejs';
 
-// Set LLM_LOG_FULL_PROMPTS=off to keep llm_logs rows without the full prompt payload.
-const STORE_FULL_PROMPTS = process.env.LLM_LOG_FULL_PROMPTS !== 'off';
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const read = await readJsonBody(req);
+    if (!read.ok) return NextResponse.json({ error: read.error }, { status: read.status });
+    const parsed = chatRequestSchema.safeParse(read.body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid chat request' }, { status: 400 });
+    }
+    const body = parsed.data;
     const {
       chatId,
       characterId,
@@ -83,16 +136,30 @@ export async function POST(req: NextRequest) {
       });
       const { data: authData } = await supabase.auth.getUser(bearerToken);
       userId = authData?.user?.id;
+      // A token was sent but is no longer valid: don't silently demote a signed-in
+      // writer to guest mode (their reply would never be saved).
+      if (!userId) {
+        return NextResponse.json({ error: 'Your session has expired. Please sign in again.' }, { status: 401 });
+      }
     } else {
       supabase = await createClient();
       const { data: authData } = await supabase.auth.getUser();
       userId = authData?.user?.id;
     }
 
+    // Guests spend the server's provider key, so they get a tighter budget.
+    const limit = rateLimit(`chat:${rateLimitKey(req, userId)}`, userId ? 60 : 15, 60_000);
+    if (!limit.ok) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a moment and try again.' },
+        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } }
+      );
+    }
+
     // Persona lookup doesn't depend on the character, so start it now.
     const personaPromise: Promise<Persona | null> =
       clientPersona && clientPersona.name
-        ? Promise.resolve(clientPersona as Persona)
+        ? Promise.resolve(clientPersona as unknown as Persona)
         : personaId && userId && UUID_REGEX.test(personaId)
           ? Promise.resolve(supabase.from('personas').select('*').eq('id', personaId).maybeSingle()).then(
               ({ data }) => (data as Persona) || null,
@@ -115,7 +182,7 @@ export async function POST(req: NextRequest) {
     if (dbChar) {
       character = dbChar as Character;
     } else if (clientCharacter) {
-      character = makeCharacter(clientCharacter);
+      character = makeCharacter(clientCharacter as unknown as Partial<Character>);
     } else {
       const cleanName = decodeURIComponent(characterId)
         .replace(/^local-char-\d+-?/, '')
@@ -198,6 +265,7 @@ export async function POST(req: NextRequest) {
           .from('chats')
           .select('id')
           .eq('id', chatId)
+          .eq('user_id', userId)
           .maybeSingle();
         existingChatRow = cRow;
       }
@@ -310,7 +378,7 @@ export async function POST(req: NextRequest) {
     await Promise.all([saveUserMessage(), loadHistory()]);
 
     if (history.length === 0 && Array.isArray(clientHistory) && clientHistory.length > 0) {
-      history = clientHistory;
+      history = clientHistory as unknown as Message[];
     }
 
     // Regenerate must not show the model the reply it is replacing, and Continue
@@ -931,7 +999,7 @@ export async function POST(req: NextRequest) {
                   kind: logKind,
                   model: effectiveModel,
                   params: llmLogPayload.params,
-                  request_messages: STORE_FULL_PROMPTS ? assembledMessages : [],
+                  request_messages: shouldLogFullPrompts() ? assembledMessages : [],
                   user_message: userMessage,
                   output: fullAssistantContent,
                   reasoning: fullReasoningContent || null,
@@ -1007,8 +1075,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('API /api/chat error:', error);
+    // LlmError messages are written for the user; anything else is internal.
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: error instanceof LlmError ? error.message : 'Something went wrong. Please try again.' },
       { status: error instanceof LlmError ? (error.status === 429 ? 429 : 502) : 500 }
     );
   }

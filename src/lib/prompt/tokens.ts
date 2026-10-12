@@ -66,25 +66,40 @@ export interface ContextBudget {
 }
 
 /**
- * Known context windows. Unknown models fall back to a conservative size.
- * The response reserve grows with the requested verbosity so "long" replies are
- * never squeezed out by a full context.
+ * Known context windows. Specific model overrides must be checked before
+ * generic family keywords so that models like qwen-max (32k) or deepseek-r1 (64k)
+ * are not over-estimated by generic 'max' or 'r1' rules.
  */
 const KNOWN_CONTEXT_WINDOWS: Array<[RegExp, number]> = [
+  // Specific model overrides
+  [/qwen.*max/i, 32_768],
+  [/deepseek.*(?:r1|reasoner)/i, 65_536],
+  // 200k window models (Claude 3+, OpenAI reasoning models o1/o3, GPT-5 / 4.1)
+  [/claude-(?:3|4)|claude-sonnet|claude-opus|claude-haiku/i, 200_000],
+  [/\b(?:o1|o3|o4)(?:-preview|-mini)?\b/i, 200_000],
+  [/gpt-[56]|gpt-4\.1/i, 200_000],
+  // 128k (131,072) window models
+  [/gpt-4o|deepseek|claude|gemini|qwen|mistral|llama/i, 131_072],
   [/mini|flash|lite|haiku/i, 131_072],
-  [/opus|o1|o3|r1|pro|max/i, 200_000],
-  [/sonnet|gpt-4\.1|gpt-4o|deepseek|claude|gemini|qwen|mistral|llama/i, 131_072],
+  // Older or smaller models
+  [/gpt-4-32k/i, 32_768],
+  [/gpt-4(?!\.1|o)|gpt-3\.5/i, 16_384],
 ];
 
 export const DEFAULT_CONTEXT_WINDOW = 131_072;
 /** Never assume less than this, even for unknown providers. */
 export const MIN_CONTEXT_WINDOW = 16_384;
 
+/** Allowance added when reasoning/thinking is enabled, matching streamChatCompletions. */
+export const THINKING_RESERVE_ALLOWANCE = 8192;
+
 export function getContextWindow(model?: string | null): number {
   if (!model) return DEFAULT_CONTEXT_WINDOW;
   for (const [pattern, window] of KNOWN_CONTEXT_WINDOWS) {
     if (pattern.test(model)) return window;
   }
+  // Unknown models (e.g. kimi, newer provider ids) get the common 128k window;
+  // computeContextBudget still floors everything at MIN_CONTEXT_WINDOW.
   return DEFAULT_CONTEXT_WINDOW;
 }
 
@@ -121,9 +136,15 @@ export const MAX_HISTORY_TOKENS = 16_000;
  */
 export function computeContextBudget(input: BudgetInput): ContextBudget {
   const contextWindow = Math.max(MIN_CONTEXT_WINDOW, getContextWindow(input.model));
+  // Thinking tokens are billed against max_tokens — the request sends
+  // Math.min(16384, Math.max(8192, baseMaxTokens + THINKING_TOKEN_ALLOWANCE)).
+  // Reserve must match what is actually sent.
+  const requestedResponseTokens = input.thinking
+    ? Math.min(16384, Math.max(8192, input.maxResponseTokens + THINKING_RESERVE_ALLOWANCE))
+    : input.maxResponseTokens;
   const responseReserve = Math.min(
     Math.floor(contextWindow * 0.45),
-    input.maxResponseTokens + (input.thinking ? 4096 : 0)
+    requestedResponseTokens
   );
 
   const promptBudget = contextWindow - responseReserve;

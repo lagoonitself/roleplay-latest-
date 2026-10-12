@@ -25,7 +25,16 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
       for (const [k, b] of buckets) {
         if (b.resetAt <= now) buckets.delete(k);
       }
-      if (buckets.size >= MAX_KEYS) buckets.clear();
+      if (buckets.size >= MAX_KEYS) {
+        // Evict oldest entries (Map keys in insertion order) rather than clearing all buckets
+        const toEvict = Math.ceil(MAX_KEYS * 0.2);
+        let evicted = 0;
+        for (const k of buckets.keys()) {
+          buckets.delete(k);
+          evicted++;
+          if (evicted >= toEvict || buckets.size < MAX_KEYS) break;
+        }
+      }
     }
     buckets.set(key, { count: 1, resetAt: now + windowMs });
     return { ok: true, retryAfterSeconds: 0 };
@@ -43,7 +52,19 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
 /** Keys buckets per user when signed in, per client IP otherwise. */
 export function rateLimitKey(req: NextRequest, userId?: string | null): string {
   if (userId) return `u:${userId}`;
-  const forwarded = req.headers.get('x-forwarded-for');
-  const ip = (forwarded?.split(',')[0] || req.headers.get('x-real-ip') || 'unknown').trim();
+  // Deploy target is Vercel: prefer the platform-set header (x-real-ip),
+  // or the last (right-most) trusted hop as appended by Vercel / edge proxies.
+  const realIp = req.headers.get('x-real-ip')?.trim();
+  let ip = realIp;
+  if (!ip) {
+    const forwarded = req.headers.get('x-forwarded-for');
+    if (forwarded) {
+      const hops = forwarded.split(',').map((h) => h.trim()).filter(Boolean);
+      if (hops.length > 0) {
+        ip = hops[hops.length - 1];
+      }
+    }
+  }
+  ip = (ip || 'unknown').trim();
   return `ip:${ip.slice(0, 64)}`;
 }

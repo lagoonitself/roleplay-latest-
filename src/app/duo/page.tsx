@@ -34,6 +34,7 @@ export default function DuoListPage() {
   const loadSeqRef = useRef(0);
   const firstLoadDoneRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshPendingRef = useRef(false);
 
   // Monotonic sequence: a slow response can never overwrite newer state.
   const load = useCallback(async () => {
@@ -81,6 +82,10 @@ export default function DuoListPage() {
   // Duo runs write chats.settings on every step — coalesce realtime bursts
   // into one trailing refresh instead of refetching per event.
   const scheduleLoad = useCallback(() => {
+    if (typeof document !== 'undefined' && document.hidden) {
+      refreshPendingRef.current = true;
+      return;
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null;
@@ -104,8 +109,20 @@ export default function DuoListPage() {
       .channel('duo-list')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => scheduleLoad())
       .subscribe();
+
+    // Refresh skipped while the tab was hidden, now that it is visible again.
+    const handleVisibility = () => {
+      if (!document.hidden && refreshPendingRef.current) {
+        refreshPendingRef.current = false;
+        loadNow();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      refreshPendingRef.current = false;
+      document.removeEventListener('visibilitychange', handleVisibility);
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

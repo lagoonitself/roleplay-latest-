@@ -30,7 +30,11 @@ export async function readJsonBody(
   } catch {
     return { ok: false, status: 400, error: 'Could not read the request body' };
   }
-  if (text.length > maxBytes) {
+  const byteLength =
+    typeof Buffer !== 'undefined'
+      ? Buffer.byteLength(text, 'utf8')
+      : new TextEncoder().encode(text).byteLength;
+  if (byteLength > maxBytes) {
     return { ok: false, status: 413, error: 'Request body is too large' };
   }
   try {

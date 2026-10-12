@@ -71,11 +71,10 @@ export function MessageActionsSheet({
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
-      // Anchor to the *visual* viewport when the shell publishes
-      // `--app-height` / `--app-offset-top` (useVisualViewportVars): on iOS the
-      // keyboard shrinks the visual viewport only, so a plain inset-0 sheet can
-      // end up sitting behind the keyboard. Falls back to the layout viewport.
-      style={{ top: 'var(--app-offset-top, 0px)', height: 'var(--app-height, 100dvh)' }}
+      // Anchor to the *visual* viewport height when the shell publishes `--app-height`.
+      // The outer page container already applies `translateY(var(--app-offset-top, 0px))`,
+      // so we use top: 0 to prevent double-counting the offsetTop.
+      style={{ top: 0, height: 'var(--app-height, 100dvh)' }}
     >
       {/* The backdrop is a real button — tap anywhere outside the sheet to dismiss. */}
       <button

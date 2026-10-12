@@ -31,7 +31,12 @@ export function IOSInstallPrompt({ forceOpen = false, onClose }: IOSInstallPromp
 
     // Auto show for iOS users not in standalone mode, unless dismissed recently
     if (isIOSDevice && !standaloneMode) {
-      const dismissedAt = Number(localStorage.getItem(DISMISS_KEY));
+      let dismissedAt = 0;
+      try {
+        dismissedAt = Number(localStorage.getItem(DISMISS_KEY));
+      } catch {
+        // iOS "Block All Cookies" / Safari private mode throws SecurityError.
+      }
       const dismissalExpired =
         !Number.isFinite(dismissedAt) || Date.now() - dismissedAt > DISMISS_TTL_MS;
       if (dismissalExpired) {

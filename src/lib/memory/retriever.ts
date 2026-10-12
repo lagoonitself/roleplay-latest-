@@ -195,7 +195,8 @@ async function loadLorebookEntries(supabase: SupabaseClient, characterId: string
   const { data: links } = await supabase
     .from('character_lorebooks')
     .select('lorebook_id')
-    .eq('character_id', characterId);
+    .eq('character_id', characterId)
+    .limit(50);
   if (!links?.length) return [];
   const { data: entries } = await supabase
     .from('lorebook_entries')
@@ -204,6 +205,7 @@ async function loadLorebookEntries(supabase: SupabaseClient, characterId: string
       'lorebook_id',
       links.map((l) => l.lorebook_id)
     )
-    .eq('enabled', true);
+    .eq('enabled', true)
+    .limit(500);
   return (entries as LorebookEntry[]) || [];
 }

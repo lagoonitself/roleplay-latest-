@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { rateLimit, rateLimitKey } from '@/lib/api/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +12,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * serves the Supabase `llm_logs` rows for signed-in users.
  *
  * GET /api/logs?chatId=<uuid>&limit=50  → newest-first rows (own rows only)
- * GET /api/logs?includePrompts=1        → full rows including `request_messages`
+ * GET /api/logs?includePrompts=1        → full rows including `request_messages` (capped at 50)
  * GET /api/logs?id=<row id>             → one full row (prompt included)
  * DELETE /api/logs?chatId=<uuid>        → delete own rows (optionally scoped to a chat)
  *
@@ -32,15 +33,25 @@ export async function GET(req: NextRequest) {
     if (!authData.user?.id) {
       return NextResponse.json({ logs: [], authenticated: false }, { status: 200 });
     }
+
+    const rl = rateLimit(`logs:${rateLimitKey(req, authData.user.id)}`, 60, 60_000);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const chatId = searchParams.get('chatId');
     if (chatId && !UUID_REGEX.test(chatId)) {
       return NextResponse.json({ error: 'chatId must be a UUID' }, { status: 400 });
     }
-    const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50));
+    const requestedLimit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50));
     const idParam = searchParams.get('id');
     const includePrompts =
       searchParams.get('includePrompts') === '1' || searchParams.get('includePrompts') === 'true';
+    const limit = includePrompts ? Math.min(requestedLimit, 50) : requestedLimit;
 
     const rowId = idParam !== null && idParam !== '' ? Number(idParam) : null;
     if (rowId !== null && (!Number.isInteger(rowId) || rowId < 1)) {
@@ -74,15 +85,18 @@ export async function GET(req: NextRequest) {
       if (error.code === '42P01') return NextResponse.json({ logs: [], authenticated: true });
       throw error;
     }
-    const logs = ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
-      ...row,
-      request_message_count:
-        typeof row.request_message_count === 'number'
-          ? row.request_message_count
-          : Array.isArray(row.request_messages)
-            ? row.request_messages.length
-            : null,
-    }));
+    const logs = ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => {
+      let requestMessageCount: number | null = null;
+      if (Array.isArray(row.request_messages)) {
+        requestMessageCount = row.request_messages.length > 0 ? row.request_messages.length : null;
+      } else if (typeof row.request_message_count === 'number') {
+        requestMessageCount = row.request_message_count > 0 ? row.request_message_count : null;
+      }
+      return {
+        ...row,
+        request_message_count: requestMessageCount,
+      };
+    });
     return NextResponse.json({ logs, authenticated: true });
   } catch (e) {
     console.error('API /api/logs GET error:', e);
@@ -97,6 +111,15 @@ export async function DELETE(req: NextRequest) {
     if (!authData.user?.id) {
       return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
     }
+
+    const rl = rateLimit(`logs-del:${rateLimitKey(req, authData.user.id)}`, 10, 60_000);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const chatId = searchParams.get('chatId');
     if (chatId && !UUID_REGEX.test(chatId)) {

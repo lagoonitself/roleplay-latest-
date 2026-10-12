@@ -50,6 +50,7 @@ export default function DuoWatchPage() {
   const duoRef = useRef<DuoSession | null>(null);
   const settingsRef = useRef(settings);
   const loadPromiseRef = useRef<Promise<void> | null>(null);
+  const loadSeqRef = useRef(0);
 
   // Keep the shell sized to the *visible* viewport so the director fields stay
   // above the iOS keyboard instead of behind it.
@@ -81,8 +82,10 @@ export default function DuoWatchPage() {
   // ticks can never stack full chat + transcript refetches before one lands.
   const load = useCallback(() => {
     if (!loadPromiseRef.current) {
+      const seq = ++loadSeqRef.current;
       const run = (async () => {
         const { data: chatRow } = await supabase.from('chats').select('*').eq('id', chatId).maybeSingle();
+        if (seq !== loadSeqRef.current) return;
         if (chatRow) {
           setChat(chatRow as Chat);
           setDuo(parseDuo((chatRow as Chat).settings));
@@ -93,8 +96,19 @@ export default function DuoWatchPage() {
           .eq('chat_id', chatId)
           .order('created_at', { ascending: true })
           .limit(400);
+        if (seq !== loadSeqRef.current) return;
         if (rows) {
-          setMessages(rows as Message[]);
+          const fetched = rows as Message[];
+          // Keep only realtime rows that landed after this read; anything older
+          // that the server no longer returns was deleted and must go.
+          setMessages((prev) => {
+            const newest = fetched.length ? Date.parse(fetched[fetched.length - 1].created_at) : 0;
+            const fetchedIds = new Set(fetched.map((m) => m.id));
+            const lateArrivals = prev.filter(
+              (m) => !fetchedIds.has(m.id) && Date.parse(m.created_at) > newest
+            );
+            return lateArrivals.length ? [...fetched, ...lateArrivals] : fetched;
+          });
           lastActivityRef.current = Date.now();
         }
       })();
