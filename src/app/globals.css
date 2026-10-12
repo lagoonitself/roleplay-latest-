@@ -169,6 +169,29 @@
   html {
     background-color: var(--bg);
     -webkit-text-size-adjust: 100%;
+    /* iOS standalone: the page itself never rubber-bands, so sticky headers,
+       the tab bar and the chat shell stay glued. Inner scrollers (.scroll-y)
+       keep their own native bounce. */
+    overscroll-behavior: none;
+  }
+
+  /* Chrome is not text. No long-press callout or accidental selection on
+     controls; prose and inputs stay selectable. */
+  button,
+  [role='button'],
+  [role='tab'],
+  nav,
+  header,
+  label,
+  .chip {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  img {
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
   }
 
   body {
@@ -180,6 +203,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
+    overscroll-behavior: none;
   }
 
   ::selection {
@@ -784,6 +808,73 @@
 }
 .pr-safe {
   padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* ── iOS app-feel primitives ─────────────────────────────────────────
+
+   .scroll-y     An inner scroll region: native momentum, its own bounce,
+                 never chains the scroll to the page behind it.
+   .pb-dock      Bottom padding for any screen that shows the mobile tab bar,
+                 so the last row is never hidden under it. md+ resets to 0.
+   .press        Touch feedback for whole rows / cards: dims on press.
+   .row-press    Touch feedback for list rows: a faint fill on press.
+   .sheet-*      Styling for components/ui/sheet.tsx (vaul).
+   .tabbar       The iOS-style bottom tab bar (components/mobile-dock.tsx). */
+
+.scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pb-dock {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4.75rem);
+}
+@media (min-width: 768px) {
+  .pb-dock {
+    padding-bottom: 2rem;
+  }
+}
+
+.press {
+  transition: opacity 120ms ease, transform 160ms ease;
+}
+.press:active {
+  opacity: 0.7;
+  transform: scale(0.985);
+}
+
+.row-press {
+  transition: background-color 120ms ease;
+}
+.row-press:active {
+  background-color: color-mix(in oklab, var(--ink) 7%, transparent);
+}
+
+.sheet-overlay {
+  background-color: color-mix(in oklab, #000 55%, transparent);
+}
+.sheet-content {
+  background-color: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  box-shadow: var(--shadow-float);
+  overscroll-behavior: contain;
+}
+.sheet-grabber {
+  width: 2.25rem;
+  height: 0.3125rem;
+  border-radius: 999px;
+  background-color: var(--line-strong);
+}
+
+.tabbar {
+  background-color: color-mix(in oklab, var(--surface-raised) 94%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(18px);
+  backdrop-filter: saturate(1.4) blur(18px);
+  border-top: 1px solid var(--line);
 }
 
 /* Modals / sheets visual viewport clamp so keyboard never clips panels inside transformed shell */
