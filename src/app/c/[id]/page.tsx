@@ -157,6 +157,7 @@ export default function CharacterProfilePage() {
             },
           ]);
 
+          setPersonaModalOpen(false);
           router.push(`/chat/${newChat.id}`);
           return;
         }
@@ -185,6 +186,7 @@ export default function CharacterProfilePage() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
+    setPersonaModalOpen(false);
     router.push(`/chat/${localChatId}?charId=${encodeURIComponent(character.id || character.name)}`);
   };
 
@@ -299,7 +301,7 @@ export default function CharacterProfilePage() {
       </div>
 
       {/* Primary action */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-raised px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] md:static md:border-0 md:bg-transparent md:p-0">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-raised px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pl-safe pr-safe md:static md:border-0 md:bg-transparent md:p-0">
         <button
           type="button"
           onClick={handleStartChat}
@@ -354,7 +356,7 @@ export default function CharacterProfilePage() {
                   key={i}
                   type="button"
                   onClick={() => setSelectedGreetingIndex(i)}
-                  className={`min-h-9 min-w-9 flex items-center justify-center text-xs ${
+                  className={`min-h-11 min-w-11 flex items-center justify-center text-xs ${
                     selectedGreetingIndex === i ? 'chip chip-accent' : 'chip'
                   }`}
                   aria-pressed={selectedGreetingIndex === i}

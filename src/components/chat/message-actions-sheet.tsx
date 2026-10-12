@@ -44,9 +44,15 @@ export function MessageActionsSheet({
   onClose,
   open,
 }: MessageActionsSheetProps) {
-  const isOpen = open !== undefined ? open && Boolean(message) : Boolean(message);
-  const isAssistant = message?.role === 'assistant';
-  const hasContent = (message?.content?.trim().length ?? 0) > 0;
+  // Keep showing the last message while the sheet animates closed (the
+  // parent clears `message` the moment it closes).
+  const [lastMessage, setLastMessage] = React.useState(message);
+  if (message && message !== lastMessage) setLastMessage(message);
+  const displayMessage = message ?? lastMessage;
+
+  const isOpen = open !== undefined ? open && Boolean(displayMessage) : Boolean(message);
+  const isAssistant = displayMessage?.role === 'assistant';
+  const hasContent = (displayMessage?.content?.trim().length ?? 0) > 0;
 
   const act = (fn: () => void) => () => {
     fn();
@@ -59,22 +65,24 @@ export function MessageActionsSheet({
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
-      title={message ? (isAssistant ? 'Character response' : 'Your message') : 'Message'}
+      title={displayMessage ? (isAssistant ? 'Character response' : 'Your message') : 'Message'}
       description={
         hasContent ? (
-          <span className="line-clamp-2 break-words block">{message?.content}</span>
+          <span className="line-clamp-2 break-words block">{displayMessage?.content}</span>
         ) : undefined
       }
       hideClose
       size="auto"
       bodyClassName="space-y-2.5 px-4 pb-4"
     >
-      {!message ? null : (
+      {!displayMessage ? null : (
         <>
           <div className="surface divide-y divide-line overflow-hidden">
             <button
               type="button"
-              onClick={act(() => onCopy(message.content))}
+              onClick={act(() => {
+                if (displayMessage.content) onCopy(displayMessage.content);
+              })}
               disabled={!hasContent}
               className={`${ACTION_ROW_CLASS} text-ink disabled:opacity-40 disabled:pointer-events-none`}
             >

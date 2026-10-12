@@ -136,6 +136,9 @@ export function PersonaModal({
         setMode(initialMode);
       } else {
         setEditingPersonaState(null);
+        setName('');
+        setDescription('');
+        setAvatarUrl('');
         setMode('list');
       }
     }, 0);
