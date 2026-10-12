@@ -67,7 +67,7 @@ export default function CharacterProfilePage() {
         <p className="type-meta">This character is not in your roster, or it was removed.</p>
         <Link
           href="/"
-          className="btn btn-primary"
+          className="btn btn-primary min-h-11 flex items-center justify-center"
         >
           Back to explore
         </Link>
@@ -221,124 +221,131 @@ export default function CharacterProfilePage() {
   };
 
   return (
-    <div className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+    <div className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] md:pb-10 space-y-6 sm:space-y-8">
       {/* Top navigation */}
-      <div className="flex items-center justify-between">
+      <nav className="flex items-center justify-between gap-2" aria-label="Character navigation">
         <Link
           href="/"
-          className="icon-btn"
+          className="icon-btn min-h-11 min-w-11"
           aria-label="Back to explore"
         >
-          <ArrowLeft className="w-5 h-5" aria-hidden />
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" />
         </Link>
 
         <div className="flex items-center gap-2">
+          {/* TODO(ios): add character edit action when edit route/flow is implemented */}
           <button
             type="button"
             onClick={handleExportCard}
-            className="btn btn-ghost flex items-center gap-1.5"
+            className="btn btn-ghost min-h-11 min-w-11 p-0 sm:px-3 flex items-center justify-center gap-1.5 text-xs sm:text-sm"
+            aria-label="Export card V2"
+            title="Export card V2"
           >
-            <Download className="w-3.5 h-3.5" aria-hidden />
-            Export card V2
+            <Download className="w-4 h-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Export card V2</span>
           </button>
           <button
             type="button"
             onClick={handleDeleteCharacter}
-            className="btn btn-danger flex items-center gap-1.5"
+            className="btn btn-danger min-h-11 min-w-11 p-0 sm:px-3 flex items-center justify-center gap-1.5 text-xs sm:text-sm"
+            aria-label="Delete character"
             title="Delete this character"
           >
-            <Trash2 className="w-3.5 h-3.5" aria-hidden />
-            Delete character
+            <Trash2 className="w-4 h-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Delete character</span>
           </button>
         </div>
+      </nav>
+
+      {/* Portrait plate */}
+      <div className="w-full max-w-sm mx-auto aspect-[3/4] rounded-xl overflow-hidden border border-line bg-sunken">
+        <CharacterAvatar
+          name={character.name}
+          avatarUrl={character.avatar_url}
+          accentColor={character.accent_color}
+          className="w-full h-full object-cover"
+        />
       </div>
 
-      {/* Hero */}
-      <div className="surface rounded-xl p-6 sm:p-8 space-y-6">
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-xl overflow-hidden shrink-0 border border-line" style={{ width: 160, height: 160 }}>
-            <CharacterAvatar
-              name={character.name}
-              avatarUrl={character.avatar_url}
-              accentColor={character.accent_color}
-              className="w-full h-full"
-            />
-          </div>
-
-          <div className="flex-1 text-center sm:text-left space-y-2 min-w-0">
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-              <h1 className="type-page font-serif">
-                {character.name}
-              </h1>
-              {character.content_rating !== 'sfw' && (
-                <span className="chip chip-danger flex items-center gap-1">
-                  <Flame className="w-3 h-3" aria-hidden />
-                  18+
-                </span>
-              )}
-            </div>
-
-            {character.tagline && (
-              <p className="text-accent-text type-sec">
-                {character.tagline}
-              </p>
-            )}
-
-            <div className="prose-rp !text-[0.95rem]">
-              {character.description || 'No description yet.'}
-            </div>
-
-            {!!character.tags?.length && (
-              <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
-                {character.tags?.map((tag) => (
-                  <span key={tag} className="chip">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="pt-4">
-              <button
-                type="button"
-                onClick={handleStartChat}
-                className="btn btn-primary w-full sm:w-auto flex items-center justify-center gap-2"
-              >
-                <MessageSquare className="w-4 h-4" aria-hidden />
-                Start roleplay
-              </button>
-            </div>
-          </div>
+      {/* Character header */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="type-page font-serif">
+            {character.name}
+          </h1>
+          {character.content_rating !== 'sfw' && (
+            <span className="chip chip-danger flex items-center gap-1">
+              <Flame className="w-3 h-3" aria-hidden="true" />
+              18+
+            </span>
+          )}
         </div>
-      </div>
 
-      {/* Personality and scenario */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="surface rounded-xl p-6 space-y-2">
-          <h3 className="type-sec">
-            Personality
-          </h3>
-          <p className="text-sm text-ink leading-relaxed">
-            {character.personality || 'No custom personality defined.'}
+        {character.tagline && (
+          <p className="text-accent-text type-sec">
+            {character.tagline}
           </p>
-        </div>
+        )}
 
-        <div className="surface rounded-xl p-6 space-y-2">
-          <h3 className="type-sec">
-            Starting scenario
-          </h3>
-          <p className="text-sm text-ink leading-relaxed">
-            {character.scenario || 'No custom scenario defined.'}
-          </p>
-        </div>
+        {!!character.tags?.length && (
+          <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 py-1">
+            {character.tags.map((tag) => (
+              <span key={tag} className="chip shrink-0">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Primary action */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-raised px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] md:static md:border-0 md:bg-transparent md:p-0">
+        <button
+          type="button"
+          onClick={handleStartChat}
+          className="btn btn-primary w-full min-h-11 flex items-center justify-center gap-2 md:w-auto"
+        >
+          <MessageSquare className="w-4 h-4" aria-hidden="true" />
+          Start roleplay
+        </button>
+      </div>
+
+      {/* Description */}
+      <section className="space-y-2 pt-6 border-t border-line">
+        <h2 className="type-sec">
+          Description
+        </h2>
+        <div className="prose-rp text-ink leading-relaxed">
+          {character.description || 'No description yet.'}
+        </div>
+      </section>
+
+      {/* Personality */}
+      <section className="space-y-2 pt-6 border-t border-line">
+        <h2 className="type-sec">
+          Personality
+        </h2>
+        <div className="prose-rp text-ink leading-relaxed">
+          {character.personality || 'No custom personality defined.'}
+        </div>
+      </section>
+
+      {/* Starting scenario */}
+      <section className="space-y-2 pt-6 border-t border-line">
+        <h2 className="type-sec">
+          Starting scenario
+        </h2>
+        <div className="prose-rp text-ink leading-relaxed">
+          {character.scenario || 'No custom scenario defined.'}
+        </div>
+      </section>
 
       {/* Opening greetings preview */}
-      <div className="surface rounded-xl p-6 sm:p-8 space-y-4">
+      <section className="space-y-3 pt-6 border-t border-line">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="type-sec">
+          <h2 className="type-sec">
             Opening greetings ({greetings.length})
-          </h3>
+          </h2>
 
           {greetings.length > 1 && (
             <div className="flex items-center gap-1.5" role="group" aria-label="Choose greeting">
@@ -347,7 +354,9 @@ export default function CharacterProfilePage() {
                   key={i}
                   type="button"
                   onClick={() => setSelectedGreetingIndex(i)}
-                  className={selectedGreetingIndex === i ? 'chip chip-accent' : 'chip'}
+                  className={`min-h-9 min-w-9 flex items-center justify-center text-xs ${
+                    selectedGreetingIndex === i ? 'chip chip-accent' : 'chip'
+                  }`}
                   aria-pressed={selectedGreetingIndex === i}
                   aria-label={`Show greeting ${i + 1}`}
                 >
@@ -361,7 +370,7 @@ export default function CharacterProfilePage() {
         <div className="well p-4 whitespace-pre-wrap prose-rp roleplay-prose">
           {greetings[selectedGreetingIndex]}
         </div>
-      </div>
+      </section>
 
       <PersonaModal
         open={personaModalOpen}

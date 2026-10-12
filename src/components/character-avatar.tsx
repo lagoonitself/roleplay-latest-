@@ -43,9 +43,10 @@ export function CharacterAvatar({
         width={96}
         height={96}
         loading="lazy"
+        decoding="async"
+        draggable={false}
         onError={() => setImgError(true)}
         className={`object-cover object-center ${className}`}
-        style={{ aspectRatio: '1 / 1' }}
       />
     );
   }
