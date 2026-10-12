@@ -23,6 +23,7 @@ import { MobileDock, type AppTab } from '@/components/mobile-dock';
 import { CreateDrawer } from '@/components/create-drawer';
 import { SettingsDialog } from '@/components/settings-dialog';
 import { ProfileView } from '@/components/profile/profile-view';
+import { Sheet } from '@/components/ui/sheet';
 import {
   getUnifiedChats,
   groupChatsByCharacter,
@@ -477,7 +478,7 @@ function HomePageContent() {
   };
 
   return (
-    <div className="flex-1 flex flex-col w-full pb-24 md:pb-10">
+    <div className="flex-1 flex flex-col w-full pb-dock">
       {/* ─────────────────── TAB: PROFILE (Feature 2 — full dedicated section) ─────────────────── */}
       {activeTab === 'profile' ? (
         <ProfileView onOpenSettingsDialog={() => setSettingsDialogOpen(true)} />
@@ -489,68 +490,77 @@ function HomePageContent() {
           onOpenSettings={() => setPersonaDrawerOpen(true)}
         />
       ) : (
-        /* ─────────────────── TAB 1: EXPLORE / CHARACTERS VIEW (Clean, No Cluttered Hero) ─────────────────── */
-        <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto px-4 sm:px-6 py-4 md:py-6 space-y-6">
-          {/* Top Control Bar: Search & Filter Pills */}
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              {/* Search Bar */}
-              <div className="relative max-w-md flex-1">
-                <Search
-                  className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-ink-3"
-                  aria-hidden="true"
-                />
-                <input
-                  type="text"
-                  placeholder="Search by name, e.g. Elara…"
-                  aria-label="Search characters"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="field pr-9 pl-9"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    aria-label="Clear search"
-                    className="icon-btn absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
-                )}
-              </div>
-
-              {/* Action Buttons: Persona Switcher & Create */}
-              <div className="flex shrink-0 items-center gap-2">
-                {/* Persona Pill: View and Switch Personas */}
-                <button
-                  onClick={() => setPersonaDrawerOpen(true)}
-                  className="chip gap-1.5 px-3 py-2 text-xs transition-colors hover:text-ink"
-                  title="View and switch your roleplay persona"
-                  aria-label="Your Personas"
-                >
-                  <User className="h-3.5 w-3.5 text-ink-2" aria-hidden="true" />
-                  <span className="hidden text-ink-3 sm:inline">Persona:</span>
-                  <span className="max-w-[110px] truncate font-medium">{activePersonaName}</span>
-                </button>
-
-                <button
-                  onClick={() => setCreateDrawerOpen(true)}
-                  className="btn btn-primary text-xs"
-                >
-                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Create</span>
-                </button>
-              </div>
+        /* ─────────────────── TAB 1: EXPLORE / CHARACTERS VIEW ─────────────────── */
+        <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-6 space-y-4 sm:space-y-6">
+          {/* Header Block: compact title + meta with Persona & Create actions */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="type-page text-xl sm:text-2xl">Explore</h1>
+              <p className="type-meta text-xs truncate">Characters and roleplay worlds</p>
             </div>
 
-            {/* Category Filter Pills */}
-            <div className="scrollbar-none flex items-center gap-1.5 overflow-x-auto pb-1.5">
+            {/* Action Buttons: Persona Switcher & Create */}
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Persona Pill: View and Switch Personas */}
+              <button
+                onClick={() => setPersonaDrawerOpen(true)}
+                className="chip gap-1.5 px-3 py-2 text-xs transition-colors hover:text-ink min-h-11"
+                title="View and switch your roleplay persona"
+                aria-label="Your Personas"
+              >
+                <User className="h-3.5 w-3.5 text-ink-2" aria-hidden="true" />
+                <span className="hidden text-ink-3 sm:inline">Persona:</span>
+                <span className="max-w-[110px] truncate font-medium">{activePersonaName}</span>
+              </button>
+
+              <button
+                onClick={() => setCreateDrawerOpen(true)}
+                className="btn btn-primary text-xs min-h-11 px-3.5"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Create</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Sticky Search & Tag Filter Bar */}
+          <div className="sticky top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-30 -mx-4 bg-background px-4 py-2 space-y-2.5 border-b border-line sm:border-b-0 sm:mx-0 sm:px-0 sm:py-0">
+            {/* Search Bar */}
+            <div className="relative w-full max-w-md">
+              <Search
+                className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-ink-3"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                enterKeyHint="search"
+                autoCorrect="off"
+                autoCapitalize="none"
+                placeholder="Search by name, e.g. Elara…"
+                aria-label="Search characters"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="field pr-9 pl-9 w-full"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear search"
+                  className="icon-btn absolute top-1/2 right-1.5 h-8 w-8 -translate-y-1/2"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Pills: horizontal scroll on one line */}
+            <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1">
               {tags.map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setSelectedTag(tag)}
                   aria-pressed={selectedTag === tag}
-                  className={`whitespace-nowrap transition-colors ${
+                  className={`shrink-0 whitespace-nowrap transition-colors ${
                     selectedTag === tag
                       ? 'chip-accent chip inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold'
                       : 'chip hover:text-ink px-3.5 py-1.5 text-xs'
@@ -566,7 +576,7 @@ function HomePageContent() {
           {!searchQuery && selectedTag === 'All' && (
             <Link
               href="/duo"
-              className="group flex items-center gap-3 border-y border-line py-3.5 transition-colors"
+              className="group row-press flex items-center gap-3 border-y border-line py-3.5 transition-colors"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-sm font-medium text-accent-text">
@@ -620,7 +630,7 @@ function HomePageContent() {
                     <div
                       key={chat.id}
                       onClick={() => router.push(`/chat/${chat.id}${queryParam}`)}
-                      className="group flex cursor-pointer items-center justify-between gap-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklab,var(--ink)_3%,transparent)]"
+                      className="group row-press flex cursor-pointer items-center justify-between gap-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklab,var(--ink)_3%,transparent)]"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="bg-sunken h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-line">
@@ -646,7 +656,7 @@ function HomePageContent() {
                       {/* Delete button on recent chat pill */}
                       <button
                         onClick={(e) => handleDeleteRecentChat(e, chat.id)}
-                        className="icon-btn h-8 w-8 shrink-0 opacity-0 transition-[opacity,color,background-color] group-hover:opacity-100 focus-visible:opacity-100"
+                        className="icon-btn h-8 w-8 min-h-8 min-w-8 shrink-0 opacity-100 transition-[opacity,color,background-color] md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100"
                         title="Delete chat from recent history"
                         aria-label={`Delete chat with ${charName}`}
                       >
@@ -668,13 +678,26 @@ function HomePageContent() {
               </span>
             </div>
 
-            {filteredCharacters.length > 0 ? (
-              <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 lg:grid-cols-4">
+            {loading && characters.length === 0 ? (
+              /* Loading skeletons matching the 2-column mobile grid */
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-x-5 sm:gap-y-7 lg:grid-cols-4">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="flex flex-col min-w-0">
+                    <div className="bg-sunken aspect-[3/4] rounded-xl border border-line pulse-soft" />
+                    <div className="pt-2 space-y-1.5">
+                      <div className="bg-sunken h-4 w-3/4 rounded-sm pulse-soft" />
+                      <div className="bg-sunken h-3 w-1/2 rounded-sm pulse-soft" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredCharacters.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-x-5 sm:gap-y-7 lg:grid-cols-4">
                 {filteredCharacters.map((character) => (
                   <div
                     key={character.id}
                     onClick={() => handleStartChat(character)}
-                    className="group flex cursor-pointer flex-col"
+                    className="group press flex cursor-pointer flex-col min-w-0"
                   >
                     {/* Portrait plate */}
                     <div className="bg-sunken relative aspect-[3/4] overflow-hidden rounded-xl border border-line">
@@ -699,7 +722,7 @@ function HomePageContent() {
                         {character.name}
                       </h3>
                       {character.tagline && (
-                        <p className="type-meta mt-0.5 line-clamp-1">
+                        <p className="type-meta mt-0.5 line-clamp-2">
                           {character.tagline}
                         </p>
                       )}
@@ -709,14 +732,14 @@ function HomePageContent() {
                         </p>
                       )}
 
-                      {/* Actions, revealed on hover or keyboard focus */}
-                      <div className="flex items-center gap-1 pt-1.5 opacity-0 transition-[opacity] duration-150 group-hover:opacity-100 focus-within:opacity-100">
+                      {/* Actions, visible on mobile and revealed on hover/focus on desktop */}
+                      <div className="flex items-center gap-1 pt-1.5 opacity-100 transition-[opacity] duration-150 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             router.push(`/c/${character.id}`);
                           }}
-                          className="btn btn-quiet text-xs"
+                          className="btn btn-quiet text-xs px-2 sm:px-3 min-h-8"
                         >
                           Details
                         </button>
@@ -738,7 +761,7 @@ function HomePageContent() {
                               await loadData();
                             }
                           }}
-                          className="icon-btn h-8 w-8"
+                          className="icon-btn h-8 w-8 shrink-0"
                           title="Delete character"
                           aria-label={`Delete ${character.name}`}
                         >
@@ -750,7 +773,7 @@ function HomePageContent() {
                             e.stopPropagation();
                             handleStartChat(character);
                           }}
-                          className="btn btn-primary ml-auto text-xs"
+                          className="btn btn-primary ml-auto text-xs px-2.5 sm:px-3 min-h-8"
                         >
                           Chat
                           <ArrowRight className="h-3 w-3" aria-hidden="true" />
@@ -807,7 +830,7 @@ function HomePageContent() {
         totalChatsCount={chats.length}
       />
 
-      {/* ─────────────────── JANITOR-AI CHAT SESSIONS DRAWER (Images 4 & 5) ─────────────────── */}
+      {/* ─────────────────── JANITOR-AI CHAT SESSIONS DRAWER ─────────────────── */}
       <CharacterChatsDrawer
         open={Boolean(drawerCharacter)}
         onClose={() => setDrawerCharacter(null)}
@@ -829,52 +852,48 @@ function HomePageContent() {
         onOpenImportGuide={() => setShowImportGuide(true)}
       />
 
-      {/* ─────────────────── IMPORT GUIDE MODAL ─────────────────── */}
-      {showImportGuide && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="panel bg-raised relative w-full max-w-lg space-y-4 p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="type-sec text-sm">Import a character card</h3>
-              <button
-                onClick={() => setShowImportGuide(false)}
-                aria-label="Close"
-                className="icon-btn h-8 w-8"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+      {/* ─────────────────── IMPORT GUIDE SHEET ─────────────────── */}
+      <Sheet
+        open={showImportGuide}
+        onOpenChange={(o) => {
+          if (!o) setShowImportGuide(false);
+        }}
+        title="Import a character card"
+        size="auto"
+        bodyClassName="px-5 pb-5 space-y-4"
+        footer={
+          <button
+            onClick={() => setShowImportGuide(false)}
+            className="btn btn-primary w-full text-xs"
+          >
+            Close
+          </button>
+        }
+      >
+        <ol className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+          <li className="flex items-start gap-3 p-3.5">
+            <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">1</span>
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-ink">Export the card</span>
+              <p className="text-xs leading-relaxed text-ink-2">On the character&apos;s page, choose the export or download option and save the PNG or JSON file.</p>
             </div>
-            <ol className="divide-y divide-line overflow-hidden rounded-xl border border-line">
-              <li className="flex items-start gap-3 p-3.5">
-                <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">1</span>
-                <div className="space-y-1">
-                  <span className="block text-xs font-medium text-ink">Export the card</span>
-                  <p className="text-xs leading-relaxed text-ink-2">On the character&apos;s page, choose the export or download option and save the PNG or JSON file.</p>
-                </div>
-              </li>
-              <li className="flex items-start gap-3 p-3.5">
-                <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">2</span>
-                <div className="space-y-1">
-                  <span className="block text-xs font-medium text-ink">Choose import</span>
-                  <p className="text-xs leading-relaxed text-ink-2">Select your downloaded file. Cadenza reads the personality, scenario, greeting and avatar from it.</p>
-                </div>
-              </li>
-              <li className="flex items-start gap-3 p-3.5">
-                <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">3</span>
-                <div className="space-y-1">
-                  <span className="block text-xs font-medium text-ink">Start chatting</span>
-                  <p className="text-xs leading-relaxed text-ink-2">The character is ready straight away, with its memory and instructions intact.</p>
-                </div>
-              </li>
-            </ol>
-            <button
-              onClick={() => setShowImportGuide(false)}
-              className="btn btn-primary w-full text-xs"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+          </li>
+          <li className="flex items-start gap-3 p-3.5">
+            <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">2</span>
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-ink">Choose import</span>
+              <p className="text-xs leading-relaxed text-ink-2">Select your downloaded file. Cadenza reads the personality, scenario, greeting and avatar from it.</p>
+            </div>
+          </li>
+          <li className="flex items-start gap-3 p-3.5">
+            <span className="type-code w-5 shrink-0 pt-0.5 text-ink" aria-hidden="true">3</span>
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-ink">Start chatting</span>
+              <p className="text-xs leading-relaxed text-ink-2">The character is ready straight away, with its memory and instructions intact.</p>
+            </div>
+          </li>
+        </ol>
+      </Sheet>
 
       {/* ─────────────────── PERSONA MODAL ─────────────────── */}
       <PersonaModal
