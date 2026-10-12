@@ -144,83 +144,103 @@ export default function DuoListPage() {
   };
 
   return (
-    <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)]">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6 pb-[calc(env(safe-area-inset-bottom,0px)+2rem)]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <Link href="/" className="icon-btn shrink-0" aria-label="Back home">
+          <Link href="/" className="icon-btn min-h-11 min-w-11 shrink-0" aria-label="Back home">
             <ArrowLeft className="w-5 h-5" aria-hidden />
           </Link>
           <div className="min-w-0">
-            <h1 className="type-page">Duo scenes</h1>
-            <p className="type-meta">Two of your people, talking on their own. You watch.</p>
+            <h1 className="type-page truncate">Duo scenes</h1>
+            <p className="type-meta truncate">Two of your people, talking on their own. You watch.</p>
           </div>
         </div>
-        <Link href="/duo/new" className="btn btn-primary shrink-0">
-          <Plus className="w-3.5 h-3.5" aria-hidden />
-          New scene
+        <Link
+          href="/duo/new"
+          className="btn btn-primary w-full sm:w-auto min-h-11 justify-center shrink-0"
+        >
+          <Plus className="w-4 h-4" aria-hidden />
+          New duo
         </Link>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" aria-label="Loading scenes">
+        <div className="surface divide-y divide-line rounded-xl overflow-hidden" aria-label="Loading scenes">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-36 rounded-xl bg-sunken animate-pulse" aria-hidden />
+            <div key={i} className="min-h-[64px] p-4 flex items-center gap-3 animate-pulse bg-sunken/40" aria-hidden>
+              <div className="w-10 h-10 rounded-md bg-sunken shrink-0" />
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="h-4 bg-sunken rounded w-1/3" />
+                <div className="h-3 bg-sunken rounded w-1/2" />
+              </div>
+            </div>
           ))}
         </div>
       ) : chats.length === 0 ? (
-        <div className="surface rounded-xl p-10 text-center space-y-3">
+        <div className="surface rounded-xl p-8 sm:p-10 text-center space-y-4">
           <h2 className="type-page">No scenes yet</h2>
           <p className="type-meta max-w-sm mx-auto">
             Pick any two characters or personas, give them a situation, and they start talking. It
             keeps going even if you close the page. Pause or resume whenever you like.
           </p>
-          <Link href="/duo/new" className="btn btn-primary inline-flex">
+          <Link href="/duo/new" className="btn btn-primary min-h-11 inline-flex justify-center items-center">
             Start your first scene
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="surface divide-y divide-line rounded-xl overflow-hidden">
           {chats.map((chat) => {
             const duo = parseDuo(chat.settings);
             return (
-              <div key={chat.id} className="surface rounded-xl overflow-hidden">
-                <Link href={`/duo/${chat.id}`} className="block p-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex -space-x-2 shrink-0">
-                      {(['a', 'b'] as const).map((side) => {
-                        const face = duo?.faces?.[side];
-                        return (
-                          <div
-                            key={side}
-                            className="w-10 h-10 rounded-md overflow-hidden border border-line bg-background ring-2 ring-background"
-                          >
-                            <CharacterAvatar name={face?.name || '?'} avatarUrl={face?.avatar_url || null} />
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-serif text-[0.95rem] font-medium text-ink truncate">
-                        {chat.title || 'Untitled scene'}
-                      </div>
-                      <div className="type-meta truncate">
-                        {duo ? `${duo.faces.a.name} and ${duo.faces.b.name}` : ''}
-                      </div>
-                    </div>
-                    <span className={statusChip(duo?.status)}>{statusLabel(chat)}</span>
+              <div
+                key={chat.id}
+                className="flex items-center min-h-[64px] transition-colors"
+              >
+                <Link
+                  href={`/duo/${chat.id}`}
+                  className="flex-1 flex items-center gap-3 p-3.5 sm:p-4 min-w-0 row-press"
+                >
+                  <div className="flex -space-x-2 shrink-0" aria-hidden>
+                    {(['a', 'b'] as const).map((side) => {
+                      const face = duo?.faces?.[side];
+                      return (
+                        <div
+                          key={side}
+                          className="w-10 h-10 rounded-md overflow-hidden border border-line bg-background ring-2 ring-background"
+                        >
+                          <CharacterAvatar name={face?.name || '?'} avatarUrl={face?.avatar_url || null} />
+                        </div>
+                      );
+                    })}
                   </div>
-                  {duo?.seed && <p className="mt-3 type-meta line-clamp-2">{duo.seed}</p>}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-serif text-[0.95rem] font-medium text-ink truncate">
+                        {chat.title || 'Untitled scene'}
+                      </span>
+                      <span className={`${statusChip(duo?.status)} shrink-0`}>
+                        {statusLabel(chat)}
+                      </span>
+                    </div>
+                    <div className="type-meta truncate mt-0.5">
+                      {duo ? `${duo.faces.a.name} and ${duo.faces.b.name}` : ''}
+                      {duo?.seed ? ` — ${duo.seed}` : ''}
+                    </div>
+                    {chat.last_message_at && (
+                      <div className="type-meta mt-0.5">
+                        {new Date(chat.last_message_at).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
                 </Link>
-                <div className="px-4 pb-3 flex items-center justify-between gap-2">
-                  <span className="type-meta truncate">
-                    {chat.last_message_at ? new Date(chat.last_message_at).toLocaleString() : ''}
-                  </span>
+                <div className="shrink-0 pr-3 sm:pr-4 pl-1 flex items-center">
                   <button
                     onClick={() => remove(chat.id)}
-                    className="icon-btn"
+                    className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-danger"
                     aria-label={`Delete ${chat.title || 'scene'}`}
+                    title="Delete scene"
                   >
-                    <Trash2 className="w-3.5 h-3.5" aria-hidden />
+                    <Trash2 className="w-4 h-4" aria-hidden />
                   </button>
                 </div>
               </div>

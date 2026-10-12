@@ -97,7 +97,7 @@ function DiceRollChip({ formula }: { formula: string }) {
       onClick={handleReroll}
       title={`Click to re-roll ${formula} (Current: ${currentRoll.rolls.join('+')}${modStr})`}
       aria-label={`Re-roll ${formula}, current total ${currentRoll.total}`}
-      className={`chip mx-1 my-0.5 cursor-pointer select-none px-2 py-0.5 align-middle font-mono text-xs font-semibold transition-[opacity] duration-150 ${
+      className={`chip mx-1 my-0.5 cursor-pointer select-none px-2 py-0.5 align-middle font-mono text-xs font-semibold touch-manipulation transition-[opacity] duration-150 ${
         isRolling ? 'pulse-soft opacity-70' : ''
       }`}
     >
@@ -155,7 +155,7 @@ function RoleplayCard({
   };
 
   return (
-    <div className="surface group relative my-3 overflow-hidden rounded-lg p-4">
+    <div className="surface group relative my-3 max-w-full overflow-hidden rounded-lg p-4 break-words [overflow-wrap:anywhere]">
       {/* Header */}
       <div className="mb-2 flex items-center justify-between gap-2 border-b border-line pb-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -170,10 +170,10 @@ function RoleplayCard({
             aria-label="Copy card text"
             title="Copy card text"
             /* Always visible on touch (below sm and on touch devices ≥sm without hover);
-               hover/focus reveal at sm:+. ≥32px hit area, and pointer-events
+               hover/focus reveal at sm:+. ≥44px hit area, and pointer-events
                are dropped along with the opacity so it can never be an
                invisible tap target. */
-            className="icon-btn w-8 h-8 opacity-100 [@media(hover:hover)]:sm:opacity-0 [@media(hover:hover)]:sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto sm:focus-visible:opacity-100 sm:focus-visible:pointer-events-auto focus-visible:opacity-100"
+            className="icon-btn min-h-11 min-w-11 opacity-100 [@media(hover:hover)]:sm:opacity-0 [@media(hover:hover)]:sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto sm:focus-visible:opacity-100 sm:focus-visible:pointer-events-auto focus-visible:opacity-100"
           >
             {copied ? <Check aria-hidden className="h-3.5 w-3.5" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
           </button>
@@ -181,7 +181,7 @@ function RoleplayCard({
       </div>
 
       {/* Body */}
-      <div className="text-xs font-normal leading-relaxed text-ink">{children}</div>
+      <div className="text-xs font-normal leading-relaxed text-ink break-words [overflow-wrap:anywhere]">{children}</div>
     </div>
   );
 }
@@ -231,7 +231,7 @@ function RoleplayStatusHud({ raw }: { raw: string }) {
 
   if (!stats.length) {
     return (
-      <div className="well type-code my-2 select-text px-2.5 py-2 text-ink-2">
+      <div className="well type-code my-2 max-w-full select-text px-2.5 py-2 text-ink-2 break-words [overflow-wrap:anywhere]">
         <span className="text-accent-text">Status: </span>
         {raw}
       </div>
@@ -239,7 +239,7 @@ function RoleplayStatusHud({ raw }: { raw: string }) {
   }
 
   return (
-    <div className="surface my-3 space-y-2.5 rounded-lg p-3 sm:p-4">
+    <div className="surface my-3 max-w-full space-y-2.5 rounded-lg p-3 sm:p-4 break-words [overflow-wrap:anywhere]">
       <span className="type-sec">Status</span>
 
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -294,22 +294,22 @@ function ThoughtBlock({ children, charName }: { children: React.ReactNode; charN
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="surface my-2 overflow-hidden rounded-lg">
+    <div className="surface my-2 max-w-full overflow-hidden rounded-lg">
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs font-medium text-ink-2 transition-colors hover:text-ink"
+        className="flex min-h-11 w-full items-center justify-between px-3 py-2 text-left text-xs font-medium text-ink-2 transition-colors hover:text-ink"
       >
-        <span className="flex items-center gap-1.5">
-          <Brain aria-hidden className="h-3.5 w-3.5 text-ink-3" />
-          <span>{charName ? `${charName}'s inner thoughts` : 'Inner thoughts'}</span>
+        <span className="flex items-center gap-1.5 min-w-0">
+          <Brain aria-hidden className="h-3.5 w-3.5 text-ink-3 shrink-0" />
+          <span className="truncate">{charName ? `${charName}'s inner thoughts` : 'Inner thoughts'}</span>
         </span>
-        {open ? <ChevronDown aria-hidden className="h-3.5 w-3.5 opacity-60" /> : <ChevronRight aria-hidden className="h-3.5 w-3.5 opacity-60" />}
+        {open ? <ChevronDown aria-hidden className="h-3.5 w-3.5 opacity-60 shrink-0" /> : <ChevronRight aria-hidden className="h-3.5 w-3.5 opacity-60 shrink-0" />}
       </button>
 
       {open && (
-        <div className="animate-in fade-in border-t border-line px-3.5 py-2.5 font-serif text-xs italic leading-relaxed text-ink-2 duration-150">
+        <div className="animate-in fade-in border-t border-line px-3.5 py-2.5 font-serif text-xs italic leading-relaxed text-ink-2 duration-150 break-words [overflow-wrap:anywhere]">
           {children}
         </div>
       )}
@@ -322,9 +322,9 @@ function ThoughtBlock({ children, charName }: { children: React.ReactNode; charN
  */
 function OocBadge({ text }: { text: string }) {
   return (
-    <div className="chip my-1.5 select-text px-2.5 py-1 text-xs text-ink-2">
-      <span className="type-code text-ink-2">OOC</span>
-      <span>{text}</span>
+    <div className="chip my-1.5 max-w-full select-text px-2.5 py-1 text-xs text-ink-2 break-words [overflow-wrap:anywhere]">
+      <span className="type-code text-ink-2 shrink-0">OOC</span>
+      <span className="break-words [overflow-wrap:anywhere]">{text}</span>
     </div>
   );
 }
@@ -546,7 +546,7 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
   };
 
   return (
-    <div style={styleVars} className="prose-rp select-text space-y-2">
+    <div style={styleVars} className="prose-rp select-text space-y-2 break-words [overflow-wrap:anywhere] max-w-full min-w-0">
       {blocks.map((block, idx) => {
         switch (block.type) {
           case 'card':
@@ -557,7 +557,29 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
                 badge={block.meta?.badge}
                 icon={block.meta?.icon}
               >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    pre: ({ children }) => (
+                      <pre className="max-w-full overflow-x-auto rounded-md bg-sunken p-2.5 my-2 border border-line text-xs font-mono">
+                        {children}
+                      </pre>
+                    ),
+                    code: ({ children, className }) => (
+                      <code className={`max-w-full ${className || ''}`}>{children}</code>
+                    ),
+                    img: ({ src, alt, ...props }) => (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={src}
+                        alt={alt || ''}
+                        loading="lazy"
+                        className="max-w-full h-auto rounded-lg my-2"
+                        {...props}
+                      />
+                    ),
+                  }}
+                >
                   {block.content}
                 </ReactMarkdown>
               </RoleplayCard>
@@ -589,7 +611,7 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
                   // Enhance text nodes to support inline dialogue highlighting and dice rolls
                   p: ({ children }) => {
                     return (
-                      <p className="leading-relaxed">
+                      <p className="leading-relaxed break-words [overflow-wrap:anywhere]">
                         {formatChildren(children, isNarratedParagraph(children))}
                       </p>
                     );
@@ -609,7 +631,24 @@ export const RoleplayMessageContent = React.memo(function RoleplayMessageContent
                       {children}
                     </blockquote>
                   ),
-                  code: ({ children }) => <code>{children}</code>,
+                  pre: ({ children }) => (
+                    <pre className="max-w-full overflow-x-auto rounded-md bg-sunken p-2.5 my-2 border border-line text-xs font-mono">
+                      {children}
+                    </pre>
+                  ),
+                  code: ({ children, className }) => (
+                    <code className={`max-w-full ${className || ''}`}>{children}</code>
+                  ),
+                  img: ({ src, alt, ...props }) => (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={src}
+                      alt={alt || ''}
+                      loading="lazy"
+                      className="max-w-full h-auto rounded-lg my-2"
+                      {...props}
+                    />
+                  ),
                 }}
               >
                 {block.content}
