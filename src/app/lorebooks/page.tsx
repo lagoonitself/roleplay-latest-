@@ -221,7 +221,7 @@ export default function LorebooksPage() {
             className="icon-btn min-h-11 min-w-11"
             aria-label="Back to explore"
           >
-            <ArrowLeft className="w-5 h-5" aria-hidden />
+            <ArrowLeft className="w-5 h-5" aria-hidden="true" />
           </Link>
           <div className="min-w-0">
             <h1 className="type-page truncate">Lorebooks and world info</h1>
@@ -236,7 +236,7 @@ export default function LorebooksPage() {
           onClick={() => setBookModalOpen(true)}
           className="btn btn-primary flex items-center gap-1.5 shrink-0 min-h-11"
         >
-          <Plus className="w-3.5 h-3.5" aria-hidden />
+          <Plus className="w-3.5 h-3.5" aria-hidden="true" />
           <span>New lorebook</span>
         </button>
       </div>
@@ -294,7 +294,7 @@ export default function LorebooksPage() {
                 onClick={() => setEntryModalOpen(true)}
                 className="btn btn-quiet flex items-center gap-1 shrink-0 min-h-11"
               >
-                <Plus className="w-3.5 h-3.5" aria-hidden />
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Add entry</span>
               </button>
             )}
@@ -328,7 +328,7 @@ export default function LorebooksPage() {
 
                     {!!entry.keys.length && (
                       <div className="flex flex-wrap items-center gap-1">
-                        <Key className="w-3 h-3 text-ink-3 shrink-0" aria-hidden />
+                        <Key className="w-3 h-3 text-ink-3 shrink-0" aria-hidden="true" />
                         {entry.keys.map((k) => (
                           <span key={k} className="chip type-code truncate max-w-full">
                             {k}

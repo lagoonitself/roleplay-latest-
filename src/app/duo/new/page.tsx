@@ -162,6 +162,7 @@ export default function DuoNewPage() {
 
   const slotCard = (side: DuoSide, pick: Pick | null) => (
     <button
+      type="button"
       onClick={() => setSlot(side)}
       aria-pressed={slot === side}
       aria-label={side === 'a' ? 'First voice slot' : 'Second voice slot'}
@@ -179,7 +180,7 @@ export default function DuoNewPage() {
             <div className="font-serif text-[0.95rem] font-medium text-ink truncate">{pick.name}</div>
             <div className="type-meta truncate capitalize">{pick.kind}</div>
           </div>
-          <Check className="w-4 h-4 text-accent-text ml-auto shrink-0" aria-hidden />
+          <Check className="w-4 h-4 text-accent-text ml-auto shrink-0" aria-hidden="true" />
         </div>
       ) : (
         <div className="type-meta py-2">{slot === side ? 'Pick someone below…' : 'Not picked yet'}</div>
@@ -191,7 +192,7 @@ export default function DuoNewPage() {
     <div className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6 pb-[calc(env(safe-area-inset-bottom,0px)+6rem)] md:pb-10">
       <div className="flex items-center gap-3">
         <Link href="/duo" className="icon-btn min-h-11 min-w-11 shrink-0" aria-label="Back to scenes">
-          <ArrowLeft className="w-5 h-5" aria-hidden />
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" />
         </Link>
         <div className="min-w-0">
           <h1 className="type-page truncate">New scene</h1>
@@ -201,7 +202,7 @@ export default function DuoNewPage() {
 
       <div className="flex flex-col sm:flex-row gap-3 items-stretch">
         {slotCard('a', pickA)}
-        <div className="flex items-center justify-center type-meta px-1 shrink-0" aria-hidden>
+        <div className="flex items-center justify-center type-meta px-1 shrink-0" aria-hidden="true">
           and
         </div>
         {slotCard('b', pickB)}
@@ -235,6 +236,7 @@ export default function DuoNewPage() {
               {(['a', 'b'] as const).map((s) => (
                 <button
                   key={s}
+                  type="button"
                   onClick={() => setFirstSpeaker(s)}
                   aria-pressed={firstSpeaker === s}
                   className={`flex-1 min-h-11 px-3 py-2 rounded-full truncate flex items-center justify-center ${
@@ -288,11 +290,12 @@ export default function DuoNewPage() {
         {/* Primary Start button in sticky mobile bottom bar / desktop static */}
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-raised px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] md:static md:border-0 md:bg-transparent md:p-0">
           <button
+            type="button"
             onClick={start}
             disabled={!canStart}
             className="btn btn-primary w-full min-h-11 justify-center disabled:opacity-40"
           >
-            {starting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}
+            {starting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
             {starting ? 'Opening the scene…' : 'Start the scene'}
           </button>
         </div>
@@ -301,7 +304,7 @@ export default function DuoNewPage() {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row gap-2.5">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" aria-hidden />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" aria-hidden="true" />
             <label htmlFor="duo-search" className="sr-only">
               Search your roster
             </label>
@@ -326,6 +329,7 @@ export default function DuoNewPage() {
             {(['all', 'characters', 'personas'] as const).map((t) => (
               <button
                 key={t}
+                type="button"
                 onClick={() => setTab(t)}
                 aria-pressed={tab === t}
                 className={`flex-1 sm:flex-none min-h-9 px-3.5 py-1.5 rounded-full capitalize flex items-center justify-center ${
@@ -349,6 +353,7 @@ export default function DuoNewPage() {
             return (
               <button
                 key={`${opt.kind}-${opt.id}`}
+                type="button"
                 onClick={() => choose(opt)}
                 disabled={taken}
                 aria-pressed={active}
@@ -367,7 +372,7 @@ export default function DuoNewPage() {
                     {opt.kind}, {opt.sub}
                   </div>
                 </div>
-                {active && <Check className="w-4 h-4 text-accent-text shrink-0" aria-hidden />}
+                {active && <Check className="w-4 h-4 text-accent-text shrink-0" aria-hidden="true" />}
               </button>
             );
           })}

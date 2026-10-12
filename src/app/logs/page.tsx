@@ -234,11 +234,11 @@ export default function ModelLogsPage() {
           className="icon-btn min-h-11 min-w-11"
           aria-label="Back to profile"
         >
-          <ArrowLeft className="h-5 w-5" aria-hidden />
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </Link>
         <div className="min-w-0">
           <h1 className="type-page flex items-center gap-2 truncate">
-            <FlaskConical className="h-4 w-4 text-ink-3 shrink-0" aria-hidden />
+            <FlaskConical className="h-4 w-4 text-ink-3 shrink-0" aria-hidden="true" />
             <span className="truncate">Model logs</span>
             <span className="chip chip-warn shrink-0">
               Dev
@@ -257,7 +257,7 @@ export default function ModelLogsPage() {
             title="Refresh logs"
             aria-label="Refresh logs"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -266,7 +266,7 @@ export default function ModelLogsPage() {
             title="Clear device logs"
             aria-label="Clear device logs"
           >
-            <Trash2 className="h-4 w-4" aria-hidden />
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -274,7 +274,7 @@ export default function ModelLogsPage() {
       {/* Filters */}
       <div className="mt-4 flex flex-wrap gap-2">
         <label className="flex flex-1 min-w-[240px] items-center gap-2 field !py-2 min-h-11">
-          <Search className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+          <Search className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
           <span className="sr-only">Search logs</span>
           <input
             type="search"
@@ -384,7 +384,7 @@ export default function ModelLogsPage() {
                         onClick={() => copyText(JSON.stringify(log.params, null, 2), 'Params')}
                         className="btn btn-quiet inline-flex items-center gap-1 !text-[11px] min-h-11 shrink-0"
                       >
-                        <Copy className="h-3.5 w-3.5" aria-hidden />
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                         <span>Copy</span>
                       </button>
                     </div>
@@ -407,7 +407,7 @@ export default function ModelLogsPage() {
                           }
                           className="btn btn-quiet inline-flex items-center gap-1 !text-[11px] min-h-11 shrink-0"
                         >
-                          <Copy className="h-3.5 w-3.5" aria-hidden />
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                           <span>Copy all</span>
                         </button>
                       )}
@@ -451,7 +451,7 @@ export default function ModelLogsPage() {
                               </button>
                               {msgOpen && (
                                 <div className="border-t border-line p-3 space-y-2 min-w-0">
-                                  <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre p-3 !text-[11px] !leading-relaxed text-ink-2">
+                                  <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre-wrap break-words p-3 !text-[11px] !leading-relaxed text-ink-2">
                                     {m.content}
                                   </pre>
                                   <button
@@ -459,7 +459,7 @@ export default function ModelLogsPage() {
                                     onClick={() => copyText(m.content, `${m.role} message`)}
                                     className="btn btn-quiet inline-flex items-center gap-1 !text-[11px] min-h-11"
                                   >
-                                    <Copy className="h-3.5 w-3.5" aria-hidden />
+                                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                                     <span>Copy message</span>
                                   </button>
                                 </div>
@@ -480,11 +480,11 @@ export default function ModelLogsPage() {
                         onClick={() => copyText(log.output, 'Output')}
                         className="btn btn-quiet inline-flex items-center gap-1 !text-[11px] min-h-11 shrink-0"
                       >
-                        <Copy className="h-3.5 w-3.5" aria-hidden />
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                         <span>Copy</span>
                       </button>
                     </div>
-                    <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre p-3 !text-[11px] !leading-relaxed text-ink-2">
+                    <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre-wrap break-words p-3 !text-[11px] !leading-relaxed text-ink-2">
                       {log.output || '(empty)'}
                     </pre>
                   </section>
@@ -492,7 +492,7 @@ export default function ModelLogsPage() {
                   {log.reasoning && (
                     <section className="min-w-0">
                       <h4 className="type-sec mb-1.5 truncate">Reasoning</h4>
-                      <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre p-3 !text-[11px] !leading-relaxed text-ink-2">
+                      <pre className="well scroll-y max-h-[60dvh] type-code overflow-x-auto max-w-full whitespace-pre-wrap break-words p-3 !text-[11px] !leading-relaxed text-ink-2">
                         {log.reasoning}
                       </pre>
                     </section>

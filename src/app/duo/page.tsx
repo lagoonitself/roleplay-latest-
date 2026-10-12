@@ -148,7 +148,7 @@ export default function DuoListPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/" className="icon-btn min-h-11 min-w-11 shrink-0" aria-label="Back home">
-            <ArrowLeft className="w-5 h-5" aria-hidden />
+            <ArrowLeft className="w-5 h-5" aria-hidden="true" />
           </Link>
           <div className="min-w-0">
             <h1 className="type-page truncate">Duo scenes</h1>
@@ -159,7 +159,7 @@ export default function DuoListPage() {
           href="/duo/new"
           className="btn btn-primary w-full sm:w-auto min-h-11 justify-center shrink-0"
         >
-          <Plus className="w-4 h-4" aria-hidden />
+          <Plus className="w-4 h-4" aria-hidden="true" />
           New duo
         </Link>
       </div>
@@ -167,7 +167,7 @@ export default function DuoListPage() {
       {loading ? (
         <div className="surface divide-y divide-line rounded-xl overflow-hidden" aria-label="Loading scenes">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="min-h-[64px] p-4 flex items-center gap-3 animate-pulse bg-sunken/40" aria-hidden>
+            <div key={i} className="min-h-[64px] p-4 flex items-center gap-3 animate-pulse bg-sunken/40" aria-hidden="true">
               <div className="w-10 h-10 rounded-md bg-sunken shrink-0" />
               <div className="flex-1 min-w-0 space-y-2">
                 <div className="h-4 bg-sunken rounded w-1/3" />
@@ -200,7 +200,7 @@ export default function DuoListPage() {
                   href={`/duo/${chat.id}`}
                   className="flex-1 flex items-center gap-3 p-3.5 sm:p-4 min-w-0 row-press"
                 >
-                  <div className="flex -space-x-2 shrink-0" aria-hidden>
+                  <div className="flex -space-x-2 shrink-0" aria-hidden="true">
                     {(['a', 'b'] as const).map((side) => {
                       const face = duo?.faces?.[side];
                       return (
@@ -235,12 +235,13 @@ export default function DuoListPage() {
                 </Link>
                 <div className="shrink-0 pr-3 sm:pr-4 pl-1 flex items-center">
                   <button
+                    type="button"
                     onClick={() => remove(chat.id)}
                     className="icon-btn min-h-11 min-w-11 text-ink-3 hover:text-danger"
                     aria-label={`Delete ${chat.title || 'scene'}`}
                     title="Delete scene"
                   >
-                    <Trash2 className="w-4 h-4" aria-hidden />
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
               </div>

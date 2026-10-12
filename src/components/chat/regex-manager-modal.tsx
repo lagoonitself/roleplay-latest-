@@ -228,7 +228,7 @@ export function RegexManagerModal({
         {/* Header — sticky on mobile and desktop */}
         <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-line bg-raised px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-            <Sparkles aria-hidden className="h-5 w-5 shrink-0 text-accent-text" />
+            <Sparkles aria-hidden="true" className="h-5 w-5 shrink-0 text-accent-text" />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <h2 className="type-sec text-sm sm:text-base truncate">
@@ -250,7 +250,7 @@ export function RegexManagerModal({
             aria-label="Close regex manager"
             className="icon-btn shrink-0 min-h-11 min-w-11 sm:h-9 sm:w-9"
           >
-            <X aria-hidden className="h-5 w-5" />
+            <X aria-hidden="true" className="h-5 w-5" />
           </button>
         </div>
 
@@ -269,7 +269,7 @@ export function RegexManagerModal({
                   : 'text-ink-2 hover:text-ink'
               }`}
             >
-              <Layers aria-hidden className="h-3.5 w-3.5" />
+              <Layers aria-hidden="true" className="h-3.5 w-3.5" />
               Rules & formatters
             </button>
             <button
@@ -283,7 +283,7 @@ export function RegexManagerModal({
                   : 'text-ink-2 hover:text-ink'
               }`}
             >
-              <Eye aria-hidden className="h-3.5 w-3.5" />
+              <Eye aria-hidden="true" className="h-3.5 w-3.5" />
               Live sandbox
             </button>
           </div>
@@ -306,7 +306,7 @@ export function RegexManagerModal({
               title="Import SillyTavern JSON regex scripts"
               aria-label="Import regex scripts"
             >
-              <Upload aria-hidden className="h-3.5 w-3.5" />
+              <Upload aria-hidden="true" className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Import</span>
             </button>
             <button
@@ -316,7 +316,7 @@ export function RegexManagerModal({
               title="Export JSON"
               aria-label="Export JSON"
             >
-              <Download aria-hidden className="h-3.5 w-3.5" />
+              <Download aria-hidden="true" className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Export</span>
             </button>
             <button
@@ -331,7 +331,7 @@ export function RegexManagerModal({
               title="Reset to defaults"
               aria-label="Reset to default regex formatters"
             >
-              <RotateCcw aria-hidden className="h-3.5 w-3.5" />
+              <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Reset</span>
             </button>
             <button
@@ -339,7 +339,7 @@ export function RegexManagerModal({
               onClick={handleCreateNew}
               className="btn btn-primary min-h-11 sm:min-h-8 px-3.5"
             >
-              <Plus aria-hidden className="h-3.5 w-3.5" />
+              <Plus aria-hidden="true" className="h-3.5 w-3.5" />
               <span>New rule</span>
             </button>
           </div>
@@ -378,7 +378,7 @@ export function RegexManagerModal({
 
               {/* Search */}
               <div className="relative w-full sm:w-60">
-                <Search aria-hidden className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3" />
+                <Search aria-hidden="true" className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3" />
                 <input
                   type="search"
                   enterKeyHint="search"
@@ -398,7 +398,7 @@ export function RegexManagerModal({
             <div className="scroll-y flex-1 min-h-0 px-4 py-4 sm:px-6 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] sm:pb-6">
               {filteredScripts.length === 0 ? (
                 <div className="flex h-64 flex-col items-center justify-center gap-1.5 p-6 text-center">
-                  <Sliders aria-hidden className="mb-1 h-6 w-6 text-ink-3" />
+                  <Sliders aria-hidden="true" className="mb-1 h-6 w-6 text-ink-3" />
                   <p className="type-sec">No rules match your filter</p>
                   <p className="type-meta">Clear the search or pick a different category.</p>
                 </div>
@@ -457,7 +457,7 @@ export function RegexManagerModal({
                             </div>
                             {script.replaceString && (
                               <div className="well type-code max-w-full overflow-x-auto px-2 py-1 text-ink-2">
-                                <span aria-hidden className="select-none">→ </span>
+                                <span aria-hidden="true" className="select-none">→ </span>
                                 <span className="truncate">{script.replaceString}</span>
                               </div>
                             )}
@@ -474,7 +474,7 @@ export function RegexManagerModal({
                               title="Edit rule"
                               className="icon-btn min-h-11 min-w-11 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0"
                             >
-                              <Edit2 aria-hidden className="h-4 w-4" />
+                              <Edit2 aria-hidden="true" className="h-4 w-4" />
                             </button>
 
                             {!script.isPreset && (
@@ -490,7 +490,7 @@ export function RegexManagerModal({
                                 title="Delete rule"
                                 className="icon-btn text-danger min-h-11 min-w-11 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0"
                               >
-                                <Trash2 aria-hidden className="h-4 w-4" />
+                                <Trash2 aria-hidden="true" className="h-4 w-4" />
                               </button>
                             )}
                           </div>
@@ -504,7 +504,7 @@ export function RegexManagerModal({
                               aria-label={`Enable rule ${script.name}`}
                               className="peer sr-only"
                             />
-                            <div aria-hidden className="relative h-6 w-11 rounded-full bg-line-strong transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--accent-line)] after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-ink after:transition-transform after:content-[''] peer-checked:after:translate-x-full peer-checked:after:bg-accent-ink" />
+                            <div aria-hidden="true" className="relative h-6 w-11 rounded-full bg-line-strong transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--accent-line)] after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-ink after:transition-transform after:content-[''] peer-checked:after:translate-x-full peer-checked:after:bg-accent-ink" />
                           </label>
                         </div>
                       </div>
@@ -614,7 +614,7 @@ export function RegexManagerModal({
 
         {/* Modal: Rule Editor / Creator */}
         {isEditorOpen && editingRule && (
-          <div className="animate-in fade-in fixed inset-0 z-60 flex items-center justify-center bg-[color-mix(in_oklab,var(--ink)_45%,transparent)] p-0 sm:p-4 duration-150">
+          <div className="animate-in fade-in fixed inset-0 z-[60] flex items-center justify-center bg-[color-mix(in_oklab,var(--ink)_45%,transparent)] p-0 sm:p-4 duration-150">
             <div
               role="dialog"
               aria-modal="true"
@@ -632,7 +632,7 @@ export function RegexManagerModal({
                   aria-label="Close rule editor"
                   className="icon-btn min-h-11 min-w-11 sm:h-8 sm:w-8"
                 >
-                  <X aria-hidden className="h-4 w-4" />
+                  <X aria-hidden="true" className="h-4 w-4" />
                 </button>
               </div>
 
@@ -775,7 +775,7 @@ export function RegexManagerModal({
                   onClick={handleSaveEditor}
                   className="btn btn-primary min-h-11 sm:min-h-9 px-4"
                 >
-                  <Check aria-hidden className="h-3.5 w-3.5" /> Save rule
+                  <Check aria-hidden="true" className="h-3.5 w-3.5" /> Save rule
                 </button>
               </div>
             </div>

@@ -298,7 +298,7 @@ export function SillyTavernContextInspector({
 
   const tabUnderline = (tab: typeof activeTab) =>
     activeTab === tab ? (
-      <span aria-hidden className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent" />
+      <span aria-hidden="true" className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent" />
     ) : null;
 
   return (
@@ -306,7 +306,7 @@ export function SillyTavernContextInspector({
       {/* Header — sticky on mobile and desktop */}
       <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-line bg-background px-4 py-3 sm:p-4">
         <div className="flex items-center gap-2">
-          <Brain aria-hidden className="h-4 w-4 text-ink-3" />
+          <Brain aria-hidden="true" className="h-4 w-4 text-ink-3" />
           <h3 className="type-sec">SillyTavern memory</h3>
         </div>
         <button
@@ -315,7 +315,7 @@ export function SillyTavernContextInspector({
           aria-label="Close memory panel"
           className="icon-btn min-h-11 min-w-11 sm:h-9 sm:w-9"
         >
-          <X aria-hidden className="h-4 w-4" />
+          <X aria-hidden="true" className="h-4 w-4" />
         </button>
       </div>
 
@@ -331,7 +331,7 @@ export function SillyTavernContextInspector({
           onClick={() => setActiveTab('summary')}
           className={tabButtonClass('summary')}
         >
-          <FileText aria-hidden className="h-3.5 w-3.5" />
+          <FileText aria-hidden="true" className="h-3.5 w-3.5" />
           Chat summary
           {tabUnderline('summary')}
         </button>
@@ -342,7 +342,7 @@ export function SillyTavernContextInspector({
           onClick={() => setActiveTab('memory')}
           className={tabButtonClass('memory')}
         >
-          <Brain aria-hidden className="h-3.5 w-3.5" />
+          <Brain aria-hidden="true" className="h-3.5 w-3.5" />
           Memory
           {memories.length > 0 && <span className="type-code text-ink-3 tabular-nums">{memories.length}</span>}
           {tabUnderline('memory')}
@@ -354,7 +354,7 @@ export function SillyTavernContextInspector({
           onClick={() => setActiveTab('note')}
           className={tabButtonClass('note')}
         >
-          <Bookmark aria-hidden className="h-3.5 w-3.5" />
+          <Bookmark aria-hidden="true" className="h-3.5 w-3.5" />
           Author&apos;s note
           {tabUnderline('note')}
         </button>
@@ -365,7 +365,7 @@ export function SillyTavernContextInspector({
           onClick={() => setActiveTab('worldInfo')}
           className={tabButtonClass('worldInfo')}
         >
-          <BookOpen aria-hidden className="h-3.5 w-3.5" />
+          <BookOpen aria-hidden="true" className="h-3.5 w-3.5" />
           World info
           {tabUnderline('worldInfo')}
         </button>
@@ -376,7 +376,7 @@ export function SillyTavernContextInspector({
           onClick={() => setActiveTab('vectors')}
           className={tabButtonClass('vectors')}
         >
-          <Brain aria-hidden className="h-3.5 w-3.5" />
+          <Brain aria-hidden="true" className="h-3.5 w-3.5" />
           Vectors
           {tabUnderline('vectors')}
         </button>
@@ -398,7 +398,7 @@ export function SillyTavernContextInspector({
                 className={`chip min-h-11 sm:min-h-8 px-3 ${isFrozen ? 'chip-warn' : ''}`}
                 title="When frozen, automatic summarization will not overwrite your text"
               >
-                {isFrozen ? <Lock aria-hidden className="h-3.5 w-3.5" /> : <Unlock aria-hidden className="h-3.5 w-3.5" />}
+                {isFrozen ? <Lock aria-hidden="true" className="h-3.5 w-3.5" /> : <Unlock aria-hidden="true" className="h-3.5 w-3.5" />}
                 {isFrozen ? 'Frozen' : 'Unfrozen'}
               </button>
             </div>
@@ -420,7 +420,7 @@ export function SillyTavernContextInspector({
                 disabled={isSavingSummary || !summaryText.trim()}
                 className="btn btn-ghost min-h-11 sm:min-h-9 px-4 text-xs"
               >
-                <Save aria-hidden className="h-3.5 w-3.5" />
+                <Save aria-hidden="true" className="h-3.5 w-3.5" />
                 {isSavingSummary ? 'Saving…' : 'Save edit'}
               </button>
 
@@ -430,7 +430,7 @@ export function SillyTavernContextInspector({
                 disabled={isSummarizing}
                 className="btn btn-primary min-h-11 sm:min-h-9 px-4 text-xs"
               >
-                <Sparkles aria-hidden className="h-3.5 w-3.5" />
+                <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
                 {isSummarizing ? 'Summarizing…' : 'Summarize now'}
               </button>
             </div>
@@ -444,10 +444,10 @@ export function SillyTavernContextInspector({
                 className="row-press flex min-h-11 w-full items-center justify-between rounded-md px-2 text-xs font-medium text-ink-2 transition-colors hover:text-ink"
               >
                 <span className="flex items-center gap-2">
-                  <SlidersHorizontal aria-hidden className="h-4 w-4" />
+                  <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
                   Summarizer settings
                 </span>
-                <span aria-hidden>{showSummarySettings ? '▲' : '▼'}</span>
+                <span aria-hidden="true">{showSummarySettings ? '▲' : '▼'}</span>
               </button>
 
               {showSummarySettings && (
@@ -523,7 +523,7 @@ export function SillyTavernContextInspector({
                 className="btn btn-ghost shrink-0 min-h-11 sm:min-h-9 px-3.5 text-xs w-full sm:w-auto"
                 title="Fold the latest exchanges into memory now"
               >
-                <Sparkles aria-hidden className="h-3.5 w-3.5" />
+                <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
                 {isRegenerating ? 'Regenerating…' : 'Regenerate'}
               </button>
             </div>
@@ -574,7 +574,7 @@ export function SillyTavernContextInspector({
                   disabled={!newMemoryText.trim() || isAddingMemory}
                   className="btn btn-primary min-h-11 sm:min-h-9 px-4 text-xs w-full sm:w-auto sm:ml-auto"
                 >
-                  <Plus aria-hidden className="h-3.5 w-3.5" />
+                  <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                   Add
                 </button>
               </div>
@@ -591,7 +591,7 @@ export function SillyTavernContextInspector({
                         <span className="chip type-code tabular-nums" title="Importance">★ {memory.importance}</span>
                         {memory.pinned && (
                           <span className="chip chip-warn" title="Always in context, never auto-rewritten">
-                            <Pin aria-hidden className="h-3 w-3" /> Pinned
+                            <Pin aria-hidden="true" className="h-3 w-3" /> Pinned
                           </span>
                         )}
                       </div>
@@ -605,7 +605,7 @@ export function SillyTavernContextInspector({
                           aria-label="Edit memory"
                           className="icon-btn min-h-11 min-w-11 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0"
                         >
-                          <Pencil aria-hidden className="h-3.5 w-3.5" />
+                          <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
@@ -613,7 +613,7 @@ export function SillyTavernContextInspector({
                           aria-label={memory.pinned ? 'Unpin memory' : 'Pin memory'}
                           className="icon-btn min-h-11 min-w-11 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0"
                         >
-                          {memory.pinned ? <PinOff aria-hidden className="h-3.5 w-3.5" /> : <Pin aria-hidden className="h-3.5 w-3.5" />}
+                          {memory.pinned ? <PinOff aria-hidden="true" className="h-3.5 w-3.5" /> : <Pin aria-hidden="true" className="h-3.5 w-3.5" />}
                         </button>
                         <button
                           type="button"
@@ -621,7 +621,7 @@ export function SillyTavernContextInspector({
                           aria-label="Forget memory"
                           className="icon-btn text-danger min-h-11 min-w-11 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0"
                         >
-                          <Trash2 aria-hidden className="h-3.5 w-3.5" />
+                          <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
@@ -653,7 +653,7 @@ export function SillyTavernContextInspector({
                             disabled={!editingMemoryText.trim()}
                             className="btn btn-primary min-h-11 sm:min-h-9 px-3.5 text-xs"
                           >
-                            <Check aria-hidden className="h-3.5 w-3.5" />
+                            <Check aria-hidden="true" className="h-3.5 w-3.5" />
                             Save
                           </button>
                         </div>
@@ -665,7 +665,7 @@ export function SillyTavernContextInspector({
                 ))
               ) : (
                 <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-                  <Brain aria-hidden className="mb-1 h-6 w-6 text-ink-3" />
+                  <Brain aria-hidden="true" className="mb-1 h-6 w-6 text-ink-3" />
                   <p className="type-sec">No memories yet</p>
                   <p className="type-meta">
                     The story starts remembering on its own once events, promises and secrets appear.
@@ -750,7 +750,7 @@ export function SillyTavernContextInspector({
               onClick={handleSaveAuthorsNote}
               className="btn btn-primary min-h-11 sm:min-h-9 w-full text-xs"
             >
-              <Check aria-hidden className="h-3.5 w-3.5" />
+              <Check aria-hidden="true" className="h-3.5 w-3.5" />
               Apply author&apos;s note
             </button>
           </div>
@@ -792,7 +792,7 @@ export function SillyTavernContextInspector({
                 ))
               ) : (
                 <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-                  <BookOpen aria-hidden className="mb-1 h-6 w-6 text-ink-3" />
+                  <BookOpen aria-hidden="true" className="mb-1 h-6 w-6 text-ink-3" />
                   <p className="type-sec">No lorebook entries triggered</p>
                   <p className="type-meta">
                     Entries appear here when their keywords show up in recent messages.
@@ -834,7 +834,7 @@ export function SillyTavernContextInspector({
                 ))
               ) : (
                 <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-                  <Brain aria-hidden className="mb-1 h-6 w-6 text-ink-3" />
+                  <Brain aria-hidden="true" className="mb-1 h-6 w-6 text-ink-3" />
                   <p className="type-sec">No vector recalls yet</p>
                   <p className="type-meta">
                     Recalled events appear here once the conversation grows past the short-term window.

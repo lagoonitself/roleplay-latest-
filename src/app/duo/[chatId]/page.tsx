@@ -335,10 +335,10 @@ export default function DuoWatchPage() {
         <div className="px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 min-h-14">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <Link href="/duo" className="icon-btn min-h-11 min-w-11 shrink-0" aria-label="All scenes">
-              <ArrowLeft className="w-5 h-5" aria-hidden />
+              <ArrowLeft className="w-5 h-5" aria-hidden="true" />
             </Link>
             {duo && (
-              <div className="flex -space-x-2 shrink-0" aria-hidden>
+              <div className="flex -space-x-2 shrink-0" aria-hidden="true">
                 {(['a', 'b'] as const).map((s) => (
                   <div key={s} className="w-9 h-9 rounded-md overflow-hidden border border-line bg-background ring-2 ring-background">
                     <CharacterAvatar name={face(s)?.name || '?'} avatarUrl={face(s)?.avatar_url || null} />
@@ -366,45 +366,49 @@ export default function DuoWatchPage() {
           <div className="flex items-center gap-1.5 shrink-0">
             {status === 'running' ? (
               <button
+                type="button"
                 onClick={() => control('pause')}
                 disabled={busy}
                 className="icon-btn min-h-11 min-w-11 text-warn disabled:opacity-50"
                 title="Pause scene"
                 aria-label="Pause scene"
               >
-                <Pause className="w-5 h-5" aria-hidden />
+                <Pause className="w-5 h-5" aria-hidden="true" />
               </button>
             ) : status === 'paused' || status === 'error' ? (
               <button
+                type="button"
                 onClick={() => control('resume')}
                 disabled={busy}
                 className="icon-btn min-h-11 min-w-11 text-ok disabled:opacity-50"
                 title="Resume scene"
                 aria-label="Resume scene"
               >
-                {busy ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden /> : <Play className="w-5 h-5" aria-hidden />}
+                {busy ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> : <Play className="w-5 h-5" aria-hidden="true" />}
               </button>
             ) : null}
             {(status === 'paused' || status === 'running') && (
               <button
+                type="button"
                 onClick={() => control('stop')}
                 disabled={busy}
                 className="icon-btn min-h-11 min-w-11 text-danger disabled:opacity-50"
                 title="Stop scene"
                 aria-label="Stop scene"
               >
-                <Square className="w-4 h-4" aria-hidden />
+                <Square className="w-4 h-4" aria-hidden="true" />
               </button>
             )}
             {status === 'done' && duo && duo.turn < DUO_MAX_TURNS_CAP && (
               <button
+                type="button"
                 onClick={() => control('continue')}
                 disabled={busy}
                 className="btn btn-ghost min-h-11 px-3 disabled:opacity-50"
                 title={`Add ${DUO_CONTINUE_TURNS} more lines`}
                 aria-label={`Add ${DUO_CONTINUE_TURNS} more lines`}
               >
-                <Plus className="w-4 h-4 text-accent-text" aria-hidden />
+                <Plus className="w-4 h-4 text-accent-text" aria-hidden="true" />
                 More
               </button>
             )}
@@ -412,7 +416,7 @@ export default function DuoWatchPage() {
         </div>
         {duo?.status === 'error' && duo.lastError && (
           <div className="mx-4 sm:mx-6 mb-3 px-3 py-2 rounded-lg border border-danger-line bg-danger-wash flex items-center gap-2 text-xs text-danger">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             <span className="truncate">{duo.lastError}</span>
           </div>
         )}
@@ -423,11 +427,12 @@ export default function DuoWatchPage() {
         <div className="px-4 sm:px-6 pt-3">
           <div className="surface rounded-xl overflow-hidden">
             <button
+              type="button"
               onClick={() => (directorOpen ? setDirectorOpen(false) : openDirector())}
               className="w-full flex items-center gap-2.5 px-4 py-3 min-h-11 text-left"
               aria-expanded={directorOpen}
             >
-              <Megaphone className="w-4 h-4 text-ink-3 shrink-0" aria-hidden />
+              <Megaphone className="w-4 h-4 text-ink-3 shrink-0" aria-hidden="true" />
               <span className="type-sec flex-1">Direct this scene</span>
               <span className="flex items-center gap-1">
                 {duo.seed.trim() && <span className="chip">Both hear this</span>}
@@ -497,14 +502,15 @@ export default function DuoWatchPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={saveDirection}
                     disabled={directSaving}
                     className="btn btn-primary min-h-11 flex-1 justify-center disabled:opacity-50"
                   >
-                    {directSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />}
+                    {directSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
                     {directSaving ? 'Setting direction…' : 'Set direction'}
                   </button>
-                  <button onClick={() => setDirectorOpen(false)} className="btn btn-quiet min-h-11 px-4">
+                  <button type="button" onClick={() => setDirectorOpen(false)} className="btn btn-quiet min-h-11 px-4">
                     Done
                   </button>
                 </div>
