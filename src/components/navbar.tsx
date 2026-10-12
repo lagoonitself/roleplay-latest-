@@ -36,13 +36,13 @@ export function Navbar() {
     <>
       {/* If in active fullscreen chat, hide global header to avoid double navigation on mobile */}
       {!isChatPage && (
-        <header className="bg-background sticky top-0 z-40 w-full border-b border-line pt-safe">
+        <header className="bg-background sticky top-0 z-40 w-full border-b border-line pt-safe pl-safe pr-safe">
           <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
             {/* Left Brand */}
             <div className="flex items-center gap-8">
               <Link href="/" className="flex items-baseline gap-2">
                 <span className="type-display text-xl leading-none">Cadenza</span>
-                <span className="chip chip-accent">Roleplay</span>
+                <span className="chip chip-accent hidden sm:inline-flex">Roleplay</span>
               </Link>
 
               {/* Desktop Navigation Links */}
@@ -70,19 +70,22 @@ export function Navbar() {
 
             {/* Right Actions */}
             <div className="flex items-center gap-1.5">
-              {/* Explore has its own primary Create (scratch or import) — don't double it. */}
+              {/* Explore has its own primary Create (scratch or import) — don't double it. Hidden on mobile because dock has Create. */}
               {pathname !== '/' && (
-                <Link href="/c/new" className="btn btn-ghost text-xs">
+                <Link
+                  href="/c/new"
+                  className="btn btn-ghost hidden text-xs md:inline-flex"
+                >
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span className="hidden sm:inline">Create character</span>
-                  <span className="sm:hidden">New</span>
+                  <span>Create character</span>
                 </Link>
               )}
 
               <button
+                type="button"
                 onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
                 aria-label="Toggle theme"
-                className="icon-btn"
+                className="icon-btn min-h-11 min-w-11"
               >
                 {mounted ? (
                   resolvedTheme === 'dark' ? (
@@ -91,14 +94,15 @@ export function Navbar() {
                     <Moon className="h-4 w-4" aria-hidden="true" />
                   )
                 ) : (
-                  <span className="h-4 w-4" />
+                  <span className="h-4 w-4" aria-hidden="true" />
                 )}
               </button>
 
               <button
+                type="button"
                 onClick={() => setSettingsOpen(true)}
                 aria-label="Open settings"
-                className="icon-btn"
+                className="icon-btn min-h-11 min-w-11"
               >
                 <Settings className="h-4 w-4" aria-hidden="true" />
               </button>

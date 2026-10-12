@@ -292,7 +292,7 @@ export function SillyTavernContextInspector({
   if (!open) return null;
 
   const tabButtonClass = (tab: typeof activeTab) =>
-    `relative flex items-center gap-1.5 whitespace-nowrap px-3 py-2.5 font-medium transition-colors ${
+    `relative flex shrink-0 min-h-[44px] sm:min-h-[36px] items-center gap-1.5 whitespace-nowrap px-3 py-2 font-medium transition-colors ${
       activeTab === tab ? 'text-ink' : 'text-ink-2 hover:text-ink'
     }`;
 
@@ -302,9 +302,9 @@ export function SillyTavernContextInspector({
     ) : null;
 
   return (
-    <aside className="animate-in fade-in slide-in-from-right-2 fixed inset-0 z-30 flex h-full w-full shrink-0 flex-col border-l border-line bg-background pt-safe duration-150 ease-out sm:relative sm:inset-auto sm:w-96">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-line p-4">
+    <aside className="animate-in fade-in slide-in-from-right-2 fixed inset-0 z-30 flex h-full w-full shrink-0 flex-col border-l border-line bg-background pt-safe pl-safe pr-safe duration-150 ease-out sm:relative sm:inset-auto sm:w-96 sm:pl-0 sm:pr-0">
+      {/* Header — sticky on mobile and desktop */}
+      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-line bg-background px-4 py-3 sm:p-4">
         <div className="flex items-center gap-2">
           <Brain aria-hidden className="h-4 w-4 text-ink-3" />
           <h3 className="type-sec">SillyTavern memory</h3>
@@ -313,14 +313,17 @@ export function SillyTavernContextInspector({
           type="button"
           onClick={onClose}
           aria-label="Close memory panel"
-          className="icon-btn w-8 h-8"
+          className="icon-btn min-h-11 min-w-11 sm:h-9 sm:w-9"
         >
           <X aria-hidden className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="scrollbar-none flex items-center gap-1 overflow-x-auto border-b border-line px-2 text-xs" role="tablist">
+      {/* Tabs — horizontally scrollable one-line bar */}
+      <div
+        className="scrollbar-none flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 text-xs"
+        role="tablist"
+      >
         <button
           type="button"
           role="tab"
@@ -341,7 +344,7 @@ export function SillyTavernContextInspector({
         >
           <Brain aria-hidden className="h-3.5 w-3.5" />
           Memory
-          {memories.length > 0 && <span className="type-code text-ink-3">{memories.length}</span>}
+          {memories.length > 0 && <span className="type-code text-ink-3 tabular-nums">{memories.length}</span>}
           {tabUnderline('memory')}
         </button>
         <button
@@ -379,12 +382,12 @@ export function SillyTavernContextInspector({
         </button>
       </div>
 
-      {/* Body Content */}
-      <div className="flex-1 space-y-4 overflow-y-auto p-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
+      {/* Body Content — iOS momentum inner scroll */}
+      <div className="scroll-y flex-1 min-h-0 space-y-4 p-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:pb-6">
         {/* TAB 1: CHAT SUMMARY */}
         {activeTab === 'summary' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <span className="type-label">
                 Active story summary
               </span>
@@ -392,10 +395,10 @@ export function SillyTavernContextInspector({
                 type="button"
                 onClick={() => setIsFrozen(!isFrozen)}
                 aria-pressed={isFrozen}
-                className={isFrozen ? 'chip chip-warn min-h-8' : 'chip min-h-8'}
+                className={`chip min-h-11 sm:min-h-8 px-3 ${isFrozen ? 'chip-warn' : ''}`}
                 title="When frozen, automatic summarization will not overwrite your text"
               >
-                {isFrozen ? <Lock aria-hidden className="h-3 w-3" /> : <Unlock aria-hidden className="h-3 w-3" />}
+                {isFrozen ? <Lock aria-hidden className="h-3.5 w-3.5" /> : <Unlock aria-hidden className="h-3.5 w-3.5" />}
                 {isFrozen ? 'Frozen' : 'Unfrozen'}
               </button>
             </div>
@@ -410,12 +413,12 @@ export function SillyTavernContextInspector({
             />
 
             {/* Actions Bar */}
-            <div className="flex items-center justify-between gap-2 pt-1">
+            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"
                 onClick={handleSaveSummaryEdit}
                 disabled={isSavingSummary || !summaryText.trim()}
-                className="btn btn-ghost text-xs"
+                className="btn btn-ghost min-h-11 sm:min-h-9 px-4 text-xs"
               >
                 <Save aria-hidden className="h-3.5 w-3.5" />
                 {isSavingSummary ? 'Saving…' : 'Save edit'}
@@ -425,7 +428,7 @@ export function SillyTavernContextInspector({
                 type="button"
                 onClick={handleTriggerSummarizeNow}
                 disabled={isSummarizing}
-                className="btn btn-primary text-xs"
+                className="btn btn-primary min-h-11 sm:min-h-9 px-4 text-xs"
               >
                 <Sparkles aria-hidden className="h-3.5 w-3.5" />
                 {isSummarizing ? 'Summarizing…' : 'Summarize now'}
@@ -438,19 +441,19 @@ export function SillyTavernContextInspector({
                 type="button"
                 onClick={() => setShowSummarySettings(!showSummarySettings)}
                 aria-expanded={showSummarySettings}
-                className="flex min-h-8 w-full items-center justify-between text-xs font-medium text-ink-2 transition-colors hover:text-ink"
+                className="row-press flex min-h-11 w-full items-center justify-between rounded-md px-2 text-xs font-medium text-ink-2 transition-colors hover:text-ink"
               >
-                <span className="flex items-center gap-1.5">
-                  <SlidersHorizontal aria-hidden className="h-3.5 w-3.5" />
+                <span className="flex items-center gap-2">
+                  <SlidersHorizontal aria-hidden className="h-4 w-4" />
                   Summarizer settings
                 </span>
                 <span aria-hidden>{showSummarySettings ? '▲' : '▼'}</span>
               </button>
 
               {showSummarySettings && (
-                <div className="well space-y-3 p-3 text-xs">
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-ink-2">
+                <div className="well space-y-3 p-3.5 text-xs">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-col sm:flex-row sm:justify-between text-[11px] text-ink-2 tabular-nums">
                       <span>Update interval</span>
                       <span className="type-code">Every {summaryInterval} turns</span>
                     </div>
@@ -466,12 +469,12 @@ export function SillyTavernContextInspector({
                         setSummaryInterval(value);
                         scheduleSaveMemorySettings({ summaryInterval: value });
                       }}
-                      className="w-full accent-accent"
+                      className="min-h-8 w-full accent-accent"
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-ink-2">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-col sm:flex-row sm:justify-between text-[11px] text-ink-2 tabular-nums">
                       <span>Max target words</span>
                       <span className="type-code">{summaryMaxWords} words</span>
                     </div>
@@ -487,7 +490,7 @@ export function SillyTavernContextInspector({
                         setSummaryMaxWords(value);
                         scheduleSaveMemorySettings({ summaryWords: value });
                       }}
-                      className="w-full accent-accent"
+                      className="min-h-8 w-full accent-accent"
                     />
                   </div>
 
@@ -502,10 +505,10 @@ export function SillyTavernContextInspector({
           </div>
         )}
 
-        {/* TAB: MEMORY */}
+        {/* TAB 2: MEMORY */}
         {activeTab === 'memory' && (
           <div className="space-y-4">
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <span className="type-label">Story memory</span>
                 <p className="type-meta mt-0.5">
@@ -517,7 +520,7 @@ export function SillyTavernContextInspector({
                 type="button"
                 onClick={handleRegenerateMemory}
                 disabled={isRegenerating}
-                className="btn btn-ghost shrink-0 text-xs"
+                className="btn btn-ghost shrink-0 min-h-11 sm:min-h-9 px-3.5 text-xs w-full sm:w-auto"
                 title="Fold the latest exchanges into memory now"
               >
                 <Sparkles aria-hidden className="h-3.5 w-3.5" />
@@ -526,7 +529,7 @@ export function SillyTavernContextInspector({
             </div>
 
             {/* Add a memory */}
-            <div className="surface space-y-2.5 rounded-lg p-3">
+            <div className="surface space-y-3 rounded-lg p-3 sm:p-3.5">
               <label className="type-label" htmlFor="new-memory-text">
                 Add a memory
               </label>
@@ -538,36 +541,38 @@ export function SillyTavernContextInspector({
                 rows={3}
                 className="field resize-y text-xs leading-relaxed"
               />
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
                 <label className="sr-only" htmlFor="new-memory-kind">Memory kind</label>
                 <select
                   id="new-memory-kind"
                   value={newMemoryKind}
                   onChange={(e) => setNewMemoryKind(e.target.value)}
-                  className="field text-xs"
+                  className="field min-h-11 sm:min-h-9 text-xs flex-1"
                 >
                   {Object.entries(MEMORY_KIND_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
 
-                <label className="type-label" htmlFor="new-memory-importance">Importance</label>
-                <input
-                  id="new-memory-importance"
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={newMemoryImportance}
-                  onChange={(e) => setNewMemoryImportance(Number(e.target.value))}
-                  className="w-24 accent-accent"
-                />
-                <span className="type-code text-ink-3">{newMemoryImportance}</span>
+                <div className="flex items-center gap-2">
+                  <label className="type-label shrink-0" htmlFor="new-memory-importance">Importance</label>
+                  <input
+                    id="new-memory-importance"
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={newMemoryImportance}
+                    onChange={(e) => setNewMemoryImportance(Number(e.target.value))}
+                    className="min-h-8 w-24 accent-accent"
+                  />
+                  <span className="type-code text-ink-3 tabular-nums">{newMemoryImportance}</span>
+                </div>
 
                 <button
                   type="button"
                   onClick={handleAddMemory}
                   disabled={!newMemoryText.trim() || isAddingMemory}
-                  className="btn btn-primary ml-auto text-xs"
+                  className="btn btn-primary min-h-11 sm:min-h-9 px-4 text-xs w-full sm:w-auto sm:ml-auto"
                 >
                   <Plus aria-hidden className="h-3.5 w-3.5" />
                   Add
@@ -576,21 +581,21 @@ export function SillyTavernContextInspector({
             </div>
 
             {/* Memory bank */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {memories.length > 0 ? (
                 memories.map((memory) => (
-                  <div key={memory.id} className="surface space-y-1.5 rounded-lg p-3 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-1">
+                  <div key={memory.id} className="surface space-y-2 rounded-lg p-3 sm:p-3.5 text-xs">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                         <span className="chip type-code">{MEMORY_KIND_LABELS[memory.kind] || memory.kind}</span>
-                        <span className="chip type-code" title="Importance">★ {memory.importance}</span>
+                        <span className="chip type-code tabular-nums" title="Importance">★ {memory.importance}</span>
                         {memory.pinned && (
                           <span className="chip chip-warn" title="Always in context, never auto-rewritten">
                             <Pin aria-hidden className="h-3 w-3" /> Pinned
                           </span>
                         )}
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
+                      <div className="flex shrink-0 items-center justify-end gap-1 border-t border-line pt-1.5 sm:border-t-0 sm:pt-0">
                         <button
                           type="button"
                           onClick={() => {
@@ -598,31 +603,31 @@ export function SillyTavernContextInspector({
                             setEditingMemoryText(memory.content);
                           }}
                           aria-label="Edit memory"
-                          className="icon-btn w-8 h-8"
+                          className="icon-btn min-h-11 min-w-11 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0"
                         >
-                          <Pencil aria-hidden className="h-3 w-3" />
+                          <Pencil aria-hidden className="h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleUpdateMemory(memory.id, { pinned: !memory.pinned })}
                           aria-label={memory.pinned ? 'Unpin memory' : 'Pin memory'}
-                          className="icon-btn w-8 h-8"
+                          className="icon-btn min-h-11 min-w-11 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0"
                         >
-                          {memory.pinned ? <PinOff aria-hidden className="h-3 w-3" /> : <Pin aria-hidden className="h-3 w-3" />}
+                          {memory.pinned ? <PinOff aria-hidden className="h-3.5 w-3.5" /> : <Pin aria-hidden className="h-3.5 w-3.5" />}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteMemory(memory.id)}
                           aria-label="Forget memory"
-                          className="icon-btn text-danger w-8 h-8"
+                          className="icon-btn text-danger min-h-11 min-w-11 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0"
                         >
-                          <Trash2 aria-hidden className="h-3 w-3" />
+                          <Trash2 aria-hidden className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
 
                     {editingMemoryId === memory.id ? (
-                      <div className="space-y-2">
+                      <div className="space-y-2.5 pt-1">
                         <textarea
                           value={editingMemoryText}
                           onChange={(e) => setEditingMemoryText(e.target.value)}
@@ -634,7 +639,7 @@ export function SillyTavernContextInspector({
                           <button
                             type="button"
                             onClick={() => setEditingMemoryId(null)}
-                            className="btn btn-ghost text-xs"
+                            className="btn btn-ghost min-h-11 sm:min-h-9 px-3.5 text-xs"
                           >
                             Cancel
                           </button>
@@ -646,7 +651,7 @@ export function SillyTavernContextInspector({
                               toast.success('Memory updated');
                             }}
                             disabled={!editingMemoryText.trim()}
-                            className="btn btn-primary text-xs"
+                            className="btn btn-primary min-h-11 sm:min-h-9 px-3.5 text-xs"
                           >
                             <Check aria-hidden className="h-3.5 w-3.5" />
                             Save
@@ -654,7 +659,7 @@ export function SillyTavernContextInspector({
                         </div>
                       </div>
                     ) : (
-                      <p className="text-[11px] leading-relaxed text-ink-2">{memory.content}</p>
+                      <p className="break-words text-[11px] leading-relaxed text-ink-2">{memory.content}</p>
                     )}
                   </div>
                 ))
@@ -671,7 +676,7 @@ export function SillyTavernContextInspector({
           </div>
         )}
 
-        {/* TAB 2: AUTHOR'S NOTE */}
+        {/* TAB 3: AUTHOR'S NOTE */}
         {activeTab === 'note' && (
           <div className="space-y-4">
             <div>
@@ -692,9 +697,9 @@ export function SillyTavernContextInspector({
               className="field resize-y text-xs leading-relaxed"
             />
 
-            <div className="well space-y-3 p-3 text-xs">
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px] text-ink-2">
+            <div className="well space-y-3 p-3.5 text-xs">
+              <div className="space-y-1.5">
+                <div className="flex flex-col sm:flex-row sm:justify-between text-[11px] text-ink-2 tabular-nums">
                   <span>Insertion depth</span>
                   <span className="type-code">{noteDepth} messages from end</span>
                 </div>
@@ -705,18 +710,18 @@ export function SillyTavernContextInspector({
                   value={noteDepth}
                   aria-label="Author's note insertion depth"
                   onChange={(e) => setNoteDepth(Number(e.target.value))}
-                  className="w-full accent-accent"
+                  className="min-h-8 w-full accent-accent"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 text-xs">
                 <div className="space-y-1">
                   <label className="type-label" htmlFor="authors-note-role">Role</label>
                   <select
                     id="authors-note-role"
                     value={noteRole}
                     onChange={(e) => setNoteRole(e.target.value as 'system' | 'user' | 'assistant')}
-                    className="field text-xs"
+                    className="field min-h-11 sm:min-h-9 text-xs"
                   >
                     <option value="system">System</option>
                     <option value="user">User</option>
@@ -730,7 +735,7 @@ export function SillyTavernContextInspector({
                     id="authors-note-position"
                     value={notePosition}
                     onChange={(e) => setNotePosition(e.target.value as 'in_chat' | 'before_scenario' | 'after_scenario')}
-                    className="field text-xs"
+                    className="field min-h-11 sm:min-h-9 text-xs"
                   >
                     <option value="in_chat">In-chat depth</option>
                     <option value="before_scenario">Before scenario</option>
@@ -743,7 +748,7 @@ export function SillyTavernContextInspector({
             <button
               type="button"
               onClick={handleSaveAuthorsNote}
-              className="btn btn-primary w-full text-xs"
+              className="btn btn-primary min-h-11 sm:min-h-9 w-full text-xs"
             >
               <Check aria-hidden className="h-3.5 w-3.5" />
               Apply author&apos;s note
@@ -751,7 +756,7 @@ export function SillyTavernContextInspector({
           </div>
         )}
 
-        {/* TAB 3: WORLD INFO / LOREBOOK */}
+        {/* TAB 4: WORLD INFO / LOREBOOK */}
         {activeTab === 'worldInfo' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -760,16 +765,16 @@ export function SillyTavernContextInspector({
               </span>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {activeLorebookEntries.length > 0 ? (
                 activeLorebookEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="surface space-y-1.5 rounded-lg p-3 text-xs"
+                    className="surface space-y-1.5 rounded-lg p-3 sm:p-3.5 text-xs"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-xs font-medium text-ink">{entry.title || 'Untitled entry'}</span>
-                      <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="min-w-0 break-words text-xs font-medium text-ink">{entry.title || 'Untitled entry'}</span>
+                      <div className="flex shrink-0 flex-wrap gap-1">
                         {entry.keys.map((k) => (
                           <span
                             key={k}
@@ -780,7 +785,7 @@ export function SillyTavernContextInspector({
                         ))}
                       </div>
                     </div>
-                    <p className="line-clamp-3 text-[11px] leading-relaxed text-ink-2">
+                    <p className="line-clamp-3 break-words text-[11px] leading-relaxed text-ink-2">
                       {entry.content}
                     </p>
                   </div>
@@ -798,7 +803,7 @@ export function SillyTavernContextInspector({
           </div>
         )}
 
-        {/* TAB 4: VECTORS */}
+        {/* TAB 5: VECTORS */}
         {activeTab === 'vectors' && (
           <div className="space-y-4">
             <div>
@@ -810,19 +815,19 @@ export function SillyTavernContextInspector({
               </p>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {vectorMemories.length > 0 ? (
                 vectorMemories.map((vm, i) => (
                   <div
                     key={i}
-                    className="surface space-y-1 rounded-lg p-3 text-xs"
+                    className="surface space-y-1.5 rounded-lg p-3 sm:p-3.5 text-xs"
                   >
                     {vm.score !== undefined && (
-                      <span className="chip type-code">
+                      <span className="chip type-code tabular-nums">
                         Score: {(vm.score * 100).toFixed(0)}%
                       </span>
                     )}
-                    <p className="text-[11px] leading-relaxed text-ink-2">
+                    <p className="break-words text-[11px] leading-relaxed text-ink-2">
                       {vm.content}
                     </p>
                   </div>
