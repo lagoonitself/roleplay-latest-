@@ -260,7 +260,7 @@ export function MyChatsView({
                   </div>
 
                   <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <p className="type-meta truncate text-xs text-ink-2">
+                    <p className="type-meta min-w-0 truncate text-xs text-ink-2">
                       {preview}
                     </p>
                     {chatCount > 1 && (

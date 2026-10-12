@@ -32,9 +32,9 @@ export function CreateDrawer({ open, onClose, onImportFile, onOpenImportGuide }:
           onClick={onClose}
           className="row-press group flex min-h-[56px] items-center justify-between gap-3 p-4 transition-colors hover:bg-[color-mix(in_oklab,var(--ink)_4%,transparent)]"
         >
-          <div className="flex min-w-0 items-center gap-3.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3.5">
             <UserPlus className="h-5 w-5 shrink-0 text-ink-2" aria-hidden="true" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h4 className="text-sm font-medium text-ink">Create character</h4>
               <p className="mt-0.5 text-xs text-ink-2">
                 Design a personality, scenario and first message from scratch
@@ -55,9 +55,9 @@ export function CreateDrawer({ open, onClose, onImportFile, onOpenImportGuide }:
           }}
           className="row-press group flex min-h-[56px] w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-[color-mix(in_oklab,var(--ink)_4%,transparent)]"
         >
-          <div className="flex min-w-0 items-center gap-3.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3.5">
             <Upload className="h-5 w-5 shrink-0 text-ink-2" aria-hidden="true" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h4 className="text-sm font-medium text-ink">Import card (PNG or JSON)</h4>
               <p className="mt-0.5 text-xs text-ink-2">
                 Bring a character file you already have

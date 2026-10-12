@@ -492,17 +492,18 @@ function HomePageContent() {
       ) : (
         /* ─────────────────── TAB 1: EXPLORE / CHARACTERS VIEW ─────────────────── */
         <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-6 space-y-4 sm:space-y-6">
-          {/* Header Block: compact title + meta with Persona & Create actions */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
+          {/* Header Block: title + meta on own line on mobile, Persona & Create actions */}
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="w-full sm:w-auto min-w-0">
               <h1 className="type-page text-xl sm:text-2xl">Explore</h1>
-              <p className="type-meta text-xs truncate">Characters and roleplay worlds</p>
+              <p className="type-meta text-xs">Characters and roleplay worlds</p>
             </div>
 
             {/* Action Buttons: Persona Switcher & Create */}
             <div className="flex shrink-0 items-center gap-2">
               {/* Persona Pill: View and Switch Personas */}
               <button
+                type="button"
                 onClick={() => setPersonaDrawerOpen(true)}
                 className="chip gap-1.5 px-3 py-2 text-xs transition-colors hover:text-ink min-h-11"
                 title="View and switch your roleplay persona"
@@ -510,10 +511,11 @@ function HomePageContent() {
               >
                 <User className="h-3.5 w-3.5 text-ink-2" aria-hidden="true" />
                 <span className="hidden text-ink-3 sm:inline">Persona:</span>
-                <span className="max-w-[110px] truncate font-medium">{activePersonaName}</span>
+                <span className="max-w-[9rem] sm:max-w-[110px] truncate font-medium">{activePersonaName}</span>
               </button>
 
               <button
+                type="button"
                 onClick={() => setCreateDrawerOpen(true)}
                 className="btn btn-primary text-xs min-h-11 px-3.5"
               >
@@ -544,6 +546,7 @@ function HomePageContent() {
               />
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => setSearchQuery('')}
                   aria-label="Clear search"
                   className="icon-btn absolute top-1/2 right-1.5 h-8 w-8 -translate-y-1/2"
@@ -558,9 +561,10 @@ function HomePageContent() {
               {tags.map((tag) => (
                 <button
                   key={tag}
+                  type="button"
                   onClick={() => setSelectedTag(tag)}
                   aria-pressed={selectedTag === tag}
-                  className={`shrink-0 whitespace-nowrap transition-colors ${
+                  className={`shrink-0 whitespace-nowrap transition-colors min-h-9 ${
                     selectedTag === tag
                       ? 'chip-accent chip inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold'
                       : 'chip hover:text-ink px-3.5 py-1.5 text-xs'
@@ -601,6 +605,7 @@ function HomePageContent() {
               <div className="flex items-center justify-between">
                 <h2 className="type-sec">Continue recent chats</h2>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('chats')}
                   className="btn btn-quiet text-xs text-accent-text"
                 >
@@ -655,6 +660,7 @@ function HomePageContent() {
 
                       {/* Delete button on recent chat pill */}
                       <button
+                        type="button"
                         onClick={(e) => handleDeleteRecentChat(e, chat.id)}
                         className="icon-btn h-8 w-8 min-h-8 min-w-8 shrink-0 opacity-100 transition-[opacity,color,background-color] md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100"
                         title="Delete chat from recent history"
@@ -735,6 +741,7 @@ function HomePageContent() {
                       {/* Actions, visible on mobile and revealed on hover/focus on desktop */}
                       <div className="flex items-center gap-1 pt-1.5 opacity-100 transition-[opacity] duration-150 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             router.push(`/c/${character.id}`);
@@ -745,7 +752,9 @@ function HomePageContent() {
                         </button>
 
                         <button
+                          type="button"
                           onClick={async (e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             if (window.confirm(`Permanently delete "${character.name}" from your roster?`)) {
                               try {
@@ -769,6 +778,7 @@ function HomePageContent() {
                         </button>
 
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleStartChat(character);
@@ -799,20 +809,22 @@ function HomePageContent() {
                   </p>
                   {searchQuery || selectedTag !== 'All' ? (
                     <button
+                      type="button"
                       onClick={() => {
                         setSearchQuery('');
                         setSelectedTag('All');
                       }}
-                      className="btn btn-ghost text-xs"
+                      className="btn btn-ghost text-xs min-h-9 px-3.5"
                     >
                       Clear filters
                     </button>
                   ) : (
                     <button
+                      type="button"
                       onClick={() => setCreateDrawerOpen(true)}
-                      className="btn btn-primary text-xs"
+                      className="btn btn-primary text-xs min-h-9 px-3.5"
                     >
-                      <Plus className="h-3.5 w-3.5" aria-hidden />
+                      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                       Create character
                     </button>
                   )}
@@ -863,8 +875,9 @@ function HomePageContent() {
         bodyClassName="px-5 pb-5 space-y-4"
         footer={
           <button
+            type="button"
             onClick={() => setShowImportGuide(false)}
-            className="btn btn-primary w-full text-xs"
+            className="btn btn-primary w-full min-h-11 text-xs"
           >
             Close
           </button>

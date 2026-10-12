@@ -155,7 +155,7 @@ export function CharacterChatsDrawer({
                 onClose();
                 onStartNewChat(character);
               }}
-              className="btn btn-primary w-full"
+              className="btn btn-primary w-full min-h-11"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Start new chat
@@ -179,7 +179,7 @@ export function CharacterChatsDrawer({
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="truncate text-xs text-ink-2">
+                    <p className="min-w-0 truncate text-xs text-ink-2">
                       {character.tagline || 'Character conversations'}
                     </p>
                     {character.content_rating !== 'sfw' && (
@@ -194,7 +194,7 @@ export function CharacterChatsDrawer({
                 <Link
                   href={`/c/${character.id}`}
                   onClick={onClose}
-                  className="icon-btn text-ink-2 hover:text-ink"
+                  className="icon-btn text-ink-2 hover:text-ink min-h-11 min-w-11"
                   aria-label="View character profile"
                   title="View character profile"
                 >
@@ -205,7 +205,7 @@ export function CharacterChatsDrawer({
                   <button
                     type="button"
                     onClick={() => setMenuOpen(!menuOpen)}
-                    className="icon-btn text-ink-2 hover:text-ink"
+                    className="icon-btn text-ink-2 hover:text-ink min-h-11 min-w-11"
                     aria-label="More options"
                     aria-expanded={menuOpen}
                   >
@@ -323,7 +323,7 @@ export function CharacterChatsDrawer({
                         {/* Middle: Title & preview snippet */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline justify-between gap-2">
-                            <span className="truncate font-serif text-[15px] font-medium text-ink">
+                            <span className="min-w-0 truncate font-serif text-[15px] font-medium text-ink">
                               {chat.title && chat.title.replace(/^Chat with\s+/i, '').trim() !== character.name
                                 ? chat.title
                                 : character.name}
@@ -354,7 +354,7 @@ export function CharacterChatsDrawer({
                             handleDeleteSingleChat(e, chat.id);
                           }}
                           disabled={deletingId === chat.id}
-                          className="icon-btn text-ink-3 hover:text-danger focus-visible:text-danger opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                          className="icon-btn text-ink-3 hover:text-danger focus-visible:text-danger opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 min-h-11 min-w-11"
                           aria-label={`Delete chat from ${cleanTimestamp || 'this character'}`}
                         >
                           <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -393,14 +393,14 @@ export function CharacterChatsDrawer({
               <button
                 type="button"
                 onClick={() => setConfirmDeleteCharacter(false)}
-                className="btn btn-quiet"
+                className="btn btn-quiet min-h-10 px-3"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleDeleteCharacterFromRoster}
-                className="btn btn-danger"
+                className="btn btn-danger min-h-10 px-3"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 Delete character
@@ -433,14 +433,14 @@ export function CharacterChatsDrawer({
               <button
                 type="button"
                 onClick={() => setConfirmDeleteAll(false)}
-                className="btn btn-quiet"
+                className="btn btn-quiet min-h-10 px-3"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleDeleteAllChats}
-                className="btn btn-danger"
+                className="btn btn-danger min-h-10 px-3"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 Delete all
