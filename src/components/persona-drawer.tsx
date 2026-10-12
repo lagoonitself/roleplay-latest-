@@ -3,11 +3,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  X,
   Plus,
   Check,
   Trash2,
-  User,
   Sparkles,
   Settings,
   Sun,
@@ -20,6 +18,7 @@ import { useTheme } from 'next-themes';
 import { createClient } from '@/lib/supabase/client';
 import { CharacterAvatar } from '@/components/character-avatar';
 import { PersonaModal } from '@/components/persona-modal';
+import { Sheet } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 import type { Persona } from '@/lib/supabase/types';
 
@@ -91,8 +90,6 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
     return () => clearTimeout(timer);
   }, [open, loadPersonas]);
 
-  if (!open) return null;
-
   const handleSetActive = (persona: Persona) => {
     updateSettings({ activePersonaId: persona.id });
     toast.success(`Active persona set to "${persona.name}"`);
@@ -123,195 +120,175 @@ export function PersonaDrawer({ open, onClose, onOpenSettingsDialog }: PersonaDr
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-50 flex items-end justify-center bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
-        onClick={onClose}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onClose();
+      <Sheet
+        open={open}
+        onOpenChange={(o) => {
+          if (!o) onClose();
         }}
+        title="Your personas"
+        description="Choose who you play in your stories"
+        bodyClassName="px-5 pb-5 space-y-5"
       >
-        <div className="absolute inset-0" onClick={onClose} />
-
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Your personas"
-          onClick={(e) => e.stopPropagation()}
-          className="panel relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-2xl flex flex-col max-h-[85dvh] overflow-hidden animate-in slide-in-from-bottom duration-200 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]"
-        >
-          {/* Handle */}
-          <div className="w-8 h-1 rounded-full bg-line-strong mx-auto mt-3 mb-2" aria-hidden />
-
-          {/* Header */}
-          <div className="px-5 py-3 flex items-center justify-between border-b border-line">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-md bg-sunken border border-line flex items-center justify-center shrink-0">
-                <User className="w-4 h-4 text-ink-3" aria-hidden />
+        {/* Active Persona Spotlight Card */}
+        {activePersona && (
+          <div className="rounded-lg border border-accent-line bg-accent-wash p-4 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="type-sec flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-ink-3" aria-hidden="true" />
+                Currently roleplaying as
+              </span>
+              <span className="chip-accent chip">
+                <Check className="w-3 h-3" aria-hidden="true" />
+                Active
+              </span>
+            </div>
+            <div className="flex items-center gap-3 pt-1 min-w-0">
+              <div className="w-11 h-11 rounded-md overflow-hidden bg-sunken shrink-0 border border-line relative">
+                <CharacterAvatar
+                  name={activePersona.name}
+                  avatarUrl={activePersona.avatar_url}
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div className="min-w-0">
-                <h3 className="type-page text-base">Your personas</h3>
-                <p className="type-meta truncate">Choose who you play in your stories</p>
+                <h4 className="font-serif text-[0.95rem] font-medium text-ink truncate">
+                  {activePersona.name}
+                </h4>
+                <p className="type-meta line-clamp-2">{activePersona.description}</p>
               </div>
             </div>
-            <button onClick={onClose} className="icon-btn shrink-0" aria-label="Close personas">
-              <X className="w-5 h-5" aria-hidden />
+          </div>
+        )}
+
+        {/* All Personas List */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="type-sec">All personas ({personas.length})</span>
+            <button
+              type="button"
+              onClick={() => setCreateModalOpen(true)}
+              className="btn btn-quiet min-h-11 px-3"
+            >
+              <Plus className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
+              Add persona
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-            {/* Active Persona Spotlight Card */}
-            {activePersona && (
-              <div className="rounded-lg border border-accent-line bg-accent-wash p-4 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="type-sec flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3 text-ink-3" aria-hidden />
-                    Currently roleplaying as
-                  </span>
-                  <span className="chip-accent chip">
-                    <Check className="w-3 h-3" aria-hidden />
-                    Active
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 pt-1 min-w-0">
-                  <div className="w-11 h-11 rounded-md overflow-hidden bg-sunken shrink-0 border border-line relative">
-                    <CharacterAvatar
-                      name={activePersona.name}
-                      avatarUrl={activePersona.avatar_url}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="font-serif text-[0.95rem] font-medium text-ink truncate">
-                      {activePersona.name}
-                    </h4>
-                    <p className="type-meta line-clamp-1">{activePersona.description}</p>
-                  </div>
-                </div>
-              </div>
-            )}
+          <div className="surface rounded-lg divide-y divide-line overflow-hidden">
+            {personas.map((persona) => {
+              const isActive = persona.id === activePersona?.id;
 
-            {/* All Personas List */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="type-sec">All personas ({personas.length})</span>
-                <button onClick={() => setCreateModalOpen(true)} className="btn btn-quiet">
-                  <Plus className="w-3.5 h-3.5 text-accent-text" aria-hidden />
-                  Add persona
-                </button>
-              </div>
+              return (
+                <div
+                  key={persona.id}
+                  className={`group flex items-center justify-between gap-2 p-3 transition-[background-color] duration-150 ${
+                    isActive ? 'bg-accent-wash' : ''
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSetActive(persona)}
+                    aria-pressed={isActive}
+                    className="row-press flex min-w-0 min-h-11 flex-1 cursor-pointer items-center gap-3 pr-2 text-left"
+                  >
+                    <div className="w-10 h-10 rounded-md overflow-hidden bg-sunken shrink-0 border border-line relative">
+                      <CharacterAvatar
+                        name={persona.name}
+                        avatarUrl={persona.avatar_url}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-serif text-[0.9rem] font-medium text-ink truncate flex items-center gap-1.5">
+                        {persona.name}
+                        {isActive && <Check className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden="true" />}
+                      </div>
+                      <p className="type-meta line-clamp-2 mt-0.5">{persona.description}</p>
+                    </div>
+                  </button>
 
-              <div className="surface rounded-lg divide-y divide-line overflow-hidden">
-                {personas.map((persona) => {
-                  const isActive = persona.id === activePersona?.id;
-
-                  return (
-                    <div
-                      key={persona.id}
-                      className={`group flex items-center justify-between gap-2 p-3 transition-[background-color] duration-150 ${
-                        isActive ? 'bg-accent-wash' : ''
-                      }`}
-                    >
+                  <div className="flex items-center gap-1 shrink-0">
+                    {personas.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => handleSetActive(persona)}
-                        aria-pressed={isActive}
-                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 pr-2 text-left"
+                        onClick={(e) => handleDelete(e, persona.id, persona.name)}
+                        className="icon-btn min-h-11 min-w-11"
+                        aria-label={`Delete ${persona.name}`}
                       >
-                        <div className="w-10 h-10 rounded-md overflow-hidden bg-sunken shrink-0 border border-line relative">
-                          <CharacterAvatar
-                            name={persona.name}
-                            avatarUrl={persona.avatar_url}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-serif text-[0.9rem] font-medium text-ink truncate flex items-center gap-1.5">
-                            {persona.name}
-                            {isActive && <Check className="w-3.5 h-3.5 text-accent-text shrink-0" aria-hidden />}
-                          </div>
-                          <p className="type-meta truncate mt-0.5">{persona.description}</p>
-                        </div>
+                        <Trash2 className="w-4 h-4 text-ink-3 hover:text-danger" aria-hidden="true" />
                       </button>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        {personas.length > 1 && (
-                          <button
-                            onClick={(e) => handleDelete(e, persona.id, persona.name)}
-                            className="icon-btn"
-                            aria-label={`Delete ${persona.name}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" aria-hidden />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Quick App Settings Section */}
-            <div className="space-y-2 pt-3 border-t border-line">
-              <span className="type-sec block">Preferences</span>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => {
-                    onClose();
-                    onOpenSettingsDialog();
-                  }}
-                  className="surface rounded-lg flex items-center gap-2.5 p-3 text-xs font-medium text-ink-2 text-left"
-                >
-                  <Settings className="w-4 h-4 text-ink-3 shrink-0" aria-hidden />
-                  <span>Engine and keys</span>
-                </button>
-
-                <button
-                  onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-                  className="surface rounded-lg flex items-center gap-2.5 p-3 text-xs font-medium text-ink-2 text-left"
-                  aria-label={resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-                >
-                  {resolvedTheme === 'dark' ? (
-                    <>
-                      <Sun className="w-4 h-4 text-ink-2 shrink-0" aria-hidden />
-                      <span>Light theme</span>
-                    </>
-                  ) : (
-                    <>
-                      <Moon className="w-4 h-4 text-ink-2 shrink-0" aria-hidden />
-                      <span>Dark theme</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <Link
-                href="/lorebooks"
-                onClick={onClose}
-                className="surface rounded-lg w-full flex items-center justify-between p-3 text-xs text-ink-2"
-              >
-                <div className="flex items-center gap-2.5">
-                  <BookOpen className="w-4 h-4 text-ink-3" aria-hidden />
-                  <span>World lorebooks</span>
+                    )}
+                  </div>
                 </div>
-                <ExternalLink className="w-3.5 h-3.5 text-ink-3" aria-hidden />
-              </Link>
-            </div>
+              );
+            })}
           </div>
         </div>
-      </div>
+
+        {/* Quick App Settings Section */}
+        <div className="space-y-2 pt-3 border-t border-line">
+          <span className="type-sec block">Preferences</span>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenSettingsDialog();
+              }}
+              className="surface row-press min-h-11 rounded-lg flex items-center gap-2.5 p-3 text-xs font-medium text-ink-2 text-left"
+            >
+              <Settings className="w-4 h-4 text-ink-3 shrink-0" aria-hidden="true" />
+              <span>Engine and keys</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+              className="surface row-press min-h-11 rounded-lg flex items-center gap-2.5 p-3 text-xs font-medium text-ink-2 text-left"
+              aria-label={resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {resolvedTheme === 'dark' ? (
+                <>
+                  <Sun className="w-4 h-4 text-ink-2 shrink-0" aria-hidden="true" />
+                  <span>Light theme</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-4 h-4 text-ink-2 shrink-0" aria-hidden="true" />
+                  <span>Dark theme</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <Link
+            href="/lorebooks"
+            onClick={onClose}
+            className="surface row-press min-h-11 rounded-lg w-full flex items-center justify-between p-3 text-xs text-ink-2"
+          >
+            <div className="flex items-center gap-2.5">
+              <BookOpen className="w-4 h-4 text-ink-3" aria-hidden="true" />
+              <span>World lorebooks</span>
+            </div>
+            <ExternalLink className="w-3.5 h-3.5 text-ink-3" aria-hidden="true" />
+          </Link>
+        </div>
+      </Sheet>
 
       {/* Modal to create or AI-generate new persona */}
-      <PersonaModal
-        open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        onSelectPersona={(newP) => {
-          loadPersonas();
-          updateSettings({ activePersonaId: newP.id });
-          setCreateModalOpen(false);
-          toast.success(`Created persona "${newP.name}"`);
-        }}
-      />
+      <div className="relative z-[60]">
+        <PersonaModal
+          open={createModalOpen}
+          onClose={() => setCreateModalOpen(false)}
+          onSelectPersona={(newP) => {
+            loadPersonas();
+            updateSettings({ activePersonaId: newP.id });
+            setCreateModalOpen(false);
+            toast.success(`Created persona "${newP.name}"`);
+          }}
+        />
+      </div>
     </>
   );
 }
